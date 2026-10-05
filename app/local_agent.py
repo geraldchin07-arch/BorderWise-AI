@@ -17,15 +17,53 @@ class LocalAgentPlanner:
         self.engine = engine
 
     def _amount(self, text: str, currency: str) -> Decimal | None:
-        t = text.lower().replace(",", "")
-        if currency == "MYR":
-            patterns = [r"(?:rm|myr)\s*([0-9]+(?:\.[0-9]+)?)", r"([0-9]+(?:\.[0-9]+)?)\s*(?:rm|myr)\b"]
-        else:
-            patterns = [r"(?:s\$|sgd)\s*([0-9]+(?:\.[0-9]+)?)", r"([0-9]+(?:\.[0-9]+)?)\s*(?:s\$|sgd)\b"]
-        for p in patterns:
-            m = re.search(p, t)
-            if m:
-                return self.engine.money_value(m.group(1))
+        """Extract an amount for a requested currency.
+
+        Supports common currency codes/symbols/aliases without assuming
+        MYR and SGD are the only currencies.
+        """
+        t = text.lower().replace(",", "").strip()
+        code = currency.upper().strip()
+
+        aliases = {
+            "MYR": ["myr", "rm", "ringgit"],
+            "SGD": ["sgd", "s$"],
+            "USD": ["usd", "us$", "$", "dollar", "dollars"],
+            "CNY": ["cny", "rmb", "yuan", "renminbi", "¥"],
+            "JPY": ["jpy", "yen", "¥"],
+            "KRW": ["krw", "won", "₩"],
+            "THB": ["thb", "baht", "฿"],
+            "EUR": ["eur", "€", "euro", "euros"],
+            "GBP": ["gbp", "£", "pound", "pounds"],
+            "AUD": ["aud", "a$", "australian dollar"],
+            "CAD": ["cad", "c$", "canadian dollar"],
+            "HKD": ["hkd", "hk$", "hong kong dollar"],
+            "TWD": ["twd", "nt$", "taiwan dollar"],
+            "INR": ["inr", "₹", "rupee", "rupees"],
+        }
+
+        names = aliases.get(code, [code.lower()])
+
+        # Escape aliases so symbols and special characters are handled safely.
+        escaped = sorted(
+            [re.escape(x) for x in names],
+            key=len,
+            reverse=True,
+        )
+
+        prefix_pattern = r"(?:" + "|".join(escaped) + r")\s*"
+        suffix_pattern = r"\s*(?:" + "|".join(escaped) + r")\b"
+
+        patterns = [
+            rf"{prefix_pattern}([0-9]+(?:\.[0-9]+)?)",
+            rf"([0-9]+(?:\.[0-9]+)?){suffix_pattern}",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, t, re.IGNORECASE)
+            if match:
+                return self.engine.money_value(match.group(1))
+
         return None
 
     def _result(self, *args) -> dict[str, Any]:

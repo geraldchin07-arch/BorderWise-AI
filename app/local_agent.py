@@ -319,7 +319,7 @@ class LocalAgentPlanner:
         received_currency = next((code for code in supported if code in detected and any(k in t for k in [
             "received", "got ", "got paid", "family sent", "sent me", "allowance", "incoming", "from my family",
         ])), None)
-        if received_currency and (tuition_context or conversion_question or "what should i do" in t or "plan" in t):
+        if received_currency and received_currency not in {"MYR", "SGD"} and (tuition_context or conversion_question or "what should i do" in t or "plan" in t):
             incoming_amount = detected[received_currency]
             target_currency = next((code for code in mentioned if code != received_currency), planning)
             trace = [

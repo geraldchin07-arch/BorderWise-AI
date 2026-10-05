@@ -241,6 +241,185 @@ class LocalAgentPlanner:
                 {"blocked_reason": "missing_explicit_amount"},
             )
 
+        # Generic multi-currency reasoning: handle currencies beyond MYR/SGD before
+        # falling back to the legacy demo-specific planner below.
+        supported = [
+            "MYR", "SGD", "USD", "CNY", "JPY", "KRW", "THB", "EUR", "GBP",
+            "AUD", "CAD", "HKD", "TWD", "INR",
+        ]
+        aliases = {
+            "MYR": ["myr", "rm", "ringgit"],
+            "SGD": ["sgd", "s$"],
+            "USD": ["usd", "us$", "$", "dollar", "dollars"],
+            "CNY": ["cny", "rmb", "yuan", "renminbi", "¥"],
+            "JPY": ["jpy", "yen", "¥"],
+            "KRW": ["krw", "won", "₩"],
+            "THB": ["thb", "baht", "฿"],
+            "EUR": ["eur", "€", "euro", "euros"],
+            "GBP": ["gbp", "£", "pound", "pounds"],
+            "AUD": ["aud", "a$", "australian dollar"],
+            "CAD": ["cad", "c$", "canadian dollar"],
+            "HKD": ["hkd", "hk$", "hong kong dollar"],
+            "TWD": ["twd", "nt$", "taiwan dollar"],
+            "INR": ["inr", "₹", "rupee", "rupees"],
+        }
+        detected: dict[str, Decimal] = {}
+        mentioned: set[str] = set()
+        for code in supported:
+            amount = self._amount(t, code)
+            if amount is not None:
+                detected[code] = amount
+            if any(re.search(rf"(?<![A-Za-z]){re.escape(alias)}(?![A-Za-z])", t, re.I) for alias in aliases[code]):
+                mentioned.add(code)
+
+        planning = str(self.engine.state.get("profile_meta", {}).get("planning_currency", "SGD")).upper()
+        conversion_words = any(k in t for k in [
+            "convert", "exchange", "to ", "into ", "worth", "how much is",
+        ])
+
+        # Case A: explicit source/target conversion, e.g. "USD 500 to SGD".
+        if detected and conversion_words:
+            source_candidates = list(detected.items())
+            source_code, source_amount = source_candidates[0]
+            target_candidates = [code for code in mentioned if code != source_code]
+            if target_candidates:
+                target_code = target_candidates[0]
+            elif "to usd" in t:
+                target_code = "USD"
+            elif "to cny" in t or "to rmb" in t:
+                target_code = "CNY"
+            elif "to myr" in t or "to rm" in t:
+                target_code = "MYR"
+            elif "to sgd" in t or "into sgd" in t:
+                target_code = "SGD"
+            else:
+                target_code = planning
+            if target_code != source_code:
+                trace = [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": f"Detected a {source_code}→{target_code} currency question."},
+                    {"step": "FX", "status": "completed", "detail": f"Requested the direct reference rate for {source_code}→{target_code}."},
+                ]
+                try:
+                    conv = self.engine.convert_currency(source_amount, source_code, target_code)
+                except ValueError as exc:
+                    trace.append({"step": "FX", "status": "blocked", "detail": str(exc)})
+                    return self._result("agentic_local", f"I could not calculate that conversion safely: {exc}", trace, {"blocked_reason": "fx_unavailable"})
+                fx = conv.get("fx", {})
+                rate = conv["rate"]
+                trace.append({"step": "REASON", "status": "completed", "detail": f"Applied 1 {source_code} = {rate:.8f} {target_code} using the selected reference/quote path."})
+                answer = (
+                    f"At the current {fx.get('source', 'reference')} rate, 1 {source_code} = {rate:.8f} {target_code}. "
+                    f"{source_code} {source_amount:,.2f} is approximately {target_code} {conv['converted_amount']:,.2f}. "
+                    f"Rate date: {fx.get('rate_date') or 'unavailable'}. This is an indicative reference/quote and may differ from a bank's settlement rate or fees."
+                )
+                trace.append({"step": "RECOMMEND", "status": "completed", "detail": "Provided the conversion without changing account state."})
+                return self._result("agentic_local", answer, trace, {"conversion": conv, "currency_overview": self.engine.currency_overview()})
+
+        # Case B: incoming funds + student decision, e.g. "I received RMB 10,000. What should I do?"
+        received_currency = next((code for code in supported if code in detected and any(k in t for k in [
+            "received", "got ", "got paid", "family sent", "sent me", "allowance", "incoming", "from my family",
+        ])), None)
+        if received_currency and (tuition_context or conversion_question or "what should i do" in t or "plan" in t):
+            incoming_amount = detected[received_currency]
+            target_currency = next((code for code in mentioned if code != received_currency), planning)
+            trace = [
+                {"step": "UNDERSTAND", "status": "completed", "detail": f"Detected hypothetical incoming {received_currency} funds and a student-finance planning request."},
+                {"step": "OBSERVE", "status": "completed", "detail": "Read the saved multi-currency wallet and upcoming obligations."},
+            ]
+            overview = self.engine.currency_overview()
+            balance = self.engine.get_balance()
+            forecast = self.engine.forecast()
+            try:
+                to_target = self.engine.convert_currency(incoming_amount, received_currency, target_currency)
+                to_sgd = self.engine.convert_currency(incoming_amount, received_currency, "SGD") if received_currency != "SGD" else {
+                    "converted_amount": float(incoming_amount), "rate": 1.0, "from_currency": "SGD", "to_currency": "SGD",
+                    "fx": {"source": "Same currency", "rate_date": None, "live": False}
+                }
+            except ValueError as exc:
+                trace.append({"step": "FX", "status": "blocked", "detail": str(exc)})
+                return self._result("agentic_local", f"I cannot safely evaluate those funds right now: {exc}", trace, {"blocked_reason": "fx_unavailable"})
+
+            trace.append({"step": "SIMULATE", "status": "completed", "detail": f"Hypothetically valued {received_currency} {incoming_amount:,.2f}; account state was not changed."})
+            explicit_target_amount = None
+            if target_currency in detected and target_currency != received_currency:
+                explicit_target_amount = detected[target_currency]
+
+            if explicit_target_amount is not None and target_currency != received_currency:
+                needed_source = self.engine.money_value(Decimal(str(explicit_target_amount)) / Decimal(str(to_target["rate"])))
+                source_available = incoming_amount
+                trace.append({"step": "CALCULATE", "status": "completed", "detail": f"Calculated the source amount needed for the stated {target_currency} obligation."})
+                if needed_source <= source_available:
+                    answer = (
+                        f"You have {received_currency} {incoming_amount:,.2f} and a stated {target_currency} need of {target_currency} {explicit_target_amount:,.2f}. "
+                        f"At the current reference rate of 1 {received_currency} = {to_target['rate']:.8f} {target_currency}, that need would require about "
+                        f"{received_currency} {needed_source:,.2f}. I would not convert the full amount automatically; converting about {received_currency} {needed_source:,.2f} would cover the stated need and leave roughly "
+                        f"{received_currency} {money(incoming_amount - needed_source):,.2f} unconverted. "
+                        f"This is a scenario calculation only; rate date {to_target.get('fx', {}).get('rate_date') or 'unavailable'}, excluding bank/remittance spreads and fees."
+                    )
+                else:
+                    gap = self.engine.money_value(needed_source - source_available)
+                    answer = (
+                        f"At the current reference rate, {received_currency} {incoming_amount:,.2f} converts to about {target_currency} {to_target['converted_amount']:,.2f}, which is short of the stated "
+                        f"{target_currency} {explicit_target_amount:,.2f} need by about {target_currency} {money(explicit_target_amount - Decimal(str(to_target['converted_amount']))):,.2f}. "
+                        f"I would not recommend converting the full amount automatically; the remaining gap is roughly {received_currency} {gap:,.2f}, before fees/spread."
+                    )
+            else:
+                added_sgd = Decimal(str(to_sgd["converted_amount"]))
+                projected_after = self.engine.money_value(Decimal(str(forecast["projected_balance_sgd"])) + added_sgd)
+                if projected_after < 0:
+                    answer = (
+                        f"You received {received_currency} {incoming_amount:,.2f}. At the current reference rate that is about S$ {added_sgd:,.2f}. "
+                        f"Even after treating the receipt as hypothetical income, the 30-day projection remains a funding gap of about S$ {abs(projected_after):,.2f}. "
+                        f"I would convert only the amount needed for the documented gap, not the entire {received_currency} balance, and keep the remaining funds available as a buffer."
+                    )
+                else:
+                    answer = (
+                        f"You received {received_currency} {incoming_amount:,.2f}. Its indicative value is about S$ {added_sgd:,.2f} at the current reference rate. "
+                        f"With that hypothetical receipt, the 30-day projection becomes about S$ {projected_after:,.2f}. "
+                        f"I would not convert it all automatically; keep the source currency unless you have a specific SGD obligation, then convert only what that obligation requires."
+                    )
+            trace.append({"step": "RECOMMEND", "status": "completed", "detail": "Produced a multi-currency recommendation without mutating the user's balances or creating a transaction."})
+            return self._result("agentic_local", answer, trace, {
+                "currency_overview": overview,
+                "balances": balance,
+                "forecast": forecast,
+                "incoming_currency": received_currency,
+                "incoming_amount": float(incoming_amount),
+                "conversion_to_target": to_target,
+                "conversion_to_sgd": to_sgd,
+            })
+
+        # Case C: "I have CNY 10,000 and need SGD 3,000 of tuition".
+        if len(detected) >= 2 and tuition_context:
+            source_code, source_amount = next(iter(detected.items()))
+            target_candidates = [code for code in mentioned if code != source_code and code in detected]
+            if target_candidates:
+                target_code = target_candidates[0]
+                target_amount = detected[target_code]
+                try:
+                    conv = self.engine.convert_currency(source_amount, source_code, target_code)
+                    needed_source = self.engine.money_value(Decimal(str(target_amount)) / Decimal(str(conv["rate"])))
+                    answer = (
+                        f"{source_code} {source_amount:,.2f} is approximately {target_code} {conv['converted_amount']:,.2f} at 1 {source_code} = {conv['rate']:.8f} {target_code}. "
+                    )
+                    if conv["converted_amount"] >= float(target_amount):
+                        answer += (
+                            f"That is enough for your stated {target_code} {target_amount:,.2f} tuition amount. I would convert only about {source_code} {needed_source:,.2f}, rather than the full balance. "
+                            f"The quote is indicative and excludes bank/remittance fees or spread."
+                        )
+                    else:
+                        gap_target = self.engine.money_value(Decimal(str(target_amount)) - Decimal(str(conv["converted_amount"])))
+                        answer += f"That leaves a gap of about {target_code} {gap_target:,.2f}; the remaining funding would need another source."
+                    trace = [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": f"Detected {source_code} funds and a {target_code} tuition requirement."},
+                        {"step": "FX", "status": "completed", "detail": f"Fetched the direct {source_code}→{target_code} reference quote."},
+                        {"step": "REASON", "status": "completed", "detail": "Compared converted funds with the stated tuition amount."},
+                        {"step": "RECOMMEND", "status": "completed", "detail": "Recommended converting only the amount required rather than the full source balance."},
+                    ]
+                    return self._result("agentic_local", answer, trace, {"conversion": conv, "tuition": {"currency": target_code, "amount": float(target_amount)}})
+                except ValueError as exc:
+                    return self._result("agentic_local", f"I could not safely compare those currencies: {exc}", [{"step":"FX","status":"blocked","detail":str(exc)}], {"blocked_reason":"fx_unavailable"})
+
         # Multi-step incoming-funds scenario: "I received RM10,000 ... tuition ... should I convert?"
         if received and myr is not None and (tuition_context or conversion_question):
             trace = [

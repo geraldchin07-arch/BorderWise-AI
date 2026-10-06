@@ -1325,6 +1325,7 @@ class LocalAgentPlanner:
                     "detected_goals": detected_goals,
                     "incoming_funds": incoming_simulation,
                     "forecast_after_income": forecast_after_income,
+                    "scenario_forecast": scenario_forecast,
                     "decision": decision,
                     "state_changed": False,
                 },

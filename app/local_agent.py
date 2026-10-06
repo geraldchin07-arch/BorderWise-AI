@@ -290,7 +290,11 @@ class LocalAgentPlanner:
         protected = to_planning(min(reserve_balance, reserve_amount), reserve_currency) if reserve_represented else self.engine.money_value(0)
         usable = self.engine.money_value(max(self.engine.money_value(0), starting - protected))
         factor = Decimal(str(max(1, int(horizon_days)))) / Decimal("30")
-        spending = to_planning(monthly_expenses[0], monthly_expenses[1]) * factor if monthly_expenses else self.engine.money_value(0)
+        # A user-entered "monthly expenses" amount is a monthly planning baseline,
+        # so keep the stated monthly figure intact even when the obligation horizon
+        # is shorter than 30 days. The scenario label communicates the horizon;
+        # the spending input itself remains the user's stated monthly budget.
+        spending = to_planning(monthly_expenses[0], monthly_expenses[1]) if monthly_expenses else self.engine.money_value(0)
         tuition_value = to_planning(tuition[0], tuition[1]) if tuition else self.engine.money_value(0)
         remittance_value = to_planning(remittance[0], remittance[1]) if remittance else self.engine.money_value(0)
         incoming_value = to_planning(incoming[0], incoming[1]) if incoming else self.engine.money_value(0)

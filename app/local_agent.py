@@ -15,6 +15,9 @@ class LocalAgentPlanner:
 
     def __init__(self, engine: Any):
         self.engine = engine
+        # Conversation-local hypothetical context; never stored as real balances.
+        if not hasattr(self.engine, "_agent_scenario_context"):
+            self.engine._agent_scenario_context = {}
 
     def _amount(self, text: str, currency: str) -> Decimal | None:
         """Extract an amount for a requested currency.
@@ -474,6 +477,11 @@ class LocalAgentPlanner:
 
     def run(self, text: str) -> dict[str, Any] | None:
         t = text.lower().strip()
+        remembered_context = getattr(self.engine, "_agent_scenario_context", {})
+        current_wallet = self._extract_wallet_balances_from_text(t)
+        if current_wallet:
+            remembered_context["wallet_balances"] = dict(current_wallet)
+            self.engine._agent_scenario_context = remembered_context
         myr = self._amount(t, "MYR")
         sgd = self._amount(t, "SGD")
 
@@ -866,6 +874,8 @@ class LocalAgentPlanner:
         )
         if goal_planning_question and goal_plan_ready:
             wallet_balances = self._extract_wallet_balances_from_text(t)
+            if not wallet_balances:
+                wallet_balances = dict(remembered_context.get("wallet_balances", {}))
             use_scenario_wallet = len(wallet_balances) >= 1
             horizon = message_horizon_days or 30
 
@@ -1688,7 +1698,11 @@ class LocalAgentPlanner:
         # IMPORTANT: words like "conversion" or "convert" alone are not enough to
         # authorize preparation; the user must clearly request an action and provide
         # an exact amount. Never infer an action amount from a forecast.
-        explicit_action = any(k in t for k in [
+        advisory_action_question = any(k in t for k in [
+            "can i", "could i", "should i", "would it", "is it safe", "is it okay",
+            "while protecting", "while keeping",
+        ])
+        explicit_action = (not advisory_action_question) and any(k in t for k in [
             "prepare", "transfer", "send", "remit", "remittance", "pay",
             "make the transfer", "make a transfer", "create a transfer",
             "set up a transfer", "convert rm", "convert myr", "exchange rm",

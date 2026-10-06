@@ -964,8 +964,36 @@ class LocalAgentPlanner:
                         + (" from explicitly stated hypothetical balances." if use_scenario_wallet else " from the saved wallet.")
                     ),
                 },
-                {
-                    "step": "REASON",
+            ]
+            if incoming_labeled:
+                trace.extend([
+                    {
+                        "step": "SIMULATE",
+                        "status": "completed",
+                        "detail": (
+                            f"Simulated the stated {incoming_labeled[1]} {incoming_labeled[0]:,.2f} incoming funds "
+                            "without changing account state."
+                        ),
+                    },
+                    {
+                        "step": "FX",
+                        "status": "completed",
+                        "detail": (
+                            "Validated the incoming-funds valuation through the deterministic FX path; "
+                            "the result remains hypothetical until funds actually arrive."
+                        ),
+                    },
+                    {
+                        "step": "CALCULATE",
+                        "status": "completed",
+                        "detail": (
+                            "Recomputed the projected liquidity impact after the hypothetical incoming funds "
+                            "before evaluating downstream goals."
+                        ),
+                    },
+                ])
+            trace.append({
+                "step": "REASON",
                     "status": "completed",
                     "detail": (
                         f"Prioritized essential obligations first, protected the {reserve_currency} reserve, "

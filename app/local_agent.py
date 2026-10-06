@@ -495,6 +495,19 @@ class LocalAgentPlanner:
         ).upper()
         message_horizon_days = self._extract_horizon_days(t)
         conversion_question = any(k in t for k in ["convert", "exchange", "should i", "what should i do", "enough", "need to"])
+        # A conditional family-income question must stay advisory and must not be
+        # swallowed by the generic multi-goal planner before its dedicated handler.
+        conditional_income_question = (
+            any(k in t for k in [
+                "can i assume", "assume that money", "assume the money", "count that money",
+                "treat that money", "can i count it", "can i count that",
+            ])
+            and any(k in t for k in ["might", "may", "could", "possibly", "maybe"])
+            and any(k in t for k in ["parent", "parents", "family"])
+        )
+        scenario_context_available = bool(
+            current_wallet or remembered_context.get("wallet_balances")
+        )
 
         # Explicit execution requests are handled before informational FX questions.
         # An execution command may NEVER create a new proposal or reuse an already
@@ -882,6 +895,8 @@ class LocalAgentPlanner:
             or (
                 affordability_question
                 and ("tuition" in detected_goals or "remittance" in detected_goals)
+                and scenario_context_available
+                and not conditional_income_question
             )
         )
         if goal_planning_question and goal_plan_ready:
@@ -1351,8 +1366,10 @@ class LocalAgentPlanner:
                 answer_parts.append(
                     f"Priority {item['rank']}: {item['goal'].replace('_', ' ').title()} — {status}."
                 )
+            starting_for_answer = forecast.get("starting_balance_planning", forecast.get("starting_portfolio_planning", 0.0))
             answer = (
                 "BorderWise's plan: " + " ".join(answer_parts) +
+                f" Starting scenario balance is {forecast['planning_currency']} {starting_for_answer:,.2f}. "
                 f" {forecast['horizon_days']}-day scenario position before conditional incoming funds: "
                 f"{forecast['planning_currency']} {forecast['projected_balance_planning']:,.2f}. "
                 + (
@@ -1825,11 +1842,7 @@ class LocalAgentPlanner:
             })
 
         # Conditional incoming money is never treated as confirmed funds.
-        conditional_income_question = any(k in t for k in [
-            "can i assume", "assume that money", "assume the money", "count that money",
-            "treat that money", "can i count it", "can i count that",
-        ]) and any(k in t for k in ["might", "may", "could", "possibly", "maybe"])
-        if conditional_income_question and any(k in t for k in ["parent", "parents", "family"]):
+        if conditional_income_question:
             incoming = None
             for code in supported:
                 amount = self._amount(t, code)

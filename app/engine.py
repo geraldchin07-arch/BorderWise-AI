@@ -527,7 +527,7 @@ class FinanceEngine:
         return obligations
 
 
-    def recommend_funding(self, target_amount: float | Decimal, target_currency: str) -> dict[str, Any]:
+    def recommend_funding(self, target_amount: float | Decimal, target_currency: str, balances_override: dict[str, Any] | None = None) -> dict[str, Any]:
         """Recommend a minimum-conversion funding plan from the saved multi-currency wallet.
 
         The engine is deterministic: use the target-currency balance first, protect the
@@ -544,7 +544,7 @@ class FinanceEngine:
         meta = self.state.get("profile_meta", {})
         reserve_currency = str(meta.get("emergency_reserve_currency", "MYR")).upper()
         reserve_amount = money(meta.get("emergency_reserve_amount", self.state.get("emergency_reserve_myr", 0)))
-        balances = self.state.get("balances", {})
+        balances = self.state.get("balances", {}) if balances_override is None else {str(k).upper().strip(): money(v) for k, v in balances_override.items()}
 
         candidates: list[dict[str, Any]] = []
         skipped: list[dict[str, str]] = []
@@ -560,9 +560,37 @@ class FinanceEngine:
                 continue
 
             try:
-                conversion = self.convert_currency(available, code, target)
+                if code == target:
+                    rate = Decimal("1")
+                    conversion = {
+                        "amount": float(available),
+                        "from_currency": code,
+                        "to_currency": target,
+                        "converted_amount": float(available),
+                        "rate": 1.0,
+                        "fx": {"source": "Existing target-currency balance", "rate_date": None, "live": False, "mode": "same_currency"},
+                    }
+                else:
+                    from_rate, from_meta = self._currency_rate_to_sgd(code)
+                    target_rate, target_meta = self._currency_rate_to_sgd(target)
+                    rate = fxrate(from_rate / target_rate)
+                    conversion = {
+                        "amount": float(available),
+                        "from_currency": code,
+                        "to_currency": target,
+                        "converted_amount": float(money(available * rate)),
+                        "rate": float(rate),
+                        "fx": {
+                            "source_from": from_meta.get("source"),
+                            "source_to": target_meta.get("source"),
+                            "date_from": from_meta.get("rate_date"),
+                            "date_to": target_meta.get("rate_date"),
+                            "live_from": from_meta.get("live", False),
+                            "live_to": target_meta.get("live", False),
+                            "method": "cross-rate via SGD",
+                        },
+                    }
                 value = money(conversion["converted_amount"])
-                rate = fxrate(conversion["rate"])
             except ValueError as exc:
                 skipped.append({"currency": code, "reason": str(exc)})
                 continue

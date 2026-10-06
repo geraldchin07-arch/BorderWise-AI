@@ -747,6 +747,7 @@ class LocalAgentPlanner:
             constraints = []
             uncertainties = []
             incoming_simulation = None
+            forecast_after_income = None
 
             incoming_mentioned = any(k in t for k in [
                 "parents can send", "parents will send", "family will send",
@@ -904,6 +905,18 @@ class LocalAgentPlanner:
                         "note": f"{incoming_currency} is not configured in the current wallet; the expected income is not counted."
                     }
                 )
+                if "projected_shortfall_after_hypothetical_income_sgd" in incoming_simulation:
+                    forecast_after_income = {
+                        "projected_shortfall_sgd": float(
+                            incoming_simulation["projected_shortfall_after_hypothetical_income_sgd"]
+                        ),
+                        "hypothetical_only": True,
+                        "state_changed": False,
+                    }
+                else:
+                    uncertainties.append(
+                        f"{incoming_currency} incoming funds could not be included in the projected impact because that currency is not configured."
+                    )
                 actions.insert(0, {
                     "priority": 0,
                     "action": "APPLY_INCOMING_FUNDS_TO_PLAN",
@@ -1026,6 +1039,7 @@ class LocalAgentPlanner:
                     "planning_horizon_days": horizon,
                     "detected_goals": detected_goals,
                     "incoming_funds": incoming_simulation,
+                    "forecast_after_income": forecast_after_income,
                     "decision": decision,
                     "state_changed": False,
                 },

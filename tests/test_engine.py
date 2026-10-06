@@ -1552,6 +1552,8 @@ def test_local_agent_values_all_explicit_multi_currency_balances_in_sgd():
     })
     r = e.agent("I have SGD 2000, CNY 15000 and USD 500. How much is that worth in SGD?")
     assert r["data"]["valuation"]["total"] == 5490.0
+    assert r["data"]["agent_mode"] == "deterministic_portfolio_valuation"
+    assert r["data"]["state_changed"] is False
     assert "Total ≈ SGD 5,490.00" in r["answer"]
 
 

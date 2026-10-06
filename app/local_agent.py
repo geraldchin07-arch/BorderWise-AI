@@ -555,7 +555,7 @@ class LocalAgentPlanner:
             and any(k in t for k in ["send", "remit", "family", "home"])
             and any(k in t for k in ["prioritize", "priority", "first", "before", "what should i do", "should i"])
         )
-        if competing_question:
+        if competing_question and "incoming" not in detected_goals:
             tuition_labeled = self._extract_labeled_amount(t, ["tuition", "tuition fee", "tuition fees"])
             remittance_labeled = self._extract_labeled_amount(
                 t, ["send", "sending", "remit", "remittance", "send to my family", "send home"]
@@ -672,7 +672,7 @@ class LocalAgentPlanner:
         goal_keywords = {
             "tuition": ["tuition", "school fees", "semester fee", "school fee"],
             "remittance": ["send home", "send money", "family", "remit", "remittance", "back home"],
-            "incoming": ["receive", "received", "got paid", "family sent", "allowance", "incoming", "parents send"],
+            "incoming": ["receive", "received", "got paid", "family sent", "allowance", "incoming", "parents send", "parents can send", "parents will send", "family can send", "family will send"],
             "spending": ["spending", "expenses", "living costs", "monthly costs"],
             "reserve": ["emergency reserve", "emergency fund", "keep a reserve", "keep aside"],
             "fx": ["convert", "exchange", "currency", "fx"],

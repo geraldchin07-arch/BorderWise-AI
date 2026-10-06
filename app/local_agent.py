@@ -683,10 +683,14 @@ class LocalAgentPlanner:
             "reserve": ["emergency reserve", "emergency fund", "keep a reserve", "keep aside"],
             "fx": ["convert", "exchange", "currency", "fx"],
         }
-        detected_goals = [
-            goal for goal, words in goal_keywords.items()
-            if any(word in t for word in words)
-        ]
+        detected_goals = []
+        for goal, words in goal_keywords.items():
+            if any(word in t for word in words):
+                detected_goals.append(goal)
+            elif goal == "remittance" and "send" in t and any(
+                destination in t for destination in ["home", "family", "overseas", "abroad"]
+            ):
+                detected_goals.append(goal)
         goal_planning_question = any(k in t for k in [
             "what should i do", "what do i do", "help me plan", "make a plan",
             "how should i manage", "how should i handle", "what should i prioritize",
@@ -694,7 +698,15 @@ class LocalAgentPlanner:
             "should i convert", "should i use",
         ])
 
-        if goal_planning_question and len(detected_goals) >= 2:
+        goal_plan_ready = (
+            len(detected_goals) >= 3
+            or (
+                "tuition" in detected_goals
+                and "incoming" in detected_goals
+                and len(detected_goals) >= 2
+            )
+        )
+        if goal_planning_question and goal_plan_ready:
             wallet_balances = self._extract_wallet_balances_from_text(t)
             use_scenario_wallet = len(wallet_balances) >= 1
             forecast = self.engine.forecast_portfolio(

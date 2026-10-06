@@ -351,6 +351,9 @@ class LocalAgentPlanner:
             "tuition", "school fees", "tuition fee", "tuition fees",
             "fees", "accommodation", "hostel", "semester fee",
         ])
+        planning = str(
+            self.engine.state.get("profile_meta", {}).get("planning_currency", "SGD")
+        ).upper()
         message_horizon_days = self._extract_horizon_days(t)
         conversion_question = any(k in t for k in ["convert", "exchange", "should i", "what should i do", "enough", "need to"])
 
@@ -1406,7 +1409,6 @@ class LocalAgentPlanner:
             if any(re.search(rf"(?<![A-Za-z]){re.escape(alias)}(?![A-Za-z])", t, re.I) for alias in aliases[code]):
                 mentioned.add(code)
 
-        planning = str(self.engine.state.get("profile_meta", {}).get("planning_currency", "SGD")).upper()
         conversion_words = any(k in t for k in [
             "convert", "exchange", "to ", "into ", "worth", "how much is",
         ])

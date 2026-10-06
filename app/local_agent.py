@@ -1775,6 +1775,67 @@ class LocalAgentPlanner:
             "convert", "exchange", "to ", "into ", "worth", "how much is",
         ])
 
+        # Portfolio valuation: answer multi-currency "worth in SGD" questions as a total.
+        total_value_question = any(k in t for k in [
+            "how much is that worth", "worth in sgd", "total in sgd",
+            "how much do i have in sgd", "what is that worth in sgd", "total worth",
+        ]) and len(detected) >= 2
+        if total_value_question:
+            lines = []
+            total_sgd = self.engine.money_value(0)
+            for code, amount in detected.items():
+                if code == "SGD":
+                    value = self.engine.money_value(amount)
+                    rate = Decimal("1")
+                else:
+                    rate, _ = self.engine._currency_rate_to_sgd(code)
+                    value = self.engine.money_value(amount * rate)
+                total_sgd = self.engine.money_value(total_sgd + value)
+                if code == "SGD":
+                    lines.append(f"SGD {amount:,.2f} = SGD {value:,.2f}")
+                else:
+                    lines.append(f"{code} {amount:,.2f} ≈ SGD {value:,.2f} at 1 {code} = {rate:.8f} SGD")
+            trace = [
+                {"step": "UNDERSTAND", "status": "completed", "detail": "Detected a multi-currency portfolio valuation request."},
+                {"step": "FX", "status": "completed", "detail": "Valued every explicitly stated currency in SGD using the configured/reference FX path."},
+                {"step": "CALCULATE", "status": "completed", "detail": f"Total stated portfolio value: SGD {total_sgd:,.2f}."},
+            ]
+            answer = "Your stated balances are approximately:\n" + "\n".join(lines) + f"\n\nTotal ≈ SGD {total_sgd:,.2f}. FX quotes are indicative and may differ from bank settlement rates or fees."
+            return self._result("agentic_local", answer, trace, {
+                "valuation": {"currency": "SGD", "total": float(total_sgd), "balances": {k: float(v) for k, v in detected.items()}}
+            })
+
+        # Conditional incoming money is never treated as confirmed funds.
+        conditional_income_question = any(k in t for k in [
+            "can i assume", "assume that money", "assume the money", "count that money",
+            "treat that money", "can i count it", "can i count that",
+        ]) and any(k in t for k in ["might", "may", "could", "possibly", "maybe"])
+        if conditional_income_question and any(k in t for k in ["parent", "parents", "family"]):
+            incoming = None
+            for code in supported:
+                amount = self._amount(t, code)
+                if amount is not None:
+                    incoming = (amount, code)
+                    break
+            tuition_labeled = self._extract_labeled_amount(t, ["tuition", "tuition fee", "tuition fees"])
+            answer = "No. Treat that money as conditional, not confirmed, until it is actually received or otherwise reliably committed."
+            if incoming:
+                inc_amount, inc_code = incoming
+                inc_rate, _ = self.engine._currency_rate_to_sgd(inc_code)
+                inc_sgd = self.engine.money_value(inc_amount * inc_rate)
+                answer += f" The possible {inc_code} {inc_amount:,.2f} would add about SGD {inc_sgd:,.2f} only in a separate what-if scenario."
+            if tuition_labeled:
+                tuition_amount, tuition_code = tuition_labeled
+                tuition_rate, _ = self.engine._currency_rate_to_sgd(tuition_code)
+                tuition_sgd = self.engine.money_value(tuition_amount * tuition_rate)
+                answer += f" Your stated tuition is about SGD {tuition_sgd:,.2f}, so BorderWise should not mark it funded using conditional money alone."
+            trace = [
+                {"step": "UNDERSTAND", "status": "completed", "detail": "Detected uncertain incoming family support."},
+                {"step": "REASON", "status": "completed", "detail": "Separated confirmed funds from hypothetical incoming funds."},
+                {"step": "SECURITY", "status": "completed", "detail": "No account state changed and no transaction was created."},
+            ]
+            return self._result("agentic_local", answer, trace, {"conditional_income": True, "state_changed": False})
+
         # Case W: what-if comparison between explicitly mentioned source currencies.
         # This is advisory only: each option is simulated independently and no wallet
         # balances, proposals, or transactions are changed.

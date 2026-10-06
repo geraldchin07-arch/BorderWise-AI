@@ -788,10 +788,10 @@ class LocalAgentPlanner:
                     )
                 ))
             )
-            reserve_balance = self.engine.money_value(
-                (wallet_balances if use_scenario_wallet else self.engine.get_balance()).get(reserve_currency, 0)
-            )
-            reserve_protected = reserve_balance >= reserve_amount
+            scenario_wallet = wallet_balances if use_scenario_wallet else self.engine.get_balance()
+            reserve_represented = reserve_currency in scenario_wallet
+            reserve_balance = self.engine.money_value(scenario_wallet.get(reserve_currency, 0))
+            reserve_protected = reserve_balance >= reserve_amount if reserve_represented else False
 
             priorities = []
             actions = []
@@ -910,14 +910,20 @@ class LocalAgentPlanner:
                 projected_after = self.engine.money_value(
                     Decimal(str(forecast["projected_balance_planning"])) - remittance_target_planning
                 )
+                remittance_reason = (
+                    "Family remittance is secondary to a dated tuition obligation when both are present."
+                    if tuition_labeled
+                    else (
+                        "Remittance is evaluated against projected liquidity and the protected reserve."
+                        if reserve_represented
+                        else
+                        "Remittance is evaluated against projected liquidity, but the configured emergency reserve is not represented in the supplied scenario wallet."
+                    )
+                )
                 priorities.append({
                     "rank": remittance_priority,
                     "goal": "remittance",
-                    "reason": (
-                        "Family remittance is secondary to a dated tuition obligation when both are present."
-                        if tuition_labeled
-                        else "Remittance is evaluated against projected liquidity and the protected reserve."
-                    ),
+                    "reason": remittance_reason,
                     "status": "affordable" if projected_after >= 0 and reserve_protected else "needs_review",
                 })
                 if projected_after >= 0 and reserve_protected:
@@ -1036,7 +1042,11 @@ class LocalAgentPlanner:
                         ),
                     })
 
-            if not reserve_protected:
+            if not reserve_represented:
+                uncertainties.append(
+                    f"The configured {reserve_currency} {reserve_amount:,.2f} emergency reserve is not represented in the supplied scenario wallet, so BorderWise cannot verify that the reserve is protected."
+                )
+            elif not reserve_protected:
                 constraints.append(
                     f"The {reserve_currency} emergency reserve is below its configured {reserve_currency} {reserve_amount:,.2f} floor."
                 )
@@ -1114,6 +1124,14 @@ class LocalAgentPlanner:
                     "amount": float(reserve_amount),
                     "balance": float(reserve_balance),
                     "protected": reserve_protected,
+                    "represented_in_scenario": reserve_represented,
+                    "verification_status": (
+                        "protected"
+                        if reserve_represented and reserve_protected
+                        else "below_floor"
+                        if reserve_represented
+                        else "not_represented"
+                    ),
                 },
                 "state_changed": False,
             }
@@ -1137,8 +1155,10 @@ class LocalAgentPlanner:
                 f" 30-day projected position: {forecast['planning_currency']} {forecast['projected_balance_planning']:,.2f}. "
                 + (
                     "Your emergency reserve is protected. "
-                    if reserve_protected else
+                    if reserve_represented and reserve_protected else
                     "Your emergency reserve is below its configured floor, so discretionary outflows should pause. "
+                    if reserve_represented else
+                    "Your configured emergency reserve is not represented in the supplied scenario, so its protection cannot be verified. "
                 )
                 + (
                     f"Constraints: {' '.join(constraints)} "

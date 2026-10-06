@@ -652,15 +652,17 @@ class LocalAgentPlanner:
                             target_code,
                             source_code,
                         )
-                        source_needed = self.engine.money_value(
-                            Decimal(str(target_amount)) / Decimal(str(conv["rate"]))
-                        )
+                        # convert_currency(target -> source) already returns the
+                        # source amount required for the target amount.
+                        source_needed = self.engine.money_value(Decimal(str(conv["converted_amount"])))
                         feasible = source_needed <= available and not reserve_block
                         options.append({
                             "currency": source_code,
                             "balance": float(available),
                             "source_amount_needed": float(source_needed),
-                            "rate_to_target": float(conv["rate"]),
+                            "rate_to_target": float(
+                                Decimal("1") / Decimal(str(conv["rate"]))
+                            ),
                             "feasible": feasible,
                             "remaining_source_after": float(
                                 self.engine.money_value(max(Decimal("0"), available - source_needed))

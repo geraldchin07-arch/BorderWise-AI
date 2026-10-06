@@ -17,7 +17,7 @@ load_dotenv()
 BASE = Path(__file__).resolve().parent.parent
 engine = FinanceEngine()
 
-app = FastAPI(title="BorderWise AI v7.3.0 — Currency-First", version="7.3.0")
+app = FastAPI(title="XKF5 AI v7.3.0 — Currency-First", version="7.3.0")
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
 @app.middleware("http")

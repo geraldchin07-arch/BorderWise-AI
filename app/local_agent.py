@@ -436,7 +436,7 @@ class LocalAgentPlanner:
             else "high"
         )
         enriched_data["judge"] = {
-            "title": "BorderWise decision evidence",
+            "title": "XKF5 decision evidence",
             "goal": goal,
             "horizon_days": enriched_data.get("horizon_days"),
             "urgency": enriched_data.get("urgency"),
@@ -543,7 +543,7 @@ class LocalAgentPlanner:
                 tuition_rate, _ = self.engine._currency_rate_to_sgd(tuition_code)
                 tuition_sgd = self.engine.money_value(tuition_amount * tuition_rate)
                 answer += (
-                    f" Your stated tuition is about SGD {tuition_sgd:,.2f}, so BorderWise "
+                    f" Your stated tuition is about SGD {tuition_sgd:,.2f}, so XKF5 "
                     "should not mark it funded using conditional money alone."
                 )
 
@@ -680,7 +680,7 @@ class LocalAgentPlanner:
 
         # Credit-building guidance is intentionally educational and evidence-bounded.
         # The demo ledger does not contain credit-account utilization or missed-payment history,
-        # so BorderWise must never invent a credit score or claim that the liquidity health score
+        # so XKF5 must never invent a credit score or claim that the liquidity health score
         # represents creditworthiness.
         credit_question = any(k in t for k in [
             "build credit", "building credit", "improve my credit", "improve credit",
@@ -737,7 +737,7 @@ class LocalAgentPlanner:
                 "detail": "Returned evidence-bounded credit-building guidance and identified the data needed for a real credit assessment.",
             })
             answer = (
-                "BorderWise cannot calculate your real credit score from this demo because the data does not include "
+                "XKF5 cannot calculate your real credit score from this demo because the data does not include "
                 "credit-account limits, utilization, account age, or missed-payment history. "
                 "For an international student, the safer foundation is consistent on-time payment of documented obligations, "
                 "keeping debt payments affordable within your cash-flow plan, and reviewing any credit product's eligibility, "
@@ -1284,7 +1284,7 @@ class LocalAgentPlanner:
                     "credit_readiness": credit_readiness,
                 })
                 uncertainties.append(
-                    "Actual credit-account data is unavailable, so BorderWise provides readiness guidance rather than a credit score."
+                    "Actual credit-account data is unavailable, so XKF5 provides readiness guidance rather than a credit score."
                 )
 
             if "spending" in detected_goals:
@@ -1305,7 +1305,7 @@ class LocalAgentPlanner:
 
             if not reserve_represented:
                 uncertainties.append(
-                    f"The configured {reserve_currency} {reserve_amount:,.2f} emergency reserve is not represented in the supplied scenario wallet, so BorderWise cannot verify that the reserve is protected."
+                    f"The configured {reserve_currency} {reserve_amount:,.2f} emergency reserve is not represented in the supplied scenario wallet, so XKF5 cannot verify that the reserve is protected."
                 )
             elif not reserve_protected:
                 constraints.append(
@@ -1435,7 +1435,7 @@ class LocalAgentPlanner:
                 )
             starting_for_answer = forecast.get("starting_balance_planning", forecast.get("starting_portfolio_planning", 0.0))
             answer = (
-                "BorderWise's plan: " + " ".join(answer_parts) +
+                "XKF5's plan: " + " ".join(answer_parts) +
                 f" Starting scenario balance is {forecast['planning_currency']} {starting_for_answer:,.2f}. "
                 f" {forecast['horizon_days']}-day scenario position before conditional incoming funds: "
                 f"{forecast['planning_currency']} {forecast['projected_balance_planning']:,.2f}. "

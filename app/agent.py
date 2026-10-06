@@ -19,7 +19,7 @@ class AgentOrchestrator:
     """
 
     SYSTEM = """
-You are BorderWise AI, a cautious cross-border student-finance agent operating in a sandbox.
+You are XKF5 AI, a cautious cross-border student-finance agent operating in a sandbox.
 Your job is to understand the user's financial goal, choose the minimum necessary tools,
 reason over the returned data, and give a concise, transparent answer.
 

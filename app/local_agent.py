@@ -1908,7 +1908,7 @@ class LocalAgentPlanner:
                 "valuation": {"currency": "SGD", "total": float(total_sgd), "balances": {k: float(v) for k, v in detected.items()}}
             })
 
-                # Case W: what-if comparison between explicitly mentioned source currencies.
+        # Case W: what-if comparison between explicitly mentioned source currencies.
         # This is advisory only: each option is simulated independently and no wallet
         # balances, proposals, or transactions are changed.
         compare_question = any(k in t for k in [

@@ -39,6 +39,7 @@ CRITICAL SAFETY RULES:
 - This is a competition sandbox, not a bank and not a source of guaranteed financial advice.
 
 Prefer tool use over guessing. For a multi-part question, use multiple tools and synthesize.
+For complex student-finance situations, build a goal-aware plan: identify essential obligations and deadlines, protect reserves, compare multi-currency funding options, simulate hypothetical income when appropriate, and distinguish recommendations from executable actions.
 """.strip()
 
     def __init__(self, engine: Any):
@@ -57,6 +58,13 @@ Prefer tool use over guessing. For a multi-part question, use multiple tools and
             }),
             self._tool("get_obligations", "Read upcoming student-finance obligations and due days.", {}),
             self._tool("forecast_cashflow", "Calculate the deterministic 30-day SGD cash-flow forecast.", {}),
+            self._tool("forecast_portfolio", "Calculate deterministic 30-day liquidity using the full multi-currency wallet in the user's planning currency.", {
+                "type": "object",
+                "properties": {
+                    "horizon_days": {"type": "integer", "minimum": 1, "maximum": 365}
+                },
+                "required": ["horizon_days"], "additionalProperties": False,
+            }),
             self._tool("analyze_spending", "Analyze the user's monthly SGD spending plan by category.", {}),
             self._tool("get_currency_overview", "Show all configured wallet currencies, their rates to SGD and indicative SGD values.", {}),
             self._tool("get_fx_rate", "Refresh and read the selected MYR/SGD rate plus source/date and live-reference fallback details.", {
@@ -121,6 +129,8 @@ Prefer tool use over guessing. For a multi-part question, use multiple tools and
                 return {"ok": True, "result": self.engine.get_obligations()}
             if name == "forecast_cashflow":
                 return {"ok": True, "result": self.engine.forecast()}
+            if name == "forecast_portfolio":
+                return {"ok": True, "result": self.engine.forecast_portfolio(int(args["horizon_days"]))}
             if name == "analyze_spending":
                 return {"ok": True, "result": self.engine.spending_analysis()}
             if name == "get_currency_overview":

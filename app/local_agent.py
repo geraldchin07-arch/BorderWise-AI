@@ -278,22 +278,54 @@ class LocalAgentPlanner:
         ])
 
         # Case A: explicit source/target conversion, e.g. "USD 500 to SGD".
+        # Prefer semantic phrases such as "have/received USD 500" for the source and
+        # "need/pay SGD 3,000" for the target. This avoids selecting a currency
+        # merely because its code appears earlier in the supported-currency list.
         if detected and conversion_words and not received:
             source_candidates = list(detected.items())
-            source_code, source_amount = source_candidates[0]
-            target_candidates = [code for code in mentioned if code != source_code]
-            if target_candidates:
-                target_code = target_candidates[0]
-            elif "to usd" in t:
-                target_code = "USD"
-            elif "to cny" in t or "to rmb" in t:
-                target_code = "CNY"
-            elif "to myr" in t or "to rm" in t:
-                target_code = "MYR"
-            elif "to sgd" in t or "into sgd" in t:
-                target_code = "SGD"
-            else:
-                target_code = planning
+
+            source_code = None
+            source_amount = None
+            target_code = None
+
+            for code, amount in source_candidates:
+                if re.search(
+                    rf"\b(?:have|has|hold|holding|own|got|received)\s+(?:about\s+)?(?:{re.escape(code.lower())})\s*[0-9]",
+                    t,
+                    re.I,
+                ):
+                    source_code, source_amount = code, amount
+                    break
+
+            if source_code is None:
+                source_code, source_amount = source_candidates[0]
+
+            for code in detected:
+                if code == source_code:
+                    continue
+                if re.search(
+                    rf"\b(?:need|needs|pay|paying|require|required|want|worth|to|into)\s+(?:about\s+)?(?:{re.escape(code.lower())})\s*[0-9]",
+                    t,
+                    re.I,
+                ):
+                    target_code = code
+                    break
+
+            if target_code is None:
+                target_candidates = [code for code in mentioned if code != source_code]
+                if target_candidates:
+                    target_code = target_candidates[0]
+                elif re.search(r"\bto\s+(?:usd)\b", t, re.I):
+                    target_code = "USD"
+                elif re.search(r"\bto\s+(?:cny|rmb)\b", t, re.I):
+                    target_code = "CNY"
+                elif re.search(r"\bto\s+(?:myr|rm)\b", t, re.I):
+                    target_code = "MYR"
+                elif re.search(r"\bto\s+(?:sgd|s\$)\b|\binto\s+(?:sgd|s\$)\b", t, re.I):
+                    target_code = "SGD"
+                else:
+                    target_code = planning
+
             if target_code != source_code:
                 trace = [
                     {"step": "UNDERSTAND", "status": "completed", "detail": f"Detected a {source_code}→{target_code} currency question."},

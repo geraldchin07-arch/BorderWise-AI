@@ -529,3 +529,50 @@ def test_currency_first_profile_supports_cny_planning_currency_and_arbitrary_con
     assert f["tuition_due_within_horizon"] is False
     conv = e.convert_currency(1000, "CNY", "MYR")
     assert round(conv["converted_amount"], 2) == round(1000 * 0.18 / 0.305, 2)
+
+
+def test_local_agent_structured_30_day_plan():
+    e = FinanceEngine()
+    before = e.get_balance()
+    r = e.agent("Give me a 30-day financial plan and tell me what I should prioritize.")
+    assert r["intent"] == "financial_plan"
+    assert r["data"]["state_changed"] is False
+    assert r["data"]["planning_currency"] == "SGD"
+    steps = [x["step"] for x in r["trace"]]
+    assert all(x in steps for x in ["UNDERSTAND", "OBSERVE", "REASON", "SECURITY", "RECOMMEND"])
+    assert e.get_balance() == before
+    assert e.state["proposals"] == {}
+
+
+def test_local_agent_plan_uses_spending_before_conversion_when_gap_is_small():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 5000, "MYR": 10000},
+        "balance_fx_modes": {"MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"MYR": 0.31},
+        "monthly_income_amount": 1000,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 0,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 60,
+        "accommodation_amount": 2000,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 1000, "Transport": 500},
+        "spending_classifications": {"Food & dining": "Adjustable", "Transport": "Core"},
+    })
+    before = e.get_balance()
+    r = e.agent("What should I prioritize in the next 30 days?")
+    assert r["intent"] == "financial_plan"
+    assert r["data"]["conversion_gap_planning"] == 0.0
+    assert r["data"]["funding_plan"] is None
+    assert "without requiring an automatic currency conversion" in r["answer"]
+    assert e.get_balance() == before
+    assert e.state["proposals"] == {}

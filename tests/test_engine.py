@@ -131,6 +131,8 @@ def test_local_agent_multi_currency_tuition_uses_correct_source_currency():
     assert abs(conv["amount"] - 10000.0) < 0.01
     assert "I cannot safely" not in r["answer"]
     assert "CNY" in r["answer"] and "SGD" in r["answer"]
+    assert "3,000.00" in r["answer"]
+    assert "enough" in r["answer"] or "gap" in r["answer"]
     assert e.state["proposals"] == {}
 
 

@@ -1417,3 +1417,39 @@ def test_local_agent_competing_goals_keeps_tuition_currency_associated_with_tuit
     assert remittance["amount"] == 3000.0
     assert "tuition of SGD 2,500.00" in r["answer"]
     assert "remittance after tuition is secured" in r["answer"]
+
+
+def test_local_agent_does_not_claim_missing_reserve_is_below_floor():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 2000, "CNY": 15000, "USD": 500},
+        "balance_fx_modes": {"CNY": "auto", "USD": "auto"},
+        "monthly_income_amount": 0,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 5000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 0,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 60,
+        "accommodation_amount": 0,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 300},
+        "spending_classifications": {"Food & dining": "Adjustable"},
+    })
+    r = e.agent(
+        "I have SGD 2000, CNY 15000 and USD 500. "
+        "My tuition of SGD 6000 is due in 3 weeks, I need to send RM2000 home next week, "
+        "and my parents may send SGD 1500 in two weeks. "
+        "Can I meet all my obligations while keeping my emergency reserve?"
+    )
+    reserve = r["data"]["decision"]["reserve"]
+    assert reserve["verification_status"] == "not_represented"
+    assert reserve["represented_in_scenario"] is False
+    assert "not represented in the supplied scenario" in r["answer"]
+    assert "below its configured floor" not in r["answer"]

@@ -288,11 +288,24 @@ class LocalAgentPlanner:
             target_code = None
             target_amount = None
             for code, amount in detected.items():
-                if re.search(
-                    rf"\\b(?:need|needs|pay|paying|require|required)\\b[^.;,]*?{re.escape(code.lower())}\\s*{re.escape(str(amount).replace('.', r'\\.'))}\\b",
-                    t,
-                    re.I,
-                ):
+                code_tokens = {
+                    "MYR": r"(?:myr|rm|ringgit)",
+                    "SGD": r"(?:sgd|s\\$)",
+                    "USD": r"(?:usd|us\\$|dollars?)",
+                    "CNY": r"(?:cny|rmb|yuan|renminbi|¥)",
+                    "JPY": r"(?:jpy|yen|¥)",
+                    "KRW": r"(?:krw|won|₩)",
+                    "THB": r"(?:thb|baht|฿)",
+                    "EUR": r"(?:eur|€|euros?)",
+                    "GBP": r"(?:gbp|£|pounds?)",
+                    "AUD": r"(?:aud|a\\$|australian dollars?)",
+                    "CAD": r"(?:cad|c\\$|canadian dollars?)",
+                    "HKD": r"(?:hkd|hk\\$|hong kong dollars?)",
+                    "TWD": r"(?:twd|nt\\$|taiwan dollars?)",
+                    "INR": r"(?:inr|₹|rupees?)",
+                }
+                token = code_tokens.get(code, re.escape(code.lower()))
+                if re.search(rf"\\b(?:need|needs|pay|paying|require|required)\\b[^.;,]*?{token}\\s*[0-9][0-9,]*(?:\\.[0-9]+)?", t, re.I):
                     target_code, target_amount = code, amount
                     break
             if target_code is None:

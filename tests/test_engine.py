@@ -1419,6 +1419,16 @@ def test_local_agent_competing_goals_keeps_tuition_currency_associated_with_tuit
     assert "remittance after tuition is secured" in r["answer"]
 
 
+
+
+def test_local_agent_wallet_parser_does_not_treat_remittance_as_owned_balance():
+    e = FinanceEngine()
+    planner = __import__("app.local_agent", fromlist=["LocalAgentPlanner"]).LocalAgentPlanner(e)
+    balances = planner._extract_wallet_balances_from_text(
+        "I have SGD 2000, CNY 15000 and USD 500, and I need to send RM2000 home next week."
+    )
+    assert balances == {"SGD": Decimal("2000"), "CNY": Decimal("15000"), "USD": Decimal("500")}
+
 def test_local_agent_does_not_claim_missing_reserve_is_below_floor():
     e = FinanceEngine()
     e.update_profile_general({

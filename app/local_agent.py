@@ -372,6 +372,7 @@ class LocalAgentPlanner:
             "what should i convert", "which currency should i use", "which currency to use",
             "what should i use", "how should i fund", "which account should i use",
             "best currency to use", "best currency", "how much should i convert",
+            "what should i do", "best way to fund", "how should i pay",
         ])
         if funding_question and tuition_context:
             target_code = None
@@ -383,7 +384,7 @@ class LocalAgentPlanner:
                     break
             if target_code is None:
                 for code, amount in detected.items():
-                    if code == planning and re.search(r"\\b(?:need|needs|pay|paying|require|required)\\b", t, re.I):
+                    if code == planning and re.search(r"\b(?:need|needs|pay|paying|require|required)\b", t, re.I):
                         target_code, target_amount = code, amount
                         break
             if target_code is None:
@@ -446,35 +447,65 @@ class LocalAgentPlanner:
                         f"{x['from_currency']} {x['source_amount']:,.2f} → {x['to_currency']} {x['target_amount']:,.2f}"
                         for x in funding["plan"]
                     )
-                    ranked = [
+                    selected_sources = [x["from_currency"] for x in funding.get("plan", [])]
+                    conversion_count = sum(1 for x in funding.get("plan", []) if x["from_currency"] != x["to_currency"])
+                    candidates = [
                         x for x in funding.get("candidates", [])
                         if x.get("available_in_target", 0) > 0
                     ]
+                    non_selected = [x for x in candidates if x["currency"] not in selected_sources]
                     ranked_text = "; ".join(
-                        f"{x['currency']} has {x['available_in_target']:,.2f} {target_code} of usable value"
-                        for x in ranked[:3]
+                        f"{x['currency']} ≈ {x['available_in_target']:,.2f} {target_code}"
+                        for x in candidates[:4]
                     )
+                    if selected_sources == [target_code]:
+                        decision_reason = (
+                            f"Your existing {target_code} balance already covers the requirement, so no FX conversion is needed."
+                        )
+                    else:
+                        source_reason_parts = []
+                        if target_code in selected_sources:
+                            source_reason_parts.append(
+                                f"existing {target_code} funds were used first"
+                            )
+                        for source in selected_sources:
+                            if source != target_code:
+                                candidate = next((x for x in candidates if x["currency"] == source), None)
+                                if candidate:
+                                    source_reason_parts.append(
+                                        f"{source} was selected because it had about {candidate['available_in_target']:,.2f} {target_code} of usable value"
+                                    )
+                        decision_reason = "; ".join(source_reason_parts) + "."
+                    not_selected_text = ""
+                    if non_selected:
+                        names = ", ".join(x["currency"] for x in non_selected[:3])
+                        not_selected_text = (
+                            f" I did not need {names} because the target was fully funded before those balances were required."
+                        )
                     trace.append({
                         "step": "REASON",
                         "status": "completed",
                         "detail": (
-                            "Compared target-currency funds first, then ranked usable source balances by their target-equivalent value "
-                            "to minimize the number of conversions while keeping the reserve protected."
+                            f"Selected {', '.join(selected_sources)} with {conversion_count} FX conversion(s). "
+                            f"Reason: {decision_reason}"
                         ),
                     })
                     answer = (
-                        f"To fund {target_code} {target_amount:,.2f}, I would use the wallet rather than convert everything. "
-                        f"Recommended funding: {legs_text}. "
-                        f"The selection first uses existing {target_code} funds, then chooses the largest usable target-equivalent balance so fewer source currencies need to be converted. "
-                        f"Candidate snapshot: {ranked_text or 'no additional usable currency balances'}. "
-                        "The emergency reserve remains protected. No transaction was created or executed."
+                        f"Decision: fund {target_code} {target_amount:,.2f} using {legs_text}. "
+                        f"Why: {decision_reason}"
+                        f"{not_selected_text} "
+                        f"Usable-wallet ranking: {ranked_text or 'no additional usable balances'}. "
+                        f"The {funding['reserve']['currency']} {funding['reserve']['amount']:,.2f} emergency reserve stays protected. "
+                        "This is an advisory scenario only; no transaction was created or executed."
                     )
                 else:
                     gap = funding["remaining_gap"]
                     answer = (
-                        f"I checked the full saved wallet for the {target_code} {target_amount:,.2f} requirement. "
-                        f"The available balances can fund about {funding['funded_amount']:,.2f} {target_code}, leaving a gap of about {gap:,.2f} {target_code}. "
-                        "I would not automatically convert the entire wallet; another funding source is still needed. No transaction was created."
+                        f"Decision: do not automatically convert the whole wallet. "
+                        f"I could fund about {funding['funded_amount']:,.2f} of the required {target_code} {target_amount:,.2f}, "
+                        f"leaving a gap of about {gap:,.2f} {target_code}. "
+                        f"The {funding['reserve']['currency']} {funding['reserve']['amount']:,.2f} emergency reserve remains protected. "
+                        "Another funding source is needed; no transaction was created or executed."
                     )
                 trace.append({"step": "RECOMMEND", "status": "completed", "detail": "Produced a wallet-wide funding recommendation without mutating account state."})
                 return self._result("agentic_local", answer, trace, {"funding_plan": funding, "wallet": self.engine.currency_overview(), "wallet_balances_used": {k: float(v) for k, v in (wallet_balances if use_scenario_wallet else self.engine.get_balance()).items()}, "wallet_source": "message" if use_scenario_wallet else "saved_profile"})

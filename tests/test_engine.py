@@ -755,3 +755,54 @@ def test_local_agent_judge_packet_flags_authorization_requirement():
     assert "Level 2 authorization required" in judge["security"]
     assert "authorize the pending proposal" in judge["action_required"]
     assert "AUTHORIZE" in judge["evidence_steps"]
+
+
+def test_local_agent_uses_natural_language_tuition_horizon():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 500, "CNY": 10000, "USD": 500, "MYR": 5000},
+        "balance_fx_modes": {"CNY": "custom", "USD": "custom", "MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"CNY": 0.19, "USD": 1.28, "MYR": 0.31},
+        "monthly_income_amount": 1000,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 3000,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 60,
+        "accommodation_amount": 400,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 300, "Transport": 100},
+        "spending_classifications": {"Food & dining": "Adjustable", "Transport": "Core"},
+    })
+    r = e.agent(
+        "My tuition is due in two weeks and I've got money in CNY, USD and MYR. "
+        "Help me decide how to handle it."
+    )
+    assert r["data"]["goal"] == "tuition_funding"
+    assert r["data"]["horizon_days"] == 14
+    assert r["data"]["funding_plan"]["target_amount"] == 3000.0
+    assert r["data"]["funding_plan"]["status"] == "funded"
+    assert any("14 days" in x["detail"] for x in r["trace"] if x["step"] == "OBSERVE")
+
+
+def test_local_agent_credit_building_guidance_is_evidence_bounded():
+    e = FinanceEngine()
+    before = e.get_balance()
+    r = e.agent("How can I build credit as an international student?")
+    assert r["data"]["goal"] == "credit_building"
+    guidance = r["data"]["credit_guidance"]
+    assert guidance["not_a_credit_score"] is True
+    assert "credit utilization" in guidance["missing_evidence"]
+    assert "late payment history" in " ".join(guidance["missing_evidence"]).lower()
+    assert r["data"]["judge"]["evidence_bounded"] is True
+    assert r["data"]["judge"]["goal"] == "credit_building"
+    assert r["data"]["judge"]["limitations"]
+    assert e.get_balance() == before
+    assert e.state["proposals"] == {}

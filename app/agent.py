@@ -71,7 +71,7 @@ For complex student-finance situations, build a goal-aware plan: identify essent
                 "type": "object", "properties": {"force_refresh": {"type": "boolean"}},
                 "required": [], "additionalProperties": False,
             }),
-            self._tool("convert_currency", "Convert between MYR and SGD using the deterministic refreshed reference rate.", {
+            self._tool("convert_currency", "Convert any supported 3-letter currency pair using deterministic reference/quote data. Use this for exact user-directed conversions such as CNY→MYR, USD→SGD or MYR→SGD; do not invent cross-rates.", {
                 "type": "object",
                 "properties": {
                     "amount": {"type": "number", "exclusiveMinimum": 0},

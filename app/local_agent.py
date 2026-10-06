@@ -435,7 +435,7 @@ class LocalAgentPlanner:
 
             for code, amount in detected.items():
                 if re.search(
-                    rf"\\b(?:have|has|hold|holding|own)\\s+(?:about\\s+)?(?:{re.escape(code.lower())})\\s*[0-9]",
+                    rf"\b(?:have|has|hold|holding|own)\s+(?:about\s+)?(?:{re.escape(code.lower())})\s*[0-9]",
                     t,
                     re.I,
                 ):
@@ -446,7 +446,7 @@ class LocalAgentPlanner:
                 if code == source_code:
                     continue
                 if re.search(
-                    rf"\\b(?:need|needs|pay|paying|require|required)\\s+(?:about\\s+)?(?:{re.escape(code.lower())})\\s*[0-9]",
+                    rf"\b(?:need|needs|pay|paying|require|required)\s+(?:about\s+)?(?:{re.escape(code.lower())})\s*[0-9]",
                     t,
                     re.I,
                 ):

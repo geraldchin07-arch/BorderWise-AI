@@ -993,6 +993,10 @@ class LocalAgentPlanner:
                 and len(detected_goals) >= 2
             )
             or (
+                "tuition" in detected_goals
+                and "remittance" in detected_goals
+            )
+            or (
                 affordability_question
                 and ("tuition" in detected_goals or "remittance" in detected_goals)
                 and scenario_context_available

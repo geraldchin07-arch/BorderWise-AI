@@ -253,6 +253,7 @@ class LocalAgentPlanner:
             "title": "BorderWise decision evidence",
             "goal": goal,
             "horizon_days": enriched_data.get("horizon_days"),
+            "urgency": enriched_data.get("urgency"),
             "decision": decision_label,
             "decision_detail": decision,
             "observed": [
@@ -689,6 +690,25 @@ class LocalAgentPlanner:
                         f"The configured wallet could cover about {funding['funded_amount']:,.2f} of the required "
                         f"{target_code} {target_amount:,.2f}; another {funding['remaining_gap']:,.2f} {target_code} is still needed."
                     )
+                if message_horizon_days is None:
+                    urgency = "unspecified"
+                elif message_horizon_days <= 7:
+                    urgency = "urgent"
+                elif message_horizon_days <= 30:
+                    urgency = "near_term"
+                else:
+                    urgency = "planned"
+                alternatives = [
+                    {
+                        "rank": index + 1,
+                        "currency": candidate["currency"],
+                        "usable_balance": candidate["available"],
+                        "target_equivalent": candidate["available_in_target"],
+                        "rate_to_target": candidate["rate_to_target"],
+                        "selected": candidate["currency"] in selected_sources,
+                    }
+                    for index, candidate in enumerate(candidates)
+                ]
                 decision = {
                     "action": (
                         "NO_FX_CONVERSION"
@@ -700,6 +720,8 @@ class LocalAgentPlanner:
                     "conversion_count": conversion_count,
                     "reasons": [decision_reason],
                     "avoided_currencies": avoided_currencies,
+                    "alternatives": alternatives,
+                    "urgency": urgency,
                     "reserve_protected": funding["reserve"],
                     "state_changed": False,
                 }
@@ -762,6 +784,7 @@ class LocalAgentPlanner:
                     "wallet_source": "message" if use_scenario_wallet else "saved_profile",
                     "goal": "tuition_funding",
                     "horizon_days": message_horizon_days,
+                    "urgency": urgency,
                 })
 
         # Case A: explicit source/target conversion, e.g. "USD 500 to SGD".

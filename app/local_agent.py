@@ -910,9 +910,10 @@ class LocalAgentPlanner:
                 else self.engine.forecast_portfolio(30)
             )
             forecast = {
+                "horizon_days": scenario_forecast["horizon_days"],
                 "planning_currency": scenario_forecast["planning_currency"],
                 "projected_balance_planning": scenario_forecast["projected_balance_planning"],
-                "projected_balance_sgd": scenario_forecast["projected_balance_planning"],
+                "projected_balance_sgd": scenario_forecast["projected_balance_sgd"],
                 "cash_position": scenario_forecast["cash_position"],
                 "scenario": scenario_forecast,
             }

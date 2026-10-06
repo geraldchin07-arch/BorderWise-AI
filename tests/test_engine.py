@@ -1265,3 +1265,12 @@ def test_local_agent_does_not_assume_unquantified_incoming_support():
     assert r["data"]["goal"] == "financial_plan"
     assert any("without an amount" in x for x in r["data"]["decision"]["uncertainties"])
     assert "not counted in the forecast" in r["answer"]
+
+
+def test_debug_direct_received_goal_planner():
+    from app.local_agent import LocalAgentPlanner
+    e = FinanceEngine()
+    result = LocalAgentPlanner(e).run(
+        "I just received RM10,000 from my family. I have tuition coming up. Should I convert some of it to SGD?"
+    )
+    assert result is not None

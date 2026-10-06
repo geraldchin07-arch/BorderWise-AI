@@ -205,6 +205,27 @@ class LocalAgentPlanner:
         ]
 
         decision = enriched_data.get("decision")
+        goal = enriched_data.get("goal")
+        if not goal:
+            if enriched_data.get("credit_guidance"):
+                goal = "credit_building"
+            elif decision:
+                goal = "tuition_funding"
+            elif enriched_data.get("proposal"):
+                goal = "transfer_preparation"
+            elif enriched_data.get("incoming_funds"):
+                goal = "remittance_planning"
+            elif intent == "financial_plan":
+                goal = "financial_planning"
+            else:
+                goal = intent
+        limitations = []
+        if enriched_data.get("credit_guidance"):
+            limitations.extend(enriched_data["credit_guidance"].get("missing_evidence", []))
+        if enriched_data.get("funding_plan", {}).get("note"):
+            limitations.append(enriched_data["funding_plan"]["note"])
+        if not limitations:
+            limitations.append("Reference/sandbox outputs are not guaranteed bank settlement results.")
         if decision:
             decision_label = {
                 "FUND_TARGET": "Fund the target obligation",
@@ -230,6 +251,8 @@ class LocalAgentPlanner:
 
         enriched_data["judge"] = {
             "title": "BorderWise decision evidence",
+            "goal": goal,
+            "horizon_days": enriched_data.get("horizon_days"),
             "decision": decision_label,
             "decision_detail": decision,
             "observed": [
@@ -251,6 +274,8 @@ class LocalAgentPlanner:
             "action_required": action_required,
             "evidence_steps": evidence_steps,
             "state_changed": bool(enriched_data.get("state_changed", False)),
+            "limitations": limitations,
+            "evidence_bounded": True,
         }
 
         return {
@@ -447,6 +472,7 @@ class LocalAgentPlanner:
                 answer,
                 trace,
                 {
+                    "goal": "credit_building",
                     "credit_guidance": {
                         "assessment": "insufficient_credit_history_data",
                         "not_a_credit_score": True,

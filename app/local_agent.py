@@ -278,7 +278,7 @@ class LocalAgentPlanner:
         ])
 
         # Case A: explicit source/target conversion, e.g. "USD 500 to SGD".
-        if detected and conversion_words:
+        if detected and conversion_words and not received:
             source_candidates = list(detected.items())
             source_code, source_amount = source_candidates[0]
             target_candidates = [code for code in mentioned if code != source_code]
@@ -390,7 +390,7 @@ class LocalAgentPlanner:
             })
 
         # Case C: "I have CNY 10,000 and need SGD 3,000 of tuition".
-        if len(detected) >= 2 and tuition_context:
+        if len(detected) >= 2 and tuition_context and any(code not in {"MYR", "SGD"} for code in detected):
             source_code, source_amount = next(iter(detected.items()))
             target_candidates = [code for code in mentioned if code != source_code and code in detected]
             if target_candidates:

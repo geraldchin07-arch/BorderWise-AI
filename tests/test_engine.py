@@ -732,3 +732,26 @@ def test_local_agent_structured_decision_can_be_no_fx():
     assert decision["action"] == "NO_FX_CONVERSION"
     assert decision["conversion_count"] == 0
     assert decision["state_changed"] is False
+
+
+def test_local_agent_builds_judge_mode_evidence_packet():
+    e = FinanceEngine()
+    r = e.agent("I have SGD 4,000 and MYR 5,000. I need SGD 3,000 for tuition. What should I do?")
+    judge = r["data"]["judge"]
+    assert judge["title"] == "BorderWise decision evidence"
+    assert judge["decision"] == "No currency conversion needed"
+    assert judge["observed"]
+    assert judge["reasoning"]
+    assert "Policy checks completed" in judge["security"]
+    assert judge["action_required"] == "No transaction action required."
+    assert judge["state_changed"] is False
+
+
+def test_local_agent_judge_packet_flags_authorization_requirement():
+    e = FinanceEngine()
+    r = e.agent("Prepare the RM3,000 conversion to SGD.")
+    judge = r["data"]["judge"]
+    assert judge["decision"] == "Review the agent recommendation"
+    assert "Level 2 authorization required" in judge["security"]
+    assert "authorize the pending proposal" in judge["action_required"]
+    assert "AUTHORIZE" in judge["evidence_steps"]

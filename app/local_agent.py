@@ -606,6 +606,9 @@ class LocalAgentPlanner:
 
             if target_code is not None and target_amount is not None and len(source_codes) >= 2:
                 options = []
+                scenario_wallet = self._extract_wallet_balances_from_text(t)
+                use_scenario_wallet = len(scenario_wallet) >= 1
+                saved_wallet = self.engine.get_balance()
                 trace = [
                     {
                         "step": "UNDERSTAND",
@@ -622,9 +625,6 @@ class LocalAgentPlanner:
                     },
                 ]
 
-                scenario_wallet = self._extract_wallet_balances_from_text(t)
-                use_scenario_wallet = len(scenario_wallet) >= 1
-                saved_wallet = self.engine.get_balance()
                 reserve_currency = str(
                         self.engine.state.get("profile_meta", {}).get("emergency_reserve_currency", "MYR")
                     ).upper()

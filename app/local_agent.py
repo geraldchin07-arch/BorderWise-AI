@@ -686,6 +686,160 @@ class LocalAgentPlanner:
                         send_amount = self.engine.money_value(match.group(1))
                         break
 
+                affordability_question = any(k in t for k in [
+                    "can i afford", "can i safely afford", "is it affordable",
+                    "safe to send", "can i safely send", "will i still be okay",
+                    "will i have enough", "can i still afford",
+                ])
+                if send_target and send_amount and send_amount > 0:
+                    if affordability_question:
+                        planning_currency = str(
+                            self.engine.state.get("profile_meta", {}).get("planning_currency", "SGD")
+                        ).upper()
+                        try:
+                            target_in_planning = (
+                                self.engine.money_value(send_amount)
+                                if send_target == planning_currency
+                                else self.engine.money_value(
+                                    self.engine.convert_currency(
+                                        send_amount, send_target, planning_currency
+                                    )["converted_amount"]
+                                )
+                            )
+                            forecast = self.engine.forecast()
+                            health = self.engine.health_analysis()
+                            projected_after = self.engine.money_value(
+                                Decimal(str(forecast["projected_balance_planning"]))
+                                - target_in_planning
+                            )
+                            reserve_currency = str(
+                                self.engine.state.get("profile_meta", {}).get(
+                                    "emergency_reserve_currency", "MYR"
+                                )
+                            ).upper()
+                            reserve_amount = self.engine.money_value(
+                                Decimal(str(
+                                    self.engine.state.get("profile_meta", {}).get(
+                                        "emergency_reserve_amount",
+                                        self.engine.state.get("emergency_reserve_myr", 0),
+                                    )
+                                ))
+                            )
+                            reserve_balance = self.engine.money_value(
+                                self.engine.get_balance().get(reserve_currency, 0)
+                            )
+                            reserve_ok = reserve_balance >= reserve_amount
+                            affordable = projected_after >= 0 and reserve_ok
+                            if affordable:
+                                decision_text = (
+                                    f"Yes, the scenario remains affordable: the projected "
+                                    f"{planning_currency} position after the remittance is about "
+                                    f"{projected_after:,.2f}, and the emergency reserve remains protected."
+                                )
+                                action = "REMITTANCE_AFFORDABLE"
+                            else:
+                                reasons = []
+                                if projected_after < 0:
+                                    reasons.append(
+                                        f"the projected position would fall to about "
+                                        f"{planning_currency} {projected_after:,.2f}"
+                                    )
+                                if not reserve_ok:
+                                    reasons.append(
+                                        f"the configured {reserve_currency} emergency reserve is already below "
+                                        f"its {reserve_currency} {reserve_amount:,.2f} floor"
+                                    )
+                                decision_text = (
+                                    "No, I would not recommend sending it yet because "
+                                    + " and ".join(reasons) + "."
+                                )
+                                action = "REMITTANCE_NOT_AFFORDABLE"
+
+                            trace = [
+                                {
+                                    "step": "UNDERSTAND",
+                                    "status": "completed",
+                                    "detail": (
+                                        f"Detected an affordability check for a {send_target} "
+                                        f"{send_amount:,.2f} outbound remittance."
+                                    ),
+                                },
+                                {
+                                    "step": "OBSERVE",
+                                    "status": "completed",
+                                    "detail": (
+                                        f"Reviewed the {planning_currency} forecast, liquidity health, "
+                                        f"and the configured {reserve_currency} emergency reserve."
+                                    ),
+                                },
+                                {
+                                    "step": "SIMULATE",
+                                    "status": "completed",
+                                    "detail": (
+                                        f"Scenario subtracts about {target_in_planning:,.2f} {planning_currency} "
+                                        f"from the projected 30-day position; account state was not changed."
+                                    ),
+                                },
+                                {
+                                    "step": "REASON",
+                                    "status": "completed",
+                                    "detail": (
+                                        f"30-day projected position after the hypothetical remittance: "
+                                        f"{planning_currency} {projected_after:,.2f}."
+                                    ),
+                                },
+                                {
+                                    "step": "SECURITY",
+                                    "status": "completed" if affordable else "blocked",
+                                    "detail": "Affordability assessment is advisory and read-only; no transaction was created.",
+                                },
+                                {
+                                    "step": "RECOMMEND",
+                                    "status": "completed",
+                                    "detail": decision_text,
+                                },
+                            ]
+                            return self._result(
+                                "agentic_local",
+                                decision_text + " This is a scenario assessment only; no remittance or transaction was created.",
+                                trace,
+                                {
+                                    "goal": "remittance_affordability",
+                                    "remittance": {
+                                        "target": {
+                                            "currency": send_target,
+                                            "amount": float(send_amount),
+                                        },
+                                        "action": action,
+                                        "target_in_planning": float(target_in_planning),
+                                        "projected_before": float(forecast["projected_balance_planning"]),
+                                        "projected_after": float(projected_after),
+                                        "reserve": {
+                                            "currency": reserve_currency,
+                                            "amount": float(reserve_amount),
+                                            "balance": float(reserve_balance),
+                                            "protected": reserve_ok,
+                                        },
+                                        "liquidity_health": health,
+                                        "state_changed": False,
+                                    },
+                                },
+                            )
+                        except ValueError as exc:
+                            trace = [
+                                {"step": "UNDERSTAND", "status": "completed", "detail": "Detected a remittance affordability question."},
+                                {"step": "SECURITY", "status": "blocked", "detail": str(exc)},
+                            ]
+                            return self._result(
+                                "agentic_local",
+                                f"I could not safely assess affordability: {exc}",
+                                trace,
+                                {
+                                    "goal": "remittance_affordability",
+                                    "blocked_reason": "affordability_fx_unavailable",
+                                },
+                            )
+
                 if send_target and send_amount and send_amount > 0:
                     # Treat message balances as hypothetical only when the message
                     # explicitly indicates possession; never treat "send SGD 500"

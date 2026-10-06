@@ -574,6 +574,171 @@ class LocalAgentPlanner:
             "convert", "exchange", "to ", "into ", "worth", "how much is",
         ])
 
+        # Case W: what-if comparison between explicitly mentioned source currencies.
+        # This is advisory only: each option is simulated independently and no wallet
+        # balances, proposals, or transactions are changed.
+        compare_question = any(k in t for k in [
+            "which is better", "which one is better", "should i use",
+            "compare", "versus", " vs ", "or should i use", "better to use",
+        ])
+        if compare_question and tuition_context:
+            target_code = None
+            target_amount = None
+            for code in detected:
+                requested_amount = self._amount_after_need(t, code)
+                if requested_amount is not None:
+                    target_code, target_amount = code, requested_amount
+                    break
+
+            source_codes = []
+            for code in detected:
+                if code != target_code and re.search(
+                    rf"\b(?:have|has|hold|holding|own|use|using|from)\b[^.;,]{{0,80}}\b{re.escape(code.lower())}\b",
+                    t,
+                    re.I,
+                ):
+                    source_codes.append(code)
+
+            if len(source_codes) < 2:
+                # Fall back to the currencies explicitly named around comparison words.
+                ordered = [code for code in mentioned if code != target_code]
+                source_codes = ordered[:2]
+
+            if target_code is not None and target_amount is not None and len(source_codes) >= 2:
+                options = []
+                trace = [
+                    {
+                        "step": "UNDERSTAND",
+                        "status": "completed",
+                        "detail": f"Detected a what-if comparison for funding {target_code} {target_amount:,.2f}.",
+                    },
+                    {
+                        "step": "OBSERVE",
+                        "status": "completed",
+                        "detail": f"Comparing candidate source currencies: {', '.join(source_codes[:3])}.",
+                    },
+                ]
+
+                for source_code in source_codes[:3]:
+                    balance = self.engine.get_balance().get(source_code, 0)
+                    reserve_currency = str(
+                        self.engine.state.get("profile_meta", {}).get("emergency_reserve_currency", "MYR")
+                    ).upper()
+                    reserve_amount = self.engine.money_value(
+                        Decimal(str(
+                            self.engine.state.get("profile_meta", {}).get(
+                                "emergency_reserve_amount",
+                                self.engine.state.get("emergency_reserve_myr", 0),
+                            )
+                        ))
+                    )
+                    reserve_hit = (
+                        source_code == reserve_currency
+                        and Decimal(str(balance)) - reserve_amount < Decimal("0")
+                    )
+                    try:
+                        conv = self.engine.convert_currency(
+                            target_amount,
+                            target_code,
+                            source_code,
+                        )
+                        source_needed = self.engine.money_value(
+                            Decimal(str(target_amount)) / Decimal(str(conv["rate"]))
+                        )
+                        available = self.engine.money_value(balance)
+                        feasible = source_needed <= available and not reserve_hit
+                        options.append({
+                            "currency": source_code,
+                            "balance": float(available),
+                            "source_amount_needed": float(source_needed),
+                            "rate_to_target": float(conv["rate"]),
+                            "feasible": feasible,
+                            "remaining_source_after": float(
+                                self.engine.money_value(max(Decimal("0"), available - source_needed))
+                            ),
+                            "reserve_currency": reserve_currency,
+                            "reserve_protected": True,
+                            "fx": conv.get("fx", {}),
+                        })
+                    except ValueError as exc:
+                        options.append({
+                            "currency": source_code,
+                            "balance": float(balance),
+                            "source_amount_needed": None,
+                            "rate_to_target": None,
+                            "feasible": False,
+                            "remaining_source_after": float(balance),
+                            "reserve_currency": reserve_currency,
+                            "reserve_protected": True,
+                            "error": str(exc),
+                        })
+
+                feasible_options = [x for x in options if x["feasible"]]
+                if feasible_options:
+                    feasible_options.sort(key=lambda x: (
+                        Decimal(str(x["source_amount_needed"])),
+                        x["currency"] == reserve_currency,
+                    ))
+                    winner = feasible_options[0]
+                    reason = (
+                        f"{winner['currency']} requires about {winner['source_amount_needed']:,.2f} "
+                        f"{winner['currency']} for the {target_code} {target_amount:,.2f} target while "
+                        f"leaving about {winner['remaining_source_after']:,.2f} {winner['currency']} available."
+                    )
+                else:
+                    winner = None
+                    reason = "None of the compared source currencies can safely cover the target from the available balance."
+
+                trace.append({
+                    "step": "REASON",
+                    "status": "completed",
+                    "detail": "Simulated each source independently using the same target amount and current reference/quoted FX path.",
+                })
+                trace.append({
+                    "step": "SECURITY",
+                    "status": "completed",
+                    "detail": "Comparison is read-only; no balance mutation, proposal creation, or execution occurs.",
+                })
+                trace.append({
+                    "step": "RECOMMEND",
+                    "status": "completed",
+                    "detail": f"Recommended {winner['currency']}." if winner else reason,
+                })
+
+                if winner:
+                    comparison_text = " | ".join(
+                        f"{x['currency']}: need {x['source_amount_needed']:,.2f}, "
+                        f"balance {x['balance']:,.2f}, "
+                        f"{'feasible' if x['feasible'] else 'not feasible'}"
+                        for x in options
+                    )
+                    answer = (
+                        f"Decision: use {winner['currency']} rather than the other compared source. "
+                        f"Why: {reason} "
+                        f"Comparison: {comparison_text}. "
+                        "This is a what-if simulation; no balances or transactions were changed."
+                    )
+                else:
+                    answer = (
+                        f"Decision: do not choose from these sources yet. {reason} "
+                        "Try another funding source or adjust the target. No balances or transactions were changed."
+                    )
+
+                return self._result(
+                    "agentic_local",
+                    answer,
+                    trace,
+                    {
+                        "goal": "funding_comparison",
+                        "comparison": {
+                            "target": {"currency": target_code, "amount": float(target_amount)},
+                            "options": options,
+                            "winner": winner,
+                            "state_changed": False,
+                        },
+                    },
+                )
+
         # Case D: wallet-wide funding optimization for an explicit obligation.
         # Example: "I have CNY 10,000, USD 500 and MYR 5,000. I need SGD 3,000 for tuition. What should I convert?"
         funding_question = any(k in t for k in [

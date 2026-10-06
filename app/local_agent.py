@@ -730,6 +730,113 @@ class LocalAgentPlanner:
                 "risk": risk,
             })
 
+        # Case E: structured 30-day student finance plan.
+        # This turns a broad natural-language request into an ordered decision:
+        # preserve the reserve, identify the projected gap/surplus, consider adjustable
+        # spending first, then use the multi-currency funding optimizer only for the
+        # remaining gap. No balances are mutated and no transaction is created.
+        plan_request = any(k in t for k in [
+            "plan my finances", "financial plan", "30-day plan", "30 day plan",
+            "next 30 days", "what should i prioritize", "financial priorities",
+            "prepare for tuition", "how should i prepare", "semester plan",
+        ])
+        if plan_request:
+            trace = [
+                {"step": "UNDERSTAND", "status": "completed", "detail": "Detected a request for a structured near-term student-finance plan."},
+                {"step": "OBSERVE", "status": "completed", "detail": "Read the selected planning currency, cash-flow forecast, spending plan and liquidity health."},
+            ]
+            forecast = self.engine.forecast()
+            spending = self.engine.spending_analysis()
+            health = self.engine.health_analysis()
+            planning = str(forecast.get("planning_currency", planning)).upper()
+            gap = Decimal(str(forecast.get("shortfall_planning", 0)))
+            discretionary = Decimal(str(spending.get("discretionary_total_planning", 0)))
+            reserve_currency = str(health.get("emergency_reserve_currency", planning)).upper()
+            reserve_amount = Decimal(str(health.get("emergency_reserve_amount", 0)))
+            trace.append({
+                "step": "REASON",
+                "status": "completed",
+                "detail": (
+                    f"Projected {planning} gap is {gap:,.2f}; identified up to {discretionary:,.2f} of monthly adjustable spending " 
+                    "before considering currency conversion."
+                ),
+            })
+
+            funding = None
+            conversion_gap = max(Decimal("0"), gap - discretionary)
+            if conversion_gap > 0:
+                try:
+                    funding = self.engine.recommend_funding(conversion_gap, planning)
+                    trace.append({
+                        "step": "FX",
+                        "status": "completed",
+                        "detail": f"Evaluated the full multi-currency wallet for the remaining {planning} {conversion_gap:,.2f} funding need.",
+                    })
+                except ValueError as exc:
+                    trace.append({"step": "FX", "status": "blocked", "detail": str(exc)})
+                    funding = None
+
+            trace.append({
+                "step": "SECURITY",
+                "status": "completed",
+                "detail": f"Kept the configured {reserve_currency} {reserve_amount:,.2f} emergency reserve protected; this planning step creates no transaction.",
+            })
+
+            due = int(forecast.get("tuition_due_days", 31))
+            tuition_due = bool(forecast.get("tuition_due_within_horizon"))
+            tuition_text = (
+                f"Net tuition of {planning} {forecast.get('tuition_net_planning', 0):,.2f} is due in {due} days."
+                if tuition_due else
+                f"Net tuition is {planning} {forecast.get('tuition_net_planning', 0):,.2f}; it is not due within the next 30 days."
+            )
+
+            if gap <= 0:
+                answer = (
+                    f"Your 30-day plan is to avoid unnecessary conversion: the forecast shows {planning} {forecast.get('surplus_planning', 0):,.2f} remaining after expected income, spending and obligations. "
+                    f"{tuition_text} Keep the {reserve_currency} {reserve_amount:,.2f} emergency reserve intact and review again before the next major obligation.
+                )
+            elif conversion_gap <= 0:
+                answer = (
+                    f"Your 30-day plan is: first protect the {reserve_currency} {reserve_amount:,.2f} emergency reserve, then reduce adjustable spending by up to {planning} {discretionary:,.2f} if needed. "
+                    f"The projected funding gap is {planning} {gap:,.2f}, so the gap can be covered within the current monthly adjustable-spending budget without requiring an automatic currency conversion. "
+                    f"{tuition_text} No transaction was created.
+                )
+            elif funding and funding.get("status") == "funded":
+                legs_text = "; ".join(
+                    f"{x['from_currency']} {x['source_amount']:,.2f} → {x['to_currency']} {x['target_amount']:,.2f}"
+                    for x in funding.get("plan", [])
+                )
+                answer = (
+                    f"Your 30-day plan is: (1) protect the {reserve_currency} {reserve_amount:,.2f} emergency reserve, "
+                    f"(2) use up to {planning} {discretionary:,.2f} of adjustable spending only when necessary, and "
+                    f"(3) cover the remaining {planning} {conversion_gap:,.2f} through the wallet plan: {legs_text}. "
+                    f"The forecasted gap is {planning} {gap:,.2f}. {tuition_text} "
+                    "This is a scenario recommendation; no balances or transactions were changed."
+                )
+            else:
+                answer = (
+                    f"Your 30-day plan is to protect the {reserve_currency} {reserve_amount:,.2f} emergency reserve and first review up to {planning} {discretionary:,.2f} of adjustable spending. "
+                    f"After that, about {planning} {conversion_gap:,.2f} would still need funding, but I could not build a safe multi-currency funding plan from the configured wallet. "
+                    f"{tuition_text} I would not create a transaction until the missing funding/FX input is resolved."
+                )
+
+            trace.append({"step": "RECOMMEND", "status": "completed", "detail": "Produced an ordered, advisory 30-day action plan without changing account state."})
+            return self._result(
+                "financial_plan",
+                answer,
+                trace,
+                {
+                    "forecast": forecast,
+                    "spending": spending,
+                    "health": health,
+                    "funding_plan": funding,
+                    "discretionary_planning": float(discretionary),
+                    "conversion_gap_planning": float(conversion_gap),
+                    "planning_currency": planning,
+                    "state_changed": False,
+                },
+            )
+
         # General multi-intent "what should I do" / student-finance planning.
         planning = any(k in t for k in ["what should i do", "help me plan", "plan my", "should i", "what do you recommend"])
         if planning and (tuition_context or "sgd" in t or "myr" in t or "money" in t):

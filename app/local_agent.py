@@ -689,7 +689,12 @@ class LocalAgentPlanner:
         goal_keywords = {
             "tuition": ["tuition", "school fees", "semester fee", "school fee"],
             "remittance": ["send home", "send money", "family", "remit", "remittance", "back home"],
-            "incoming": ["receive", "received", "got paid", "family sent", "allowance", "incoming", "parents send", "parents can send", "parents will send", "family can send", "family will send"],
+            "incoming": [
+                "receive", "received", "got paid", "family sent", "allowance", "incoming",
+                "parents send", "parents can send", "parents will send", "parents may send",
+                "parents might send", "parents could send", "family can send", "family will send",
+                "family may send", "family might send", "family could send",
+            ],
             "spending": ["spending", "expenses", "living costs", "monthly costs"],
             "reserve": ["emergency reserve", "emergency fund", "keep a reserve", "keep aside"],
             "fx": ["convert", "exchange", "currency", "fx"],
@@ -742,7 +747,12 @@ class LocalAgentPlanner:
                 t, ["send", "sending", "send home", "remittance", "remit", "family"]
             )
             incoming_labeled = self._extract_labeled_amount(
-                t, ["receive", "received", "got", "allowance", "incoming", "family sent", "parents send"]
+                t, [
+                    "receive", "received", "got", "allowance", "incoming", "family sent",
+                    "parents send", "parents can send", "parents will send", "parents may send",
+                    "parents might send", "parents could send", "family may send",
+                    "family might send", "family could send",
+                ]
             )
 
             reserve_currency = str(
@@ -769,8 +779,10 @@ class LocalAgentPlanner:
             forecast_after_income = None
 
             incoming_mentioned = any(k in t for k in [
-                "parents can send", "parents will send", "family will send",
-                "family can send", "receive next", "incoming next",
+                "parents can send", "parents will send", "parents may send",
+                "parents might send", "parents could send", "family will send",
+                "family can send", "family may send", "family might send", "family could send",
+                "receive next", "incoming next",
             ])
             if incoming_mentioned and not incoming_labeled:
                 uncertainties.append(

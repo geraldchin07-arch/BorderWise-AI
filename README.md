@@ -136,3 +136,40 @@ Additional currencies can use automatic reference FX. BorderWise fetches rates w
 ## v7.2 multi-currency conversion
 
 The dashboard includes a currency conversion studio that lets the user choose any 3-letter currency pair (for example CNY → MYR, USD → SGD, or MYR → SGD). Auto mode fetches the current reference pair directly from Frankfurter; custom mode accepts a user-provided quoted rate. This quote/calculation does not create or execute a transaction. The wallet still uses SGD only as a common valuation base for portfolio comparison.
+
+
+---
+
+# Team Branch Roles
+
+BorderWise AI is developed by a 5-person team. Each branch has a clear ownership area so work can happen in parallel with minimal conflicts.
+
+| Branch | Owner | Responsibility |
+|---|---|---|
+| `main` | Team | Stable, review-approved integration branch. Do not develop directly here. |
+| `agent` | AI Agent Lead | AI reasoning, natural-language understanding, recommendations, agent orchestration, and integration. |
+| `backend` | Backend Lead | Financial engine, multi-currency calculations, FX, forecasting, tuition/funding logic, and backend tests. |
+| `frontend` | Frontend Lead | Student onboarding, dashboard, multi-currency UI, visualizations, loading/error states, and user experience. |
+| `security` | Security Lead | Authorization, policy enforcement, anti-replay, prompt-injection resistance, transaction safety, and red-team testing. |
+| `docs-qa` | QA & Submission Lead | Regression testing, CI, README/documentation, architecture evidence, demo materials, and submission readiness. |
+
+## Git Workflow
+
+- Work only on your assigned branch.
+- Pull the latest `main` before starting major work.
+- Do not push directly to `main`.
+- Push your branch when your work is ready.
+- Open a Pull Request into `main` for review.
+- Keep changes focused on your branch's responsibility.
+
+## Shared Architecture
+
+The product follows this high-level flow:
+
+`User → AI reasoning → deterministic financial engine → policy/security checks → proposal → explicit authorization → sandbox execution → verification → audit`
+
+The AI layer must not bypass deterministic financial calculations or security controls.
+
+## Collaboration Rule
+
+Before changing a file primarily owned by another branch, coordinate with that branch owner first to reduce merge conflicts.

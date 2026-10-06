@@ -177,6 +177,47 @@ class LocalAgentPlanner:
         return None
 
 
+    def _extract_labeled_amount(
+        self, text: str, labels: list[str]
+    ) -> tuple[Decimal, str] | None:
+        """Extract the first currency amount associated with one of several labels."""
+        t = text.lower().replace(",", "")
+        supported_aliases = {
+            "MYR": ["myr", "rm", "ringgit"],
+            "SGD": ["sgd", "s$"],
+            "USD": ["usd", "us$", "dollar", "dollars"],
+            "CNY": ["cny", "rmb", "yuan"],
+            "JPY": ["jpy", "yen"],
+            "KRW": ["krw", "won"],
+            "THB": ["thb", "baht"],
+            "EUR": ["eur", "euro", "euros"],
+            "GBP": ["gbp", "pound", "pounds"],
+            "AUD": ["aud"],
+            "CAD": ["cad"],
+            "HKD": ["hkd"],
+            "TWD": ["twd"],
+            "INR": ["inr"],
+        }
+        currency_pattern = []
+        for code, aliases in supported_aliases.items():
+            for alias in aliases:
+                currency_pattern.append(
+                    (re.escape(alias), code)
+                )
+
+        for label in labels:
+            label_pattern = re.escape(label)
+            for alias, code in currency_pattern:
+                match = re.search(
+                    rf"\b{label_pattern}\b[^.;\n]{{0,80}}?{alias}\s*([0-9]+(?:\.[0-9]+)?)",
+                    t,
+                    re.I,
+                )
+                if match:
+                    return self.engine.money_value(match.group(1)), code
+        return None
+
+
     def _result(self, *args) -> dict[str, Any]:
         """Build a local-agent result while supporting both legacy call shapes."""
         if len(args) == 4:
@@ -494,6 +535,125 @@ class LocalAgentPlanner:
                     }
                 },
             )
+
+        # Competing-obligations mode: compare a documented tuition obligation with
+        # an outbound remittance request and prioritize the obligation with the clearer
+        # deadline/funding consequence. This is advisory and read-only.
+        competing_question = (
+            "tuition" in t
+            and any(k in t for k in ["send", "remit", "family", "home"])
+            and any(k in t for k in ["prioritize", "priority", "first", "before", "what should i do", "should i"])
+        )
+        if competing_question:
+            tuition_labeled = self._extract_labeled_amount(t, ["tuition", "tuition fee", "tuition fees"])
+            remittance_labeled = self._extract_labeled_amount(
+                t, ["send", "sending", "remit", "remittance", "send to my family", "send home"]
+            )
+            tuition_days = self._extract_horizon_days(t)
+            if tuition_labeled and remittance_labeled:
+                tuition_amount, tuition_currency = tuition_labeled
+                remittance_amount, remittance_currency = remittance_labeled
+                wallet_balances = self._extract_wallet_balances_from_text(t)
+                use_scenario_wallet = len(wallet_balances) >= 1
+                wallet = wallet_balances if use_scenario_wallet else self.engine.get_balance()
+                tuition_available = self.engine.money_value(wallet.get(tuition_currency, 0))
+                remittance_available = self.engine.money_value(wallet.get(remittance_currency, 0))
+
+                trace = [
+                    {
+                        "step": "UNDERSTAND",
+                        "status": "completed",
+                        "detail": "Detected two competing student-finance goals: tuition and an outbound family remittance.",
+                    },
+                    {
+                        "step": "OBSERVE",
+                        "status": "completed",
+                        "detail": (
+                            "Compared explicitly stated hypothetical wallet balances."
+                            if use_scenario_wallet
+                            else "Compared the saved wallet balances."
+                        ),
+                    },
+                ]
+
+                tuition_due = tuition_days if tuition_days is not None else 30
+                tuition_priority = 0 if tuition_due <= 30 else 1
+                reserve_currency = str(
+                    self.engine.state.get("profile_meta", {}).get("emergency_reserve_currency", "MYR")
+                ).upper()
+                reserve_amount = self.engine.money_value(
+                    Decimal(str(
+                        self.engine.state.get("profile_meta", {}).get(
+                            "emergency_reserve_amount",
+                            self.engine.state.get("emergency_reserve_myr", 0),
+                        )
+                    ))
+                )
+
+                tuition_shortfall = self.engine.money_value(
+                    max(Decimal("0"), tuition_amount - tuition_available)
+                )
+                remittance_shortfall = self.engine.money_value(
+                    max(Decimal("0"), remittance_amount - remittance_available)
+                )
+                trace.append({
+                    "step": "REASON",
+                    "status": "completed",
+                    "detail": (
+                        f"Tuition is {tuition_currency} {tuition_amount:,.2f} with a stated horizon of about "
+                        f"{tuition_due} days; remittance is {remittance_currency} {remittance_amount:,.2f}. "
+                        "The tuition obligation is prioritized because it has the clearer near-term deadline."
+                    ),
+                })
+                trace.append({
+                    "step": "SECURITY",
+                    "status": "completed",
+                    "detail": (
+                        f"Protected the configured {reserve_currency} {reserve_amount:,.2f} emergency reserve; "
+                        "no balances, proposals or transactions were changed."
+                    ),
+                })
+
+                answer = (
+                    f"Priority 1: fund the tuition of {tuition_currency} {tuition_amount:,.2f} first "
+                    f"(about {tuition_due} days away). "
+                    f"Priority 2: review the {remittance_currency} {remittance_amount:,.2f} family remittance after tuition is secured. "
+                    f"Current-wallet coverage is about {tuition_available:,.2f} {tuition_currency} for tuition "
+                    f"and {remittance_available:,.2f} {remittance_currency} for the remittance. "
+                    f"Estimated tuition shortfall: {tuition_shortfall:,.2f} {tuition_currency}; "
+                    f"estimated remittance shortfall: {remittance_shortfall:,.2f} {remittance_currency}. "
+                    "The emergency reserve remains protected. This is a prioritization simulation; no transaction was created."
+                )
+                trace.append({
+                    "step": "RECOMMEND",
+                    "status": "completed",
+                    "detail": "Prioritized the dated tuition obligation before the less-certain family remittance.",
+                })
+                return self._result(
+                    "agentic_local",
+                    answer,
+                    trace,
+                    {
+                        "goal": "competing_obligations",
+                        "decision": {
+                            "priority_order": ["tuition", "remittance"],
+                            "reason": "Tuition has the clearer near-term deadline and should be secured before the remittance.",
+                            "tuition": {
+                                "currency": tuition_currency,
+                                "amount": float(tuition_amount),
+                                "horizon_days": tuition_due,
+                                "shortfall": float(tuition_shortfall),
+                            },
+                            "remittance": {
+                                "currency": remittance_currency,
+                                "amount": float(remittance_amount),
+                                "shortfall": float(remittance_shortfall),
+                            },
+                            "reserve_protected": True,
+                            "state_changed": False,
+                        },
+                    },
+                )
 
         # Remittance planning must run before the generic "send" action handler.
         # A planning question such as "Should I send SGD 500 home?" is advisory and

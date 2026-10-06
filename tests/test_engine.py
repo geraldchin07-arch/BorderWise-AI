@@ -936,8 +936,8 @@ def test_local_agent_what_if_comparison_respects_emergency_reserve():
         "other_obligations_amount": 0,
         "other_obligations_currency": "SGD",
         "monthly_spending_currency": "SGD",
-        "monthly_spending": {},
-        "spending_classifications": {},
+        "monthly_spending": {"Food & dining": 0},
+        "spending_classifications": {"Food & dining": "Adjustable"},
     })
     r = e.agent(
         "I have MYR 1,200 and CNY 20,000. I need SGD 500 for tuition. "

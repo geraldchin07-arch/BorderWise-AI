@@ -862,6 +862,12 @@ class LocalAgentPlanner:
             "safest option", "safest approach",
         ])
 
+        affordability_question = any(k in t for k in [
+            "can i afford", "can i safely afford", "can i do", "is it affordable",
+            "safe to send", "can i safely send", "will i still be okay",
+            "will i have enough", "can i still afford", "while protecting",
+            "while keeping",
+        ])
         goal_plan_ready = (
             len(detected_goals) >= 3
             or (
@@ -872,6 +878,10 @@ class LocalAgentPlanner:
             or (
                 "credit" in detected_goals
                 and len(detected_goals) >= 2
+            )
+            or (
+                affordability_question
+                and ("tuition" in detected_goals or "remittance" in detected_goals)
             )
         )
         if goal_planning_question and goal_plan_ready:

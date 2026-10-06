@@ -448,22 +448,12 @@ class LocalAgentPlanner:
                     "detail": f"Protected the configured {funding['reserve']['currency']} emergency reserve of {funding['reserve']['amount']:,.2f}; no balances were changed.",
                 })
 
+                # Build a machine-readable decision for both fully-funded and partial plans.
+                selected_sources = [x["from_currency"] for x in funding.get("plan", [])]
+                conversion_count = sum(1 for x in funding.get("plan", []) if x["from_currency"] != x["to_currency"])
+                candidates = [x for x in funding.get("candidates", []) if x.get("available_in_target", 0) > 0]
+                avoided_currencies = [x["currency"] for x in candidates if x["currency"] not in selected_sources]
                 if funding["status"] == "funded":
-                    legs_text = "; ".join(
-                        f"{x['from_currency']} {x['source_amount']:,.2f} → {x['to_currency']} {x['target_amount']:,.2f}"
-                        for x in funding["plan"]
-                    )
-                    selected_sources = [x["from_currency"] for x in funding.get("plan", [])]
-                    conversion_count = sum(1 for x in funding.get("plan", []) if x["from_currency"] != x["to_currency"])
-                    candidates = [
-                        x for x in funding.get("candidates", [])
-                        if x.get("available_in_target", 0) > 0
-                    ]
-                    non_selected = [x for x in candidates if x["currency"] not in selected_sources]
-                    ranked_text = "; ".join(
-                        f"{x['currency']} ≈ {x['available_in_target']:,.2f} {target_code}"
-                        for x in candidates[:4]
-                    )
                     if selected_sources == [target_code]:
                         decision_reason = (
                             f"Your existing {target_code} balance already covers the requirement, so no FX conversion is needed."
@@ -471,9 +461,7 @@ class LocalAgentPlanner:
                     else:
                         source_reason_parts = []
                         if target_code in selected_sources:
-                            source_reason_parts.append(
-                                f"existing {target_code} funds were used first"
-                            )
+                            source_reason_parts.append(f"existing {target_code} funds were used first")
                         for source in selected_sources:
                             if source != target_code:
                                 candidate = next((x for x in candidates if x["currency"] == source), None)
@@ -482,6 +470,36 @@ class LocalAgentPlanner:
                                         f"{source} was selected because it had about {candidate['available_in_target']:,.2f} {target_code} of usable value"
                                     )
                         decision_reason = "; ".join(source_reason_parts) + "."
+                else:
+                    decision_reason = (
+                        f"The configured wallet could cover about {funding['funded_amount']:,.2f} of the required "
+                        f"{target_code} {target_amount:,.2f}; another {funding['remaining_gap']:,.2f} {target_code} is still needed."
+                    )
+                decision = {
+                    "action": (
+                        "NO_FX_CONVERSION"
+                        if conversion_count == 0 and funding["status"] == "funded"
+                        else ("FUND_TARGET" if funding["status"] == "funded" else "FUND_PARTIAL")
+                    ),
+                    "target": {"currency": target_code, "amount": float(target_amount)},
+                    "selected_sources": selected_sources,
+                    "conversion_count": conversion_count,
+                    "reasons": [decision_reason],
+                    "avoided_currencies": avoided_currencies,
+                    "reserve_protected": funding["reserve"],
+                    "state_changed": False,
+                }
+
+                if funding["status"] == "funded":
+                    legs_text = "; ".join(
+                        f"{x['from_currency']} {x['source_amount']:,.2f} → {x['to_currency']} {x['target_amount']:,.2f}"
+                        for x in funding["plan"]
+                    )
+                    non_selected = [x for x in candidates if x["currency"] not in selected_sources]
+                    ranked_text = "; ".join(
+                        f"{x['currency']} ≈ {x['available_in_target']:,.2f} {target_code}"
+                        for x in candidates[:4]
+                    )
                     not_selected_text = ""
                     if non_selected:
                         names = ", ".join(x["currency"] for x in non_selected[:3])
@@ -492,36 +510,30 @@ class LocalAgentPlanner:
                         "step": "REASON",
                         "status": "completed",
                         "detail": (
-                            f"Selected {', '.join(selected_sources)} with {conversion_count} FX conversion(s). "
+                            f"Selected {", ".join(selected_sources)} with {conversion_count} FX conversion(s). "
                             f"Reason: {decision_reason}"
                         ),
                     })
-                    avoided_currencies = [
-                        x["currency"] for x in candidates
-                        if x["currency"] not in selected_sources
-                    ]
-                    decision = {
-                        "action": "NO_FX_CONVERSION" if conversion_count == 0 else "FUND_TARGET",
-                        "target": {"currency": target_code, "amount": float(target_amount)},
-                        "selected_sources": selected_sources,
-                        "conversion_count": conversion_count,
-                        "reasons": [decision_reason],
-                        "avoided_currencies": avoided_currencies,
-                        "reserve_protected": funding["reserve"],
-                        "state_changed": False,
-                    }
                     answer = (
                         f"Decision: fund {target_code} {target_amount:,.2f} using {legs_text}. "
                         f"Why: {decision_reason}"
                         f"{not_selected_text} "
-                        f"Usable-wallet ranking: {ranked_text or 'no additional usable balances'}. "
+                        f"Usable-wallet ranking: {ranked_text or "no additional usable balances"}. "
                         f"The {funding['reserve']['currency']} {funding['reserve']['amount']:,.2f} emergency reserve stays protected. "
                         "This is an advisory scenario only; no transaction was created or executed."
                     )
                 else:
                     gap = funding["remaining_gap"]
+                    trace.append({
+                        "step": "REASON",
+                        "status": "completed",
+                        "detail": (
+                            f"Selected {", ".join(selected_sources) or "no currencies"} with {conversion_count} FX conversion(s), "
+                            f"but the wallet remained short by {gap:,.2f} {target_code}."
+                        ),
+                    })
                     answer = (
-                        f"Decision: do not automatically convert the whole wallet. "
+                        "Decision: do not automatically convert the whole wallet. "
                         f"I could fund about {funding['funded_amount']:,.2f} of the required {target_code} {target_amount:,.2f}, "
                         f"leaving a gap of about {gap:,.2f} {target_code}. "
                         f"The {funding['reserve']['currency']} {funding['reserve']['amount']:,.2f} emergency reserve remains protected. "

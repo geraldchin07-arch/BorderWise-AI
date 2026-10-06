@@ -1265,3 +1265,35 @@ def test_local_agent_does_not_assume_unquantified_incoming_support():
     assert r["data"]["goal"] == "financial_plan"
     assert any("without an amount" in x for x in r["data"]["decision"]["uncertainties"])
     assert "not counted in the forecast" in r["answer"]
+
+
+def test_debug_direct_local_planner_complex():
+    from app.local_agent import LocalAgentPlanner
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 1500, "USD": 1500, "CNY": 10000, "MYR": 5000},
+        "balance_fx_modes": {"USD": "custom", "CNY": "custom", "MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"USD": 1.28, "CNY": 0.19, "MYR": 0.31},
+        "monthly_income_amount": 800,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 3000,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 14,
+        "accommodation_amount": 500,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 200,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 300, "Transport": 100},
+        "spending_classifications": {"Food & dining": "Adjustable", "Transport": "Core"},
+    })
+    LocalAgentPlanner(e).run(
+        "I have SGD 1,500, USD 1,500, CNY 10,000 and MYR 5,000. "
+        "Tuition is SGD 3,000 due in 14 days. My parents can send SGD 800 next week "
+        "and I also want to send SGD 1,000 home. What should I do?"
+    )

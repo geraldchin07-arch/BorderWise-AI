@@ -67,9 +67,13 @@ class LocalAgentPlanner:
         return None
 
     def _extract_wallet_balances_from_text(self, text: str) -> dict[str, Decimal]:
-        """Extract explicit wallet balances stated in a hypothetical chat scenario."""
-        # Preserve punctuation so clause boundaries (especially commas)
-        # prevent an outgoing amount from being mistaken for a wallet balance.
+        """Extract explicit wallet balances stated in a hypothetical chat scenario.
+
+        A balance may appear in a comma-separated possession list, while an outgoing
+        obligation such as "send RM2,000" can appear later in the same sentence. Parse
+        possession clauses separately so obligation amounts are never promoted to wallet
+        balances.
+        """
         t = text.lower().strip()
         aliases = {
             "MYR": ["myr", "rm", "ringgit"],
@@ -89,43 +93,58 @@ class LocalAgentPlanner:
         }
         balances: dict[str, Decimal] = {}
 
+        patterns_by_code: dict[str, str] = {}
         for code, names in aliases.items():
             escaped = sorted((re.escape(x) for x in names), key=len, reverse=True)
             token = "(?:" + "|".join(escaped) + ")"
+            amount = r"[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?"
+            patterns_by_code[code] = rf"(?:{token}\s*({amount})|({amount})\s*{token}\b)"
 
-            # Prefer amounts explicitly associated with possession/holding language.
-            possession = re.search(
-                rf"\b(?:have|has|hold|holding|own|keep)\b[^.;,]*?{token}\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)",
-                t,
-                re.I,
-            )
-            if possession:
-                balances[code] = self.engine.money_value(possession.group(1).replace(",", ""))
-                continue
+        # First parse every explicit possession list. The lookahead stops before a
+        # new obligation/action clause, but deliberately allows commas inside the list.
+        possession_pattern = re.compile(
+            r"\b(?:have|has|hold|holding|own|keep)\b"
+            r"(?P<segment>.*?)"
+            r"(?=(?:\b(?:need|needs|want to|would like to|send|sending|remit|remittance|transfer|pay|paying|require|required|tuition|school fees)\b)|[.!?]|$)",
+            re.I,
+        )
+        possession_segments = [m.group("segment") for m in possession_pattern.finditer(t)]
 
-            # Compact currency amounts are only wallet balances when they are
-            # explicitly tied to possession language. Do not treat an obligation such
-            # as "send RM2000" or "tuition SGD2500" as money the user owns.
-            # Support reverse forms such as "2000 SGD", but reject amounts
-            # that are clearly attached to an outgoing obligation or payment.
-            for reverse in re.finditer(
-                rf"([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*{token}\b",
-                t,
-                re.I,
-            ):
-                context_before = t[max(0, reverse.start() - 80):reverse.start()]
-                # Any nearby transaction/obligation verb makes this amount an
-                # outgoing requirement rather than an owned wallet balance.
+        for segment in possession_segments:
+            for code, pattern in patterns_by_code.items():
+                match = re.search(pattern, segment, re.I)
+                if match:
+                    raw_amount = match.group(1) or match.group(2)
+                    balances[code] = self.engine.money_value(raw_amount.replace(",", ""))
+
+        # Also support a standalone reverse form such as "2,000 SGD" when it is not
+        # associated with an outgoing obligation. This is a fallback for short scenarios
+        # that omit the verb "have".
+        for code, pattern in patterns_by_code.items():
+            for match in re.finditer(pattern, t, re.I):
+                raw_amount = match.group(1) or match.group(2)
+                context_before = t[max(0, match.start() - 80):match.start()]
+                context_after = t[match.end():match.end() + 50]
                 if re.search(
                     r"\b(?:need|needs|pay|paying|require|required|send|sending|remit|remittance|transfer|tuition)\b",
                     context_before,
                     re.I,
                 ):
                     continue
-                balances[code] = self.engine.money_value(reverse.group(1).replace(",", ""))
+                if re.search(
+                    r"\b(?:to|for|toward)\s*$",
+                    context_before,
+                    re.I,
+                ):
+                    continue
+                # If the amount is already part of a parsed possession list, keep it.
+                # Otherwise accept it only when there is no immediate outgoing wording.
+                if code not in balances:
+                    balances[code] = self.engine.money_value(raw_amount.replace(",", ""))
                 break
 
         return balances
+
 
     def _amount_after_need(self, text: str, currency: str) -> Decimal | None:
         """Extract the amount associated with a need/payment requirement.

@@ -1593,3 +1593,12 @@ def test_local_agent_does_not_prepare_transfer_for_affordability_question():
     assert e.get_balance() == before
     assert e.state["proposals"] == {}
     assert "not recommend" in r["answer"].lower() or "cannot" in r["answer"].lower() or "shortfall" in r["answer"].lower()
+
+
+def test_local_agent_keeps_uncertain_parent_money_conditional():
+    e = FinanceEngine()
+    r = e.agent("My parents might send me SGD 3000 next month. Can I assume that money will be available for my tuition?")
+    assert r["data"]["conditional_income"] is True
+    assert "conditional" in r["answer"].lower()
+    assert "not confirmed" in r["answer"].lower()
+    assert r["data"]["state_changed"] is False

@@ -1014,3 +1014,79 @@ def test_local_agent_remittance_detects_send_home_as_planning_not_execution():
     assert r["data"]["remittance"]["target"]["currency"] == "SGD"
     assert r["data"]["remittance"]["state_changed"] is False
     assert r["data"]["judge"]["evidence_bounded"] is True
+
+
+def test_local_agent_prioritizes_tuition_over_family_remittance():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 2500, "MYR": 5000},
+        "balance_fx_modes": {"MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"MYR": 0.31},
+        "monthly_income_amount": 1000,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 2000,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 10,
+        "accommodation_amount": 400,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 300},
+        "spending_classifications": {"Food & dining": "Adjustable"},
+    })
+    before = e.get_balance()
+    r = e.agent(
+        "I have SGD 2,500 and MYR 5,000. Tuition is SGD 2,000 due in 10 days "
+        "and I want to send SGD 1,000 home. What should I prioritize?"
+    )
+    assert r["data"]["goal"] == "competing_obligations"
+    decision = r["data"]["decision"]
+    assert decision["priority_order"] == ["tuition", "remittance"]
+    assert decision["tuition"]["shortfall"] == 0.0
+    assert decision["remittance"]["amount"] == 1000.0
+    assert decision["reserve_protected"] is True
+    assert decision["state_changed"] is False
+    assert "Priority 1" in r["answer"]
+    assert e.get_balance() == before
+    assert e.state["proposals"] == {}
+
+
+def test_local_agent_competing_obligations_reports_tuition_funding_gap():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 1200, "MYR": 5000},
+        "balance_fx_modes": {"MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"MYR": 0.31},
+        "monthly_income_amount": 500,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 2500,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 5,
+        "accommodation_amount": 300,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 200},
+        "spending_classifications": {"Food & dining": "Adjustable"},
+    })
+    r = e.agent(
+        "I have SGD 1,200 and MYR 5,000. Tuition is SGD 2,500 due in 5 days "
+        "and I want to send SGD 1,000 home. What should I prioritize?"
+    )
+    decision = r["data"]["decision"]
+    assert decision["priority_order"] == ["tuition", "remittance"]
+    assert decision["tuition"]["shortfall"] == 1300.0
+    assert decision["remittance"]["shortfall"] == 1000.0
+    assert "tuition" in decision["reason"].lower()

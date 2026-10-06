@@ -909,14 +909,19 @@ class LocalAgentPlanner:
                 if use_scenario_wallet
                 else self.engine.forecast_portfolio(30)
             )
-            forecast = {
-                "horizon_days": scenario_forecast["horizon_days"],
-                "planning_currency": scenario_forecast["planning_currency"],
-                "projected_balance_planning": scenario_forecast["projected_balance_planning"],
-                "projected_balance_sgd": scenario_forecast["projected_balance_sgd"],
-                "cash_position": scenario_forecast["cash_position"],
-                "scenario": scenario_forecast,
-            }
+            forecast = dict(scenario_forecast)
+            # Keep the forecast schema compatible with the full-wallet engine output
+            # while exposing the scenario-specific conditional-income fields used by
+            # the answer and judge evidence.
+            forecast.setdefault(
+                "starting_portfolio_sgd",
+                forecast.get("starting_balance_sgd", 0.0),
+            )
+            forecast.setdefault(
+                "starting_portfolio_planning",
+                forecast.get("starting_balance_planning", 0.0),
+            )
+            forecast["scenario"] = scenario_forecast
 
             priorities = []
             actions = []

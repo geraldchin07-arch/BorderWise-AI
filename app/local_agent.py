@@ -68,7 +68,9 @@ class LocalAgentPlanner:
 
     def _extract_wallet_balances_from_text(self, text: str) -> dict[str, Decimal]:
         """Extract explicit wallet balances stated in a hypothetical chat scenario."""
-        t = text.lower().replace(",", "").strip()
+        # Preserve punctuation so clause boundaries (especially commas)
+        # prevent an outgoing amount from being mistaken for a wallet balance.
+        t = text.lower().strip()
         aliases = {
             "MYR": ["myr", "rm", "ringgit"],
             "SGD": ["sgd", "s$"],
@@ -93,12 +95,12 @@ class LocalAgentPlanner:
 
             # Prefer amounts explicitly associated with possession/holding language.
             possession = re.search(
-                rf"\b(?:have|has|hold|holding|own|keep)\b[^.;,]*?{token}\s*([0-9]+(?:\.[0-9]+)?)",
+                rf"\b(?:have|has|hold|holding|own|keep)\b[^.;,]*?{token}\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)",
                 t,
                 re.I,
             )
             if possession:
-                balances[code] = self.engine.money_value(possession.group(1))
+                balances[code] = self.engine.money_value(possession.group(1).replace(",", ""))
                 continue
 
             # Compact currency amounts are only wallet balances when they are
@@ -107,7 +109,7 @@ class LocalAgentPlanner:
             # Support reverse forms such as "2000 SGD", but reject amounts
             # that are clearly attached to an outgoing obligation or payment.
             for reverse in re.finditer(
-                rf"([0-9]+(?:\.[0-9]+)?)\s*{token}\b",
+                rf"([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*{token}\b",
                 t,
                 re.I,
             ):
@@ -120,7 +122,7 @@ class LocalAgentPlanner:
                     re.I,
                 ):
                     continue
-                balances[code] = self.engine.money_value(reverse.group(1))
+                balances[code] = self.engine.money_value(reverse.group(1).replace(",", ""))
                 break
 
         return balances

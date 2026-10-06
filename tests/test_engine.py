@@ -738,7 +738,7 @@ def test_local_agent_builds_judge_mode_evidence_packet():
     e = FinanceEngine()
     r = e.agent("I have SGD 4,000 and MYR 5,000. I need SGD 3,000 for tuition. What should I do?")
     judge = r["data"]["judge"]
-    assert judge["title"] == "BorderWise decision evidence"
+    assert judge["title"] == "XKF5 decision evidence"
     assert judge["decision"] == "No currency conversion needed"
     assert judge["observed"]
     assert judge["reasoning"]

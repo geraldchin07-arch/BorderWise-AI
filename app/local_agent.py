@@ -899,6 +899,11 @@ class LocalAgentPlanner:
                 and not conditional_income_question
             )
         )
+        # Dedicated conditional-income handling below must always win over the
+        # generic multi-goal planner, even though the message contains both
+        # "tuition" and "parents" and therefore looks like a two-goal plan.
+        if conditional_income_question:
+            goal_plan_ready = False
         if goal_planning_question and goal_plan_ready:
             wallet_balances = self._extract_wallet_balances_from_text(t)
             if not wallet_balances:

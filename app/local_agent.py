@@ -723,7 +723,7 @@ class LocalAgentPlanner:
                         "feasible_for_remaining_need": target_value >= remaining_need,
                         "amount_used": float(use_amount),
                         "target_value": float(target_value),
-                        "remaining_need": float(max(money(0), remaining_need - target_value)),
+                        "remaining_need": float(max(self.engine.money_value(0), remaining_need - target_value)),
                     })
                 decision = {
                     "action": (

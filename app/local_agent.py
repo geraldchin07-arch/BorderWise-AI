@@ -822,6 +822,20 @@ class LocalAgentPlanner:
 
                 tuition_due = tuition_days if tuition_days is not None else 30
                 tuition_priority = 0 if tuition_due <= 30 else 1
+
+                # Only bring the saved emergency-reserve configuration into the
+                # response when the user explicitly asks about protecting a reserve.
+                # A standalone affordability question must not inherit unrelated
+                # profile assumptions from the demo wallet.
+                reserve_requested = any(marker in normalized for marker in (
+                    "emergency reserve",
+                    "emergency fund",
+                    "keep aside",
+                    "keep in reserve",
+                    "keep a reserve",
+                    "protect my reserve",
+                    "protect the reserve",
+                ))
                 reserve_currency = str(
                     self.engine.state.get("profile_meta", {}).get("emergency_reserve_currency", "MYR")
                 ).upper()
@@ -849,25 +863,49 @@ class LocalAgentPlanner:
                         "The tuition obligation is prioritized because it has the clearer near-term deadline."
                     ),
                 })
-                trace.append({
-                    "step": "SECURITY",
-                    "status": "completed",
-                    "detail": (
-                        f"Protected the configured {reserve_currency} {reserve_amount:,.2f} emergency reserve; "
-                        "no balances, proposals or transactions were changed."
-                    ),
-                })
+                if reserve_requested:
+                    trace.append({
+                        "step": "SECURITY",
+                        "status": "completed",
+                        "detail": (
+                            f"Protected the configured {reserve_currency} {reserve_amount:,.2f} emergency reserve; "
+                            "no balances, proposals or transactions were changed."
+                        ),
+                    })
+                else:
+                    trace.append({
+                        "step": "SECURITY",
+                        "status": "completed",
+                        "detail": "No emergency-reserve assumption was applied because the user did not request one.",
+                    })
 
-                answer = (
-                    f"Priority 1: fund the tuition of {tuition_currency} {tuition_amount:,.2f} first "
-                    f"(about {tuition_due} days away). "
-                    f"Priority 2: review the {remittance_currency} {remittance_amount:,.2f} family remittance after tuition is secured. "
-                    f"Current-wallet coverage is about {tuition_available:,.2f} {tuition_currency} for tuition "
-                    f"and {remittance_available:,.2f} {remittance_currency} for the remittance. "
-                    f"Estimated tuition shortfall: {tuition_shortfall:,.2f} {tuition_currency}; "
-                    f"estimated remittance shortfall: {remittance_shortfall:,.2f} {remittance_currency}. "
-                    "The emergency reserve remains protected. This is a prioritization simulation; no transaction was created."
-                )
+                if reserve_requested:
+                    answer = (
+                        f"Priority 1: fund the tuition of {tuition_currency} {tuition_amount:,.2f} first "
+                        f"(about {tuition_due} days away). "
+                        f"Priority 2: review the {remittance_currency} {remittance_amount:,.2f} family remittance after tuition is secured. "
+                        f"Current-wallet coverage is about {tuition_available:,.2f} {tuition_currency} for tuition "
+                        f"and {remittance_available:,.2f} {remittance_currency} for the remittance. "
+                        f"Estimated tuition shortfall: {tuition_shortfall:,.2f} {tuition_currency}; "
+                        f"estimated remittance shortfall: {remittance_shortfall:,.2f} {remittance_currency}. "
+                        f"The configured emergency reserve is treated as a protected constraint. "
+                        "This is a prioritization simulation; no transaction was created."
+                    )
+                else:
+                    if tuition_shortfall > 0:
+                        answer = (
+                            f"No. You have {tuition_available:,.2f} {tuition_currency} available for a "
+                            f"{tuition_amount:,.2f} {tuition_currency} tuition payment due in about {tuition_due} days, "
+                            f"so you are short by {tuition_shortfall:,.2f} {tuition_currency}. "
+                            "This is an affordability simulation only; no transaction was created."
+                        )
+                    else:
+                        answer = (
+                            f"Yes. You have enough to cover the {tuition_amount:,.2f} {tuition_currency} tuition "
+                            f"due in about {tuition_due} days, with approximately "
+                            f"{tuition_available - tuition_amount:,.2f} {tuition_currency} left before other expenses. "
+                            "This is an affordability simulation only; no transaction was created."
+                        )
                 trace.append({
                     "step": "RECOMMEND",
                     "status": "completed",

@@ -1524,3 +1524,72 @@ def test_local_agent_exact_multi_obligation_scenario_is_self_contained():
     assert "not represented in the supplied scenario" in r["answer"]
     assert e.get_balance() == before
     assert e.state["proposals"] == {}
+
+
+def test_local_agent_values_all_explicit_multi_currency_balances_in_sgd():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 5000, "CNY": 10000, "USD": 500},
+        "balance_fx_modes": {"CNY": "custom", "USD": "custom"},
+        "custom_fx_rates_to_sgd": {"CNY": 0.19, "USD": 1.28},
+        "monthly_income_amount": 0,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 0,
+        "emergency_reserve_currency": "SGD",
+        "tuition_amount": 0,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 30,
+        "accommodation_amount": 0,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Living": 0},
+        "spending_classifications": {"Living": "Core"},
+    })
+    r = e.agent("I have SGD 2000, CNY 15000 and USD 500. How much is that worth in SGD?")
+    assert r["data"]["valuation"]["total"] == 5490.0
+    assert "Total ≈ SGD 5,490.00" in r["answer"]
+
+
+def test_local_agent_reuses_hypothetical_wallet_for_follow_up_affordability():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 9000, "MYR": 8000},
+        "balance_fx_modes": {"MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"MYR": 0.31},
+        "monthly_income_amount": 0,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 0,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 0,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 30,
+        "accommodation_amount": 0,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Living": 0},
+        "spending_classifications": {"Living": "Core"},
+    })
+    e.agent("I have SGD 5490.")
+    r = e.agent("My tuition is SGD 6000 due in 3 weeks. Can I afford it?")
+    assert r["data"]["agent_mode"] == "local_agent_planner"
+    assert "5490" in r["answer"] or "5,490" in r["answer"]
+
+
+def test_local_agent_does_not_prepare_transfer_for_affordability_question():
+    e = FinanceEngine()
+    before = e.get_balance()
+    r = e.agent("I have SGD 2000 and I want to send RM10000 home today. Can I do it while protecting my emergency reserve?")
+    assert r["data"]["state_changed"] is False
+    assert e.get_balance() == before
+    assert e.state["proposals"] == {}
+    assert "not recommend" in r["answer"].lower() or "cannot" in r["answer"].lower() or "shortfall" in r["answer"].lower()

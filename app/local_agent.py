@@ -296,18 +296,41 @@ class LocalAgentPlanner:
         incoming_value = to_planning(incoming[0], incoming[1]) if incoming else self.engine.money_value(0)
         base = self.engine.money_value(usable - spending - tuition_value - remittance_value)
         with_incoming = self.engine.money_value(base + incoming_value)
+
+        # Keep both the selected planning-currency view and an SGD-normalized view.
+        # This avoids mislabeled "projected_balance_sgd" values when a user chooses
+        # a planning currency other than SGD.
+        starting_sgd = self.engine.money_value(starting * planning_rate)
+        protected_sgd = self.engine.money_value(protected * planning_rate)
+        usable_sgd = self.engine.money_value(usable * planning_rate)
+        spending_sgd = self.engine.money_value(spending * planning_rate)
+        tuition_sgd = self.engine.money_value(tuition_value * planning_rate)
+        remittance_sgd = self.engine.money_value(remittance_value * planning_rate)
+        incoming_sgd = self.engine.money_value(incoming_value * planning_rate)
+        base_sgd = self.engine.money_value(base * planning_rate)
+        with_incoming_sgd = self.engine.money_value(with_incoming * planning_rate)
+
         return {
             "horizon_days": int(horizon_days),
             "planning_currency": planning,
             "starting_balance_planning": float(starting),
+            "starting_balance_sgd": float(starting_sgd),
             "protected_reserve_planning": float(protected),
+            "protected_reserve_sgd": float(protected_sgd),
             "usable_starting_planning": float(usable),
+            "usable_starting_sgd": float(usable_sgd),
             "monthly_expenses_planning": float(spending),
+            "monthly_expenses_sgd": float(spending_sgd),
             "tuition_planning": float(tuition_value),
+            "tuition_sgd": float(tuition_sgd),
             "remittance_planning": float(remittance_value),
+            "remittance_sgd": float(remittance_sgd),
             "incoming_planning": float(incoming_value),
+            "incoming_sgd": float(incoming_sgd),
             "projected_balance_planning": float(base),
+            "projected_balance_sgd": float(base_sgd),
             "projected_balance_with_incoming": float(with_incoming),
+            "projected_balance_with_incoming_sgd": float(with_incoming_sgd),
             "cash_position": "funding_gap" if base < 0 else "surplus",
             "cash_position_with_incoming": "funding_gap" if with_incoming < 0 else "surplus",
             "reserve": {
@@ -1253,7 +1276,8 @@ class LocalAgentPlanner:
                 )
             answer = (
                 "BorderWise's plan: " + " ".join(answer_parts) +
-                f" 30-day projected position: {forecast['planning_currency']} {forecast['projected_balance_planning']:,.2f}. "
+                f" {forecast['horizon_days']}-day scenario position before conditional incoming funds: "
+                f"{forecast['planning_currency']} {forecast['projected_balance_planning']:,.2f}. "
                 + (
                     "Your emergency reserve is protected. "
                     if reserve_represented and reserve_protected else
@@ -1269,6 +1293,13 @@ class LocalAgentPlanner:
                 + (
                     f"Uncertainties: {' '.join(uncertainties)} "
                     if uncertainties else
+                    ""
+                )
+                + (
+                    f"With the stated conditional incoming funds, the projected position would be "
+                    f"{forecast['planning_currency']} {forecast['projected_balance_with_incoming']:,.2f}. "
+                    if incoming_labeled
+                    else
                     ""
                 )
                 + "This is a planning simulation only; no transaction was created or executed."

@@ -121,6 +121,38 @@ def test_offline_local_agent_handles_received_money_planning():
     assert all(x in steps for x in ["UNDERSTAND", "OBSERVE", "SIMULATE", "REASON", "FX", "CALCULATE", "SECURITY", "RECOMMEND"])
 
 
+def test_local_agent_uses_message_wallet_balances_for_scenario():
+    e = FinanceEngine()
+    # Deliberately make the saved wallet different from the balances stated in chat.
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 3000, "MYR": 10000},
+        "balance_fx_modes": {"MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"MYR": 0.31},
+        "monthly_income_amount": 1000,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 3000,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "accommodation_amount": 400,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 300, "Transport": 100},
+        "spending_classifications": {"Food & dining": "Adjustable", "Transport": "Core"},
+    })
+    r = e.agent("I have CNY 10,000, USD 500, MYR 5,000 and SGD 500. I need SGD 3,000 for tuition. What should I convert?")
+    assert r["data"]["wallet_source"] == "message"
+    assert r["data"]["wallet_balances_used"] == {"MYR": 5000.0, "SGD": 500.0, "USD": 500.0, "CNY": 10000.0}
+    assert r["data"]["funding_plan"]["target_amount"] == 3000.0
+    assert r["data"]["funding_plan"]["plan"][0]["from_currency"] == "SGD"
+    assert e.state["balances"] == {"SGD": 3000, "MYR": 10000}
+
+
 def test_local_agent_distinguishes_wallet_balance_from_required_amount():
     e = FinanceEngine()
     e.update_profile_general({

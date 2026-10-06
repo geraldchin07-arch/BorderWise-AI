@@ -527,6 +527,121 @@ class FinanceEngine:
         return obligations
 
 
+    def recommend_funding(self, target_amount: float | Decimal, target_currency: str) -> dict[str, Any]:
+        """Recommend a minimum-conversion funding plan from the saved multi-currency wallet.
+
+        The engine is deterministic: use the target-currency balance first, protect the
+        configured emergency reserve, then draw from the largest remaining currency values
+        until the target is covered. No account balances are mutated.
+        """
+        target = target_currency.upper().strip()
+        required = money(target_amount)
+        if required <= 0:
+            raise ValueError("Target amount must be positive.")
+        if not re.fullmatch(r"[A-Z]{3}", target):
+            raise ValueError("Target currency must be a 3-letter ISO code.")
+
+        meta = self.state.get("profile_meta", {})
+        reserve_currency = str(meta.get("emergency_reserve_currency", "MYR")).upper()
+        reserve_amount = money(meta.get("emergency_reserve_amount", self.state.get("emergency_reserve_myr", 0)))
+        balances = self.state.get("balances", {})
+
+        candidates: list[dict[str, Any]] = []
+        skipped: list[dict[str, str]] = []
+
+        for code, balance in balances.items():
+            bal = money(balance)
+            if bal <= 0:
+                continue
+
+            protected = reserve_amount if code == reserve_currency else money(0)
+            available = money(max(money(0), bal - protected))
+            if available <= 0:
+                continue
+
+            try:
+                conversion = self.convert_currency(available, code, target)
+                value = money(conversion["converted_amount"])
+                rate = fxrate(conversion["rate"])
+            except ValueError as exc:
+                skipped.append({"currency": code, "reason": str(exc)})
+                continue
+
+            candidates.append({
+                "currency": code,
+                "balance": float(bal),
+                "protected_reserve": float(protected),
+                "available": float(available),
+                "available_in_target": float(value),
+                "rate_to_target": float(rate),
+                "fx": conversion.get("fx", {}),
+            })
+
+        # Prefer funds already denominated in the target currency, then the largest
+        # remaining target-equivalent balances. This reduces the number of conversions.
+        candidates.sort(key=lambda x: (x["currency"] != target, -x["available_in_target"]))
+
+        remaining = required
+        plan: list[dict[str, Any]] = []
+        for candidate in candidates:
+            if remaining <= 0:
+                break
+            source = candidate["currency"]
+            if source == target:
+                source_needed = money(min(Decimal(str(candidate["available"])), remaining))
+                target_value = source_needed
+                rate = Decimal("1")
+            else:
+                rate = fxrate(candidate["rate_to_target"])
+                source_needed = money(min(
+                    Decimal(str(candidate["available"])),
+                    remaining / rate,
+                ))
+                target_value = money(source_needed * rate)
+
+            if source_needed <= 0 or target_value <= 0:
+                continue
+
+            plan.append({
+                "from_currency": source,
+                "source_amount": float(source_needed),
+                "to_currency": target,
+                "target_amount": float(target_value),
+                "rate": float(rate),
+                "remaining_target_after": float(money(max(money(0), remaining - target_value))),
+                "fx": candidate.get("fx", {}) if source != target else {
+                    "source": "Existing target-currency balance",
+                    "rate_date": None,
+                    "live": False,
+                    "mode": "same_currency",
+                },
+            })
+            remaining = money(max(money(0), remaining - target_value))
+
+        funded = money(required - remaining)
+        available_total = sum((money(x["available_in_target"]) for x in candidates), money(0))
+        status = "funded" if remaining <= 0 else "partial"
+
+        return {
+            "target_amount": float(required),
+            "target_currency": target,
+            "status": status,
+            "funded_amount": float(funded),
+            "remaining_gap": float(remaining),
+            "available_total_in_target": float(available_total),
+            "plan": plan,
+            "candidates": candidates,
+            "skipped": skipped,
+            "reserve": {
+                "currency": reserve_currency,
+                "amount": float(reserve_amount),
+                "protected": True,
+            },
+            "strategy": "Use target-currency funds first, protect the emergency reserve, then minimize the number of source-currency conversions using largest available target-equivalent balances.",
+            "state_changed": False,
+            "note": "Indicative FX scenario only; no balances are mutated and no transaction is created.",
+        }
+
     def convert_currency(self, amount: float | Decimal, from_currency: str, to_currency: str) -> dict[str, Any]:
         """Scenario conversion using the selected wallet rates when available, otherwise a direct reference pair."""
         base = from_currency.upper().strip()

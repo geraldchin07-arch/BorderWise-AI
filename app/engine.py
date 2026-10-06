@@ -1446,9 +1446,9 @@ class FinanceEngine:
         return None
 
     def agent(self, text: str) -> dict[str, Any]:
-        # Safety-critical deterministic cases must bypass the optional LLM planner.
-        # This guarantees uncertain incoming family support is never interpreted as
-        # confirmed funds, regardless of whether OPENAI_API_KEY is configured.
+        # Safety-critical deterministic gate: uncertain family support must never
+        # reach an LLM planner as if it were confirmed cash. Keep this path
+        # self-contained so a local-agent exception cannot silently fall through.
         normalized = str(text).lower().strip()
         conditional_income_question = (
             any(k in normalized for k in [
@@ -1459,13 +1459,34 @@ class FinanceEngine:
             and any(k in normalized for k in ["parent", "parents", "family"])
         )
         if conditional_income_question:
-            try:
-                from .local_agent import LocalAgentPlanner
-                local_result = LocalAgentPlanner(self).run(text)
-                if local_result is not None:
-                    return local_result
-            except Exception:
-                pass
+            return self._result(
+                "agentic_local",
+                "No. Treat that money as conditional, not confirmed, until it is actually received or otherwise reliably committed. "
+                "For tuition planning, BorderWise should not count conditional family support as available funds. "
+                "You can model the possible amount separately as a what-if scenario, but it must not be treated as confirmed cash.",
+                [
+                    {
+                        "step": "UNDERSTAND",
+                        "status": "completed",
+                        "detail": "Detected uncertain incoming family support.",
+                    },
+                    {
+                        "step": "REASON",
+                        "status": "completed",
+                        "detail": "Separated confirmed funds from hypothetical incoming funds.",
+                    },
+                    {
+                        "step": "SECURITY",
+                        "status": "completed",
+                        "detail": "No account state changed and no transaction was created.",
+                    },
+                ],
+                {
+                    "conditional_income": True,
+                    "state_changed": False,
+                    "agent_mode": "deterministic_safety_gate",
+                },
+            )
 
         # v5: optional LLM tool-calling planner. The deterministic engine remains the
         # fallback and the authority for calculations, policy and execution.

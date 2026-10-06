@@ -1297,3 +1297,34 @@ def test_debug_direct_local_planner_complex():
         "Tuition is SGD 3,000 due in 14 days. My parents can send SGD 800 next week "
         "and I also want to send SGD 1,000 home. What should I do?"
     )
+
+
+def test_debug_direct_local_planner_simple_funding():
+    from app.local_agent import LocalAgentPlanner
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 500, "CNY": 10000, "USD": 500, "MYR": 5000},
+        "balance_fx_modes": {"CNY": "custom", "USD": "custom", "MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"CNY": 0.19, "USD": 1.28, "MYR": 0.31},
+        "monthly_income_amount": 1000,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 3000,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "accommodation_amount": 400,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 300, "Transport": 100},
+        "spending_classifications": {"Food & dining": "Adjustable", "Transport": "Core"},
+    })
+    result = LocalAgentPlanner(e).run(
+        "I have CNY 10,000, USD 500, MYR 5,000 and SGD 500. "
+        "I need SGD 3,000 for tuition. What should I convert?"
+    )
+    assert result is not None

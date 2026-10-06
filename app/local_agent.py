@@ -495,6 +495,158 @@ class LocalAgentPlanner:
                 },
             )
 
+        # Remittance planning must run before the generic "send" action handler.
+        # A planning question such as "Should I send SGD 500 home?" is advisory and
+        # must not be mistaken for an instruction to create a MYR transfer proposal.
+        if "remittance" in t or "send home" in t or "back home" in t or "family overseas" in t or "send money home" in t:
+            remittance_advice = any(k in t for k in [
+                "should i", "which", "what should", "best", "how should",
+                "compare", "versus", " vs ", "help me decide",
+            ])
+            if remittance_advice:
+                remittance_supported = [
+                    "MYR", "SGD", "USD", "CNY", "JPY", "KRW", "THB", "EUR",
+                    "GBP", "AUD", "CAD", "HKD", "TWD", "INR",
+                ]
+                send_target = None
+                send_amount = None
+                mentioned_codes = []
+                for code in remittance_supported:
+                    amount = self._amount(t, code)
+                    if amount is not None:
+                        mentioned_codes.append(code)
+                    match = re.search(
+                        rf"\b(?:send|sending|remit|remittance|transfer)\b[^.;,]{{0,80}}\b{re.escape(code.lower())}\b\s*([0-9]+(?:\.[0-9]+)?)",
+                        t,
+                        re.I,
+                    )
+                    if match:
+                        send_target = code
+                        send_amount = self.engine.money_value(match.group(1))
+                        break
+
+                if send_target and send_amount and send_amount > 0:
+                    # Treat message balances as hypothetical only when the message
+                    # explicitly indicates possession; never treat "send SGD 500"
+                    # itself as evidence that SGD 500 is in the wallet.
+                    possession_marker = re.search(
+                        r"\b(?:have|has|hold|holding|own|keep)\b",
+                        t,
+                        re.I,
+                    )
+                    wallet_balances = (
+                        self._extract_wallet_balances_from_text(t)
+                        if possession_marker
+                        else {}
+                    )
+                    use_scenario_wallet = len(wallet_balances) >= 1
+
+                    trace = [
+                        {
+                            "step": "UNDERSTAND",
+                            "status": "completed",
+                            "detail": f"Detected an advisory remittance-planning request for {send_target} {send_amount:,.2f}.",
+                        },
+                        {
+                            "step": "OBSERVE",
+                            "status": "completed",
+                            "detail": (
+                                "Using explicitly stated wallet balances as a hypothetical scenario."
+                                if use_scenario_wallet
+                                else "Using the saved multi-currency wallet."
+                            ),
+                        },
+                    ]
+                    try:
+                        funding = self.engine.recommend_funding(
+                            send_amount,
+                            send_target,
+                            balances_override=wallet_balances if use_scenario_wallet else None,
+                        )
+                    except ValueError as exc:
+                        trace.append({"step": "REASON", "status": "blocked", "detail": str(exc)})
+                        return self._result(
+                            "agentic_local",
+                            f"I could not build a safe remittance plan: {exc}",
+                            trace,
+                            {"goal": "remittance_planning", "blocked_reason": "remittance_plan_unavailable"},
+                        )
+
+                    plan = funding.get("plan", [])
+                    selected_sources = [x["from_currency"] for x in plan]
+                    conversion_count = sum(
+                        1 for x in plan if x["from_currency"] != x["to_currency"]
+                    )
+                    reserve = funding.get("reserve", {})
+                    alternatives = [
+                        {
+                            "currency": x["currency"],
+                            "usable_balance": x["available"],
+                            "target_equivalent": x["available_in_target"],
+                            "selected": x["currency"] in selected_sources,
+                        }
+                        for x in funding.get("candidates", [])
+                        if x.get("available_in_target", 0) > 0
+                    ]
+
+                    if funding["status"] == "funded":
+                        legs_text = "; ".join(
+                            f"{x['from_currency']} {x['source_amount']:,.2f} → "
+                            f"{x['to_currency']} {x['target_amount']:,.2f}"
+                            for x in plan
+                        )
+                        answer = (
+                            f"Decision: prepare the remittance using {legs_text}. "
+                            f"The plan uses {', '.join(selected_sources)} with {conversion_count} FX conversion(s) "
+                            f"while protecting the {reserve.get('currency', 'configured')} emergency reserve. "
+                            "This is a planning simulation only; no remittance or transaction was created."
+                        )
+                        action = "PREPARE_REMITTANCE_PLAN"
+                    else:
+                        gap = funding["remaining_gap"]
+                        answer = (
+                            f"Decision: do not send the remittance yet. The wallet can fund about "
+                            f"{funding['funded_amount']:,.2f} of the requested {send_target} {send_amount:,.2f}, "
+                            f"leaving a {gap:,.2f} {send_target} gap. "
+                            "The emergency reserve remains protected and no transaction was created."
+                        )
+                        action = "REMITTANCE_FUNDING_GAP"
+
+                    trace.extend([
+                        {
+                            "step": "REASON",
+                            "status": "completed",
+                            "detail": f"Compared the available wallet against the {send_target} remittance target.",
+                        },
+                        {
+                            "step": "SECURITY",
+                            "status": "completed",
+                            "detail": "Remittance planning is read-only; execution still requires the protected proposal and explicit authorization flow.",
+                        },
+                        {
+                            "step": "RECOMMEND",
+                            "status": "completed",
+                            "detail": f"Produced {action.lower()} without moving funds.",
+                        },
+                    ])
+                    return self._result(
+                        "agentic_local",
+                        answer,
+                        trace,
+                        {
+                            "goal": "remittance_planning",
+                            "remittance": {
+                                "target": {"currency": send_target, "amount": float(send_amount)},
+                                "action": action,
+                                "funding_plan": funding,
+                                "selected_sources": selected_sources,
+                                "conversion_count": conversion_count,
+                                "alternatives": alternatives,
+                                "state_changed": False,
+                            },
+                        },
+                    )
+
         # Explicit action requests take priority over informational FX questions.
         # IMPORTANT: words like "conversion" or "convert" alone are not enough to
         # authorize preparation; the user must clearly request an action and provide
@@ -573,176 +725,6 @@ class LocalAgentPlanner:
         conversion_words = any(k in t for k in [
             "convert", "exchange", "to ", "into ", "worth", "how much is",
         ])
-
-        # Remittance planning: plan an outbound cross-border payment without executing it.
-        # This path deliberately sits before explicit-action handling so a user can ask
-        # "Should I send USD or CNY?" without accidentally creating a transfer proposal.
-        remittance_question = any(k in t for k in [
-            "remittance", "remit", "send home", "send to my family", "send money home",
-            "money to my family", "transfer to my family", "pay family",
-            "send overseas", "send abroad", "cross-border payment", "cross border payment",
-        ]) or (
-            any(k in t for k in ["send money", "send"]) and
-            any(k in t for k in ["family", "home", "overseas", "abroad", "country"])
-        )
-        remittance_decision = any(k in t for k in [
-            "should i", "which", "what should", "best", "how should",
-            "compare", "versus", " vs ", "how much should",
-        ])
-        if remittance_question and remittance_decision:
-            target_code = None
-            target_amount = None
-            for code in detected:
-                requested_amount = self._amount_after_need(t, code)
-                if requested_amount is not None:
-                    target_code, target_amount = code, requested_amount
-                    break
-                send_match = re.search(
-                    rf"\b(?:send|sending|remit|remittance|transfer)\b[^.;,]{{0,80}}\b{re.escape(code.lower())}\b\s*([0-9]+(?:\.[0-9]+)?)",
-                    t,
-                    re.I,
-                )
-                if send_match:
-                    target_code, target_amount = code, self.engine.money_value(send_match.group(1))
-                    break
-
-            if target_code is None:
-                mentioned_codes = []
-                for code, aliases_for_code in {
-                    "MYR": ["myr", "rm", "ringgit"],
-                    "SGD": ["sgd", "s$"], "USD": ["usd", "us$", "dollar", "dollars"],
-                    "CNY": ["cny", "rmb", "yuan"], "JPY": ["jpy", "yen"],
-                    "KRW": ["krw", "won"], "THB": ["thb", "baht"],
-                    "EUR": ["eur", "euro", "euros"], "GBP": ["gbp", "pound", "pounds"],
-                    "AUD": ["aud"], "CAD": ["cad"], "HKD": ["hkd"],
-                    "TWD": ["twd"], "INR": ["inr"],
-                }.items():
-                    if any(re.search(rf"(?<![A-Za-z]){re.escape(a)}(?![A-Za-z])", t, re.I) for a in aliases_for_code):
-                        mentioned_codes.append(code)
-                send_match_amounts = {}
-                for code in mentioned_codes:
-                    match = re.search(
-                        rf"\b(?:send|sending|remit|remittance|transfer)\b[^.;,]{{0,80}}\b{re.escape(code.lower())}\b\s*([0-9]+(?:\.[0-9]+)?)",
-                        t,
-                        re.I,
-                    )
-                    if match:
-                        send_match_amounts[code] = self.engine.money_value(match.group(1))
-                if send_match_amounts:
-                    target_code, target_amount = next(iter(send_match_amounts.items()))
-
-            if target_code and target_amount:
-                wallet_balances = self._extract_wallet_balances_from_text(t)
-                use_scenario_wallet = len(wallet_balances) >= 1
-                trace = [
-                    {
-                        "step": "UNDERSTAND",
-                        "status": "completed",
-                        "detail": f"Detected a remittance-planning request for {target_code} {target_amount:,.2f}.",
-                    },
-                    {
-                        "step": "OBSERVE",
-                        "status": "completed",
-                        "detail": (
-                            "Using wallet balances stated in the message as a hypothetical scenario."
-                            if use_scenario_wallet
-                            else "Using the saved multi-currency wallet."
-                        ),
-                    },
-                ]
-
-                try:
-                    funding = self.engine.recommend_funding(
-                        target_amount,
-                        target_code,
-                        balances_override=wallet_balances if use_scenario_wallet else None,
-                    )
-                except ValueError as exc:
-                    trace.append({"step": "REASON", "status": "blocked", "detail": str(exc)})
-                    return self._result(
-                        "agentic_local",
-                        f"I could not build a safe remittance plan: {exc}",
-                        trace,
-                        {"blocked_reason": "remittance_plan_unavailable"},
-                    )
-
-                plan = funding.get("plan", [])
-                selected_sources = [x["from_currency"] for x in plan]
-                conversion_count = sum(1 for x in plan if x["from_currency"] != x["to_currency"])
-                reserve = funding.get("reserve", {})
-                alternatives = [
-                    {
-                        "currency": x["currency"],
-                        "usable_balance": x["available"],
-                        "target_equivalent": x["available_in_target"],
-                        "selected": x["currency"] in selected_sources,
-                    }
-                    for x in funding.get("candidates", [])
-                    if x.get("available_in_target", 0) > 0
-                ]
-
-                if funding["status"] == "funded":
-                    legs_text = "; ".join(
-                        f"{x['from_currency']} {x['source_amount']:,.2f} → "
-                        f"{x['to_currency']} {x['target_amount']:,.2f}"
-                        for x in plan
-                    )
-                    reason = (
-                        f"The plan uses {', '.join(selected_sources)} and requires "
-                        f"{conversion_count} FX conversion(s), while protecting the "
-                        f"{reserve.get('currency', 'configured')} emergency reserve."
-                    )
-                    answer = (
-                        f"Decision: prepare the remittance using {legs_text}. "
-                        f"Why: {reason} "
-                        "This is a planning simulation only; no remittance or transaction was created."
-                    )
-                    action = "PREPARE_REMITTANCE_PLAN"
-                else:
-                    gap = funding["remaining_gap"]
-                    reason = (
-                        f"The wallet can fund about {funding['funded_amount']:,.2f} "
-                        f"of the requested {target_code} {target_amount:,.2f}, leaving "
-                        f"a {gap:,.2f} {target_code} gap."
-                    )
-                    answer = (
-                        f"Decision: do not send the remittance yet. {reason} "
-                        "The emergency reserve remains protected and no transaction was created."
-                    )
-                    action = "REMITTANCE_FUNDING_GAP"
-
-                trace.append({
-                    "step": "REASON",
-                    "status": "completed",
-                    "detail": reason,
-                })
-                trace.append({
-                    "step": "SECURITY",
-                    "status": "completed",
-                    "detail": "Remittance planning is read-only; execution still requires the protected proposal and authorization flow.",
-                })
-                trace.append({
-                    "step": "RECOMMEND",
-                    "status": "completed",
-                    "detail": f"Produced {action.lower()} without moving funds.",
-                })
-                return self._result(
-                    "agentic_local",
-                    answer,
-                    trace,
-                    {
-                        "goal": "remittance_planning",
-                        "remittance": {
-                            "target": {"currency": target_code, "amount": float(target_amount)},
-                            "action": action,
-                            "funding_plan": funding,
-                            "selected_sources": selected_sources,
-                            "conversion_count": conversion_count,
-                            "alternatives": alternatives,
-                            "state_changed": False,
-                        },
-                    },
-                )
 
         # Case W: what-if comparison between explicitly mentioned source currencies.
         # This is advisory only: each option is simulated independently and no wallet

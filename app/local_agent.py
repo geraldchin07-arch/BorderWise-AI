@@ -155,6 +155,28 @@ class LocalAgentPlanner:
             return None
         return self.engine.money_value(matches[-1])
 
+    def _extract_horizon_days(self, text: str) -> int | None:
+        """Extract a practical obligation horizon from natural language."""
+        t = text.lower().strip()
+        word_numbers = {
+            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+        }
+        patterns = [
+            (r"\b(?:in|within|due in|due within)\s+(\d+)\s+days?\b", 1),
+            (r"\b(?:in|within|due in|due within)\s+(\d+)\s+weeks?\b", 7),
+            (r"\b(?:in|within|due in|due within)\s+(one|two|three|four|five|six|seven|eight|nine|ten)\s+weeks?\b", 7),
+            (r"\b(?:next|within)\s+month\b", 30),
+        ]
+        for pattern, multiplier in patterns:
+            m = re.search(pattern, t, re.I)
+            if m:
+                raw = m.group(1)
+                value = word_numbers.get(raw, None) if raw.isalpha() else int(raw)
+                return value * multiplier if value is not None else None
+        return None
+
+
     def _result(self, *args) -> dict[str, Any]:
         """Build a local-agent result while supporting both legacy call shapes."""
         if len(args) == 4:
@@ -359,6 +381,92 @@ class LocalAgentPlanner:
                 {"blocked_reason": "security_policy_override_attempt"},
             )
 
+        # Credit-building guidance is intentionally educational and evidence-bounded.
+        # The demo ledger does not contain credit-account utilization or missed-payment history,
+        # so BorderWise must never invent a credit score or claim that the liquidity health score
+        # represents creditworthiness.
+        credit_question = any(k in t for k in [
+            "build credit", "building credit", "improve my credit", "improve credit",
+            "credit score", "credit history", "establish credit", "creditworthiness",
+            "credit card", "build my credit",
+        ])
+        if credit_question:
+            txs = self.engine.get_transactions(50)
+            obligations = self.engine.get_obligations()
+            health = self.engine.health_analysis()
+            completed_tx_count = sum(1 for x in txs if x.get("status") == "completed")
+            trace = [
+                {
+                    "step": "UNDERSTAND",
+                    "status": "completed",
+                    "detail": "Detected a credit-building question from an international-student finance context.",
+                },
+                {
+                    "step": "OBSERVE",
+                    "status": "completed",
+                    "detail": (
+                        f"Reviewed {completed_tx_count} completed ledger transactions, "
+                        f"{len(obligations)} currently tracked obligations, and the liquidity indicator."
+                    ),
+                },
+            ]
+            trace.append({
+                "step": "REASON",
+                "status": "completed",
+                "detail": (
+                    "The demo does not contain credit-account limits, utilization, account age, "
+                    "or missed-payment history, so no credit score or creditworthiness claim can be made."
+                ),
+            })
+            priorities = [
+                "Pay documented obligations on time and keep a reliable payment record.",
+                "Keep borrowing and recurring debt payments within the cash-flow plan rather than stretching the emergency reserve.",
+                "Review credit-product fees, eligibility and terms before opening an account; do not borrow solely to manufacture a score.",
+                "Track actual credit-account balances and due dates if the user wants a future credit-health assessment.",
+            ]
+            trace.append({
+                "step": "SECURITY",
+                "status": "completed",
+                "detail": "Blocked any attempt to infer or fabricate a real credit score from the demo's liquidity data.",
+            })
+            trace.append({
+                "step": "RECOMMEND",
+                "status": "completed",
+                "detail": "Returned evidence-bounded credit-building guidance and identified the data needed for a real credit assessment.",
+            })
+            answer = (
+                "BorderWise cannot calculate your real credit score from this demo because the data does not include "
+                "credit-account limits, utilization, account age, or missed-payment history. "
+                "For an international student, the safer foundation is consistent on-time payment of documented obligations, "
+                "keeping debt payments affordable within your cash-flow plan, and reviewing any credit product's eligibility, "
+                "fees and terms before using it. Do not take on debt just to try to create a score. "
+                "I can use this same financial profile to identify whether your current cash flow leaves room for future credit obligations."
+            )
+            return self._result(
+                "agentic_local",
+                answer,
+                trace,
+                {
+                    "credit_guidance": {
+                        "assessment": "insufficient_credit_history_data",
+                        "not_a_credit_score": True,
+                        "evidence_available": {
+                            "completed_transactions": completed_tx_count,
+                            "tracked_obligations": len(obligations),
+                            "liquidity_score": health["score"],
+                        },
+                        "missing_evidence": [
+                            "credit account limits",
+                            "credit utilization",
+                            "account age",
+                            "missed/late payment history",
+                        ],
+                        "priorities": priorities,
+                        "state_changed": False,
+                    }
+                },
+            )
+
         # Explicit action requests take priority over informational FX questions.
         # IMPORTANT: words like "conversion" or "convert" alone are not enough to
         # authorize preparation; the user must clearly request an action and provide
@@ -433,6 +541,7 @@ class LocalAgentPlanner:
                 mentioned.add(code)
 
         planning = str(self.engine.state.get("profile_meta", {}).get("planning_currency", "SGD")).upper()
+        message_horizon_days = self._extract_horizon_days(t)
         conversion_words = any(k in t for k in [
             "convert", "exchange", "to ", "into ", "worth", "how much is",
         ])
@@ -465,7 +574,12 @@ class LocalAgentPlanner:
                 # If the user says "upcoming tuition" without an amount, use the saved
                 # net tuition only when it is actually due within the 30-day horizon.
                 profile = self.engine.get_profile()
-                tuition_due = int(profile.get("tuition_due_days", 31)) <= 30
+                saved_due_days = int(profile.get("tuition_due_days", 31))
+                tuition_due = (
+                    message_horizon_days <= 30
+                    if message_horizon_days is not None
+                    else saved_due_days <= 30
+                )
                 tuition_value = self.engine.money_value(
                     Decimal(str(profile.get("tuition_amount", 0)))
                     - Decimal(str(profile.get("scholarship_amount", 0)))
@@ -492,6 +606,12 @@ class LocalAgentPlanner:
                         else "Inspected the entire saved multi-currency wallet."
                     )},
                 ]
+                if message_horizon_days is not None:
+                    trace.append({
+                        "step": "OBSERVE",
+                        "status": "completed",
+                        "detail": f"Interpreted the stated obligation horizon as about {message_horizon_days} days.",
+                    })
                 try:
                     funding = self.engine.recommend_funding(
                         target_amount,
@@ -614,6 +734,8 @@ class LocalAgentPlanner:
                     "wallet": self.engine.currency_overview(),
                     "wallet_balances_used": {k: float(v) for k, v in (wallet_balances if use_scenario_wallet else self.engine.get_balance()).items()},
                     "wallet_source": "message" if use_scenario_wallet else "saved_profile",
+                    "goal": "tuition_funding",
+                    "horizon_days": message_horizon_days,
                 })
 
         # Case A: explicit source/target conversion, e.g. "USD 500 to SGD".

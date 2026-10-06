@@ -1187,6 +1187,26 @@ class LocalAgentPlanner:
 
             priorities.sort(key=lambda x: (x["rank"], x["goal"]))
             actions.sort(key=lambda x: x["priority"])
+
+            tuition_summary = None
+            if tuition_labeled:
+                tuition_item = next((x for x in priorities if x.get("goal") == "tuition"), None)
+                tuition_summary = {
+                    "currency": tuition_labeled[1],
+                    "amount": float(tuition_labeled[0]),
+                    "status": tuition_item.get("status", "review") if tuition_item else "review",
+                    "shortfall": float(tuition_funding.get("remaining_gap", tuition_labeled[0])),
+                }
+
+            remittance_summary = None
+            if remittance_labeled:
+                remittance_item = next((x for x in priorities if x.get("goal") == "remittance"), None)
+                remittance_summary = {
+                    "currency": remittance_labeled[1],
+                    "amount": float(remittance_labeled[0]),
+                    "status": remittance_item.get("status", "needs_review") if remittance_item else "needs_review",
+                }
+
             trace = [
                 {
                     "step": "UNDERSTAND",
@@ -1253,6 +1273,8 @@ class LocalAgentPlanner:
                 "uncertainties": uncertainties,
                 "forecast": forecast,
                 "credit_readiness": credit_readiness if "credit" in detected_goals else None,
+                "tuition": tuition_summary,
+                "remittance": remittance_summary,
                 "reserve": {
                     "currency": reserve_currency,
                     "amount": float(reserve_amount),

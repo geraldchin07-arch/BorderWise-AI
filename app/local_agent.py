@@ -977,7 +977,16 @@ class LocalAgentPlanner:
                         tuition_currency,
                         balances_override=wallet_balances if use_scenario_wallet else None,
                     )
-                    tuition_status = tuition_funding["status"]
+                    # Derive the user-facing status from the actual funded amount,
+                    # not from a potentially stale helper status field. This keeps scenario
+                    # planning truthful when only part of the target can be covered.
+                    funded_amount = self.engine.money_value(tuition_funding.get("funded_amount", 0))
+                    target_amount = self.engine.money_value(tuition_funding.get("target_amount", tuition_amount))
+                    tuition_status = (
+                        "funded"
+                        if funded_amount >= target_amount
+                        else "partial"
+                    )
                 except ValueError as exc:
                     tuition_funding = {
                         "status": "review",

@@ -66,6 +66,40 @@ class LocalAgentPlanner:
 
         return None
 
+    def _amount_after_need(self, text: str, currency: str) -> Decimal | None:
+        """Extract the amount associated with a need/payment requirement.
+
+        This is separate from _amount() because a currency may appear more than once
+        in the same sentence (for example, SGD 500 held and SGD 3,000 needed).
+        """
+        t = text.lower().replace(",", "").strip()
+        code = currency.upper().strip()
+
+        aliases = {
+            "MYR": ["myr", "rm", "ringgit"],
+            "SGD": ["sgd", "s$"],
+            "USD": ["usd", "us$", "$", "dollar", "dollars"],
+            "CNY": ["cny", "rmb", "yuan", "renminbi", "¥"],
+            "JPY": ["jpy", "yen", "¥"],
+            "KRW": ["krw", "won", "₩"],
+            "THB": ["thb", "baht", "฿"],
+            "EUR": ["eur", "€", "euro", "euros"],
+            "GBP": ["gbp", "£", "pound", "pounds"],
+            "AUD": ["aud", "a$", "australian dollar"],
+            "CAD": ["cad", "c$", "canadian dollar"],
+            "HKD": ["hkd", "hk$", "hong kong dollar"],
+            "TWD": ["twd", "nt$", "taiwan dollar"],
+            "INR": ["inr", "₹", "rupee", "rupees"],
+        }
+        names = aliases.get(code, [code.lower()])
+        escaped = sorted((re.escape(x) for x in names), key=len, reverse=True)
+        currency_token = "(?:" + "|".join(escaped) + ")"
+        pattern = rf"\b(?:need|needs|pay|paying|require|required|requirement|for)\b[^.;,]{{0,100}}?{currency_token}\s*([0-9]+(?:\.[0-9]+)?)"
+        matches = re.findall(pattern, t, re.IGNORECASE)
+        if not matches:
+            return None
+        return self.engine.money_value(matches[-1])
+
     def _result(self, *args) -> dict[str, Any]:
         """Build a local-agent result while supporting both legacy call shapes."""
         if len(args) == 4:
@@ -287,20 +321,10 @@ class LocalAgentPlanner:
         if funding_question and tuition_context:
             target_code = None
             target_amount = None
-            for code, amount in detected.items():
-                token = "|".join(
-                    sorted(
-                        (re.escape(alias.lower()) for alias in aliases[code]),
-                        key=len,
-                        reverse=True,
-                    )
-                )
-                if re.search(
-                    rf"\b(?:need|needs|pay|paying|require|required)\b[^.;,]*?(?:{token})\s*[0-9][0-9,]*(?:\.[0-9]+)?",
-                    t,
-                    re.I,
-                ):
-                    target_code, target_amount = code, amount
+            for code in detected:
+                requested_amount = self._amount_after_need(t, code)
+                if requested_amount is not None:
+                    target_code, target_amount = code, requested_amount
                     break
             if target_code is None:
                 for code, amount in detected.items():

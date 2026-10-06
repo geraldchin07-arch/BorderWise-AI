@@ -496,6 +496,20 @@ class LocalAgentPlanner:
                             f"Reason: {decision_reason}"
                         ),
                     })
+                    avoided_currencies = [
+                        x["currency"] for x in candidates
+                        if x["currency"] not in selected_sources
+                    ]
+                    decision = {
+                        "action": "NO_FX_CONVERSION" if conversion_count == 0 else "FUND_TARGET",
+                        "target": {"currency": target_code, "amount": float(target_amount)},
+                        "selected_sources": selected_sources,
+                        "conversion_count": conversion_count,
+                        "reasons": [decision_reason],
+                        "avoided_currencies": avoided_currencies,
+                        "reserve_protected": funding["reserve"],
+                        "state_changed": False,
+                    }
                     answer = (
                         f"Decision: fund {target_code} {target_amount:,.2f} using {legs_text}. "
                         f"Why: {decision_reason}"
@@ -514,7 +528,13 @@ class LocalAgentPlanner:
                         "Another funding source is needed; no transaction was created or executed."
                     )
                 trace.append({"step": "RECOMMEND", "status": "completed", "detail": "Produced a wallet-wide funding recommendation without mutating account state."})
-                return self._result("agentic_local", answer, trace, {"funding_plan": funding, "wallet": self.engine.currency_overview(), "wallet_balances_used": {k: float(v) for k, v in (wallet_balances if use_scenario_wallet else self.engine.get_balance()).items()}, "wallet_source": "message" if use_scenario_wallet else "saved_profile"})
+                return self._result("agentic_local", answer, trace, {
+                    "funding_plan": funding,
+                    "decision": decision,
+                    "wallet": self.engine.currency_overview(),
+                    "wallet_balances_used": {k: float(v) for k, v in (wallet_balances if use_scenario_wallet else self.engine.get_balance()).items()},
+                    "wallet_source": "message" if use_scenario_wallet else "saved_profile",
+                })
 
         # Case A: explicit source/target conversion, e.g. "USD 500 to SGD".
         # Prefer semantic phrases such as "have/received USD 500" for the source and

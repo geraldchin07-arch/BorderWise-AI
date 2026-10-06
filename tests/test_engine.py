@@ -1378,3 +1378,42 @@ def test_local_agent_safest_plan_is_not_misrouted_as_transfer():
     assert e.state["proposals"] == {}
     assert e.get_balance() == before
     assert "prepared a sandbox conversion" not in r["answer"].lower()
+
+
+def test_local_agent_competing_goals_keeps_tuition_currency_associated_with_tuition_label():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 3000, "MYR": 5000},
+        "balance_fx_modes": {"MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"MYR": 0.31},
+        "monthly_income_amount": 0,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 0,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 60,
+        "accommodation_amount": 0,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 300},
+        "spending_classifications": {"Food & dining": "Adjustable"},
+    })
+    r = e.agent(
+        "I have SGD 3000. My tuition of SGD 2500 is due in two weeks, "
+        "but I want to send RM3000 to my family today. What is the safest plan?"
+    )
+    decision = r["data"]["decision"]
+    tuition = decision["tuition"]
+    remittance = decision["remittance"]
+    assert tuition["currency"] == "SGD"
+    assert tuition["amount"] == 2500.0
+    assert remittance["currency"] == "MYR"
+    assert remittance["amount"] == 3000.0
+    assert "tuition of SGD 2,500.00" in r["answer"]
+    assert "remittance after tuition is secured" in r["answer"]

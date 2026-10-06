@@ -875,3 +875,75 @@ def test_local_agent_computes_single_source_funding_comparisons():
     assert any(x["currency"] == "CNY" for x in options)
     assert all("target_value" in x for x in options)
     assert all("feasible_for_remaining_need" in x for x in options)
+
+
+def test_local_agent_what_if_comparison_uses_message_wallet_and_stays_read_only():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 500, "CNY": 10000, "USD": 500, "MYR": 5000},
+        "balance_fx_modes": {"CNY": "custom", "USD": "custom", "MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"CNY": 0.19, "USD": 1.28, "MYR": 0.31},
+        "monthly_income_amount": 1000,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 3000,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 14,
+        "accommodation_amount": 400,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 300, "Transport": 100},
+        "spending_classifications": {"Food & dining": "Adjustable", "Transport": "Core"},
+    })
+    before = e.get_balance()
+    r = e.agent(
+        "I have CNY 10,000 and USD 500. I need SGD 3,000 for tuition. "
+        "Should I use CNY or USD?"
+    )
+    comparison = r["data"]["comparison"]
+    assert r["data"]["goal"] == "funding_comparison"
+    assert comparison["state_changed"] is False
+    assert {x["currency"] for x in comparison["options"]} == {"CNY", "USD"}
+    assert comparison["winner"] is not None
+    assert e.get_balance() == before
+    assert e.state["proposals"] == {}
+
+
+def test_local_agent_what_if_comparison_respects_emergency_reserve():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 0, "MYR": 1200, "CNY": 20000},
+        "balance_fx_modes": {"CNY": "custom", "MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"CNY": 0.19, "MYR": 0.31},
+        "monthly_income_amount": 0,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 500,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 7,
+        "accommodation_amount": 0,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {},
+        "spending_classifications": {},
+    })
+    r = e.agent(
+        "I have MYR 1,200 and CNY 20,000. I need SGD 500 for tuition. "
+        "Should I use MYR or CNY?"
+    )
+    options = {x["currency"]: x for x in r["data"]["comparison"]["options"]}
+    assert options["MYR"]["feasible"] is False
+    assert options["CNY"]["feasible"] is True
+    assert r["data"]["comparison"]["winner"]["currency"] == "CNY"

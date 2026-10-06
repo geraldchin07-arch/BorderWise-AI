@@ -86,6 +86,14 @@ Prefer tool use over guessing. For a multi-part question, use multiple tools and
                 },
                 "required": ["amount_myr", "purpose"], "additionalProperties": False,
             }),
+            self._tool("recommend_funding", "Find a deterministic multi-currency funding plan for a target amount while protecting the emergency reserve; never moves money.", {
+                "type": "object",
+                "properties": {
+                    "target_amount": {"type": "number", "exclusiveMinimum": 0},
+                    "target_currency": {"type": "string", "pattern": "^[A-Za-z]{3}$"},
+                },
+                "required": ["target_amount", "target_currency"], "additionalProperties": False,
+            }),
             self._tool("simulate_income_impact", "Hypothetically assess the effect of receiving funds without mutating account state.", {
                 "type": "object", "properties": {
                     "amount": {"type": "number", "exclusiveMinimum": 0},
@@ -125,6 +133,8 @@ Prefer tool use over guessing. For a multi-part question, use multiple tools and
                 return {"ok": True, "result": self.engine.risk_check(self.engine.money_value(args["amount_myr"]), args["purpose"])}
             if name == "create_transfer_proposal":
                 return {"ok": True, "result": self.engine.create_proposal(self.engine.money_value(args["amount_myr"]), args["purpose"])}
+            if name == "recommend_funding":
+                return {"ok": True, "result": self.engine.recommend_funding(args["target_amount"], args["target_currency"])}
             if name == "simulate_income_impact":
                 return {"ok": True, "result": self.engine.simulate_income_impact(args["amount"], args["currency"])}
             return {"ok": False, "error": f"Unknown tool: {name}"}

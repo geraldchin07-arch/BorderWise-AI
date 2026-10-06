@@ -473,7 +473,12 @@ class LocalAgentPlanner:
             "credit score", "credit history", "establish credit", "creditworthiness",
             "credit card", "build my credit",
         ])
-        if credit_question:
+        credit_complex_context = any(k in t for k in [
+            "tuition", "remittance", "send", "spending", "expenses",
+            "cash flow", "cashflow", "incoming", "allowance", "reserve",
+            "convert", "exchange",
+        ])
+        if credit_question and not credit_complex_context:
             txs = self.engine.get_transactions(50)
             obligations = self.engine.get_obligations()
             health = self.engine.health_analysis()
@@ -685,6 +690,7 @@ class LocalAgentPlanner:
             "spending": ["spending", "expenses", "living costs", "monthly costs"],
             "reserve": ["emergency reserve", "emergency fund", "keep a reserve", "keep aside"],
             "fx": ["convert", "exchange", "currency", "fx"],
+            "credit": ["build credit", "building credit", "credit history", "credit score", "creditworthiness"],
         }
         detected_goals = []
         for goal, words in goal_keywords.items():
@@ -706,6 +712,10 @@ class LocalAgentPlanner:
             or (
                 "tuition" in detected_goals
                 and "incoming" in detected_goals
+                and len(detected_goals) >= 2
+            )
+            or (
+                "credit" in detected_goals
                 and len(detected_goals) >= 2
             )
         )
@@ -927,6 +937,46 @@ class LocalAgentPlanner:
                     "simulation": incoming_simulation,
                 })
 
+            if "credit" in detected_goals:
+                credit_readiness = {
+                    "status": "evidence_limited",
+                    "not_a_credit_score": True,
+                    "liquidity_supports_future_obligations": forecast["projected_balance_planning"] >= 0,
+                    "missing_evidence": [
+                        "credit account limits",
+                        "credit utilization",
+                        "account age",
+                        "missed/late payment history",
+                    ],
+                    "next_actions": [
+                        "Keep any future credit payments inside the cash-flow plan.",
+                        "Pay documented obligations on time and keep enough liquid cash for near-term essentials.",
+                        "Review eligibility, fees and terms before opening any credit product.",
+                    ],
+                }
+                priorities.append({
+                    "rank": 3,
+                    "goal": "credit",
+                    "reason": (
+                        "Credit-building is treated as a long-term readiness goal; the demo cannot infer a real credit score "
+                        "without account-level credit history."
+                    ),
+                    "horizon_days": None,
+                    "status": "evidence_limited",
+                })
+                actions.append({
+                    "priority": 3,
+                    "action": "BUILD_CREDIT_READINESS",
+                    "detail": (
+                        "Use the cash-flow plan to keep future credit obligations affordable while building a reliable "
+                        "payment history; no credit score is inferred."
+                    ),
+                    "credit_readiness": credit_readiness,
+                })
+                uncertainties.append(
+                    "Actual credit-account data is unavailable, so BorderWise provides readiness guidance rather than a credit score."
+                )
+
             if "spending" in detected_goals:
                 spending = self.engine.spending_analysis()
                 flexible = [
@@ -1015,6 +1065,7 @@ class LocalAgentPlanner:
                 "constraints": constraints,
                 "uncertainties": uncertainties,
                 "forecast": forecast,
+                "credit_readiness": credit_readiness if "credit" in detected_goals else None,
                 "reserve": {
                     "currency": reserve_currency,
                     "amount": float(reserve_amount),

@@ -265,6 +265,63 @@ class LocalAgentPlanner:
         return None
 
 
+    def _scenario_forecast(self, balances, monthly_expenses, tuition, remittance, incoming, horizon_days):
+        """Project an explicitly supplied chat scenario without stale profile cash-flow values."""
+        planning = str(self.engine.state.get("profile_meta", {}).get("planning_currency", "SGD")).upper()
+        planning_rate = self.engine._profile_rate_to_sgd(planning)
+
+        def to_planning(amount, currency):
+            code = currency.upper().strip()
+            if code == planning:
+                return self.engine.money_value(amount)
+            rate, _ = self.engine._currency_rate_to_sgd(code)
+            return self.engine.money_value(amount * rate / planning_rate)
+
+        starting = self.engine.money_value(0)
+        for code, balance in balances.items():
+            starting += to_planning(self.engine.money_value(balance), code)
+
+        meta = self.engine.state.get("profile_meta", {})
+        reserve_currency = str(meta.get("emergency_reserve_currency", "MYR")).upper()
+        reserve_amount = self.engine.money_value(Decimal(str(meta.get("emergency_reserve_amount", self.engine.state.get("emergency_reserve_myr", 0)))))
+        reserve_represented = reserve_currency in balances
+        reserve_balance = self.engine.money_value(balances.get(reserve_currency, 0))
+        reserve_protected = reserve_represented and reserve_balance >= reserve_amount
+        protected = to_planning(min(reserve_balance, reserve_amount), reserve_currency) if reserve_represented else self.engine.money_value(0)
+        usable = self.engine.money_value(max(self.engine.money_value(0), starting - protected))
+        factor = Decimal(str(max(1, int(horizon_days)))) / Decimal("30")
+        spending = to_planning(monthly_expenses[0], monthly_expenses[1]) * factor if monthly_expenses else self.engine.money_value(0)
+        tuition_value = to_planning(tuition[0], tuition[1]) if tuition else self.engine.money_value(0)
+        remittance_value = to_planning(remittance[0], remittance[1]) if remittance else self.engine.money_value(0)
+        incoming_value = to_planning(incoming[0], incoming[1]) if incoming else self.engine.money_value(0)
+        base = self.engine.money_value(usable - spending - tuition_value - remittance_value)
+        with_incoming = self.engine.money_value(base + incoming_value)
+        return {
+            "horizon_days": int(horizon_days),
+            "planning_currency": planning,
+            "starting_balance_planning": float(starting),
+            "protected_reserve_planning": float(protected),
+            "usable_starting_planning": float(usable),
+            "monthly_expenses_planning": float(spending),
+            "tuition_planning": float(tuition_value),
+            "remittance_planning": float(remittance_value),
+            "incoming_planning": float(incoming_value),
+            "projected_balance_planning": float(base),
+            "projected_balance_with_incoming": float(with_incoming),
+            "cash_position": "funding_gap" if base < 0 else "surplus",
+            "cash_position_with_incoming": "funding_gap" if with_incoming < 0 else "surplus",
+            "reserve": {
+                "currency": reserve_currency,
+                "configured_amount": float(reserve_amount),
+                "balance": float(reserve_balance),
+                "represented_in_scenario": reserve_represented,
+                "protected": reserve_protected,
+                "verification_status": "protected" if reserve_protected else ("below_floor" if reserve_represented else "not_represented"),
+            },
+            "state_changed": False,
+        }
+
+
     def _result(self, *args) -> dict[str, Any]:
         """Build a local-agent result while supporting both legacy call shapes."""
         if len(args) == 4:
@@ -783,10 +840,6 @@ class LocalAgentPlanner:
         if goal_planning_question and goal_plan_ready:
             wallet_balances = self._extract_wallet_balances_from_text(t)
             use_scenario_wallet = len(wallet_balances) >= 1
-            forecast = self.engine.forecast_portfolio(
-                30,
-                balances_override=wallet_balances if use_scenario_wallet else None,
-            )
             horizon = message_horizon_days or 30
 
             tuition_labeled = self._extract_labeled_amount(t, ["tuition", "tuition fee", "tuition fees"])
@@ -800,6 +853,9 @@ class LocalAgentPlanner:
                     "parents might send", "parents could send", "family may send",
                     "family might send", "family could send",
                 ]
+            )
+            monthly_expenses_labeled = self._extract_labeled_amount(
+                t, ["monthly expenses", "monthly expense", "monthly costs", "living costs"]
             )
 
             reserve_currency = str(
@@ -817,6 +873,26 @@ class LocalAgentPlanner:
             reserve_represented = reserve_currency in scenario_wallet
             reserve_balance = self.engine.money_value(scenario_wallet.get(reserve_currency, 0))
             reserve_protected = reserve_balance >= reserve_amount if reserve_represented else False
+
+            scenario_forecast = (
+                self._scenario_forecast(
+                    scenario_wallet,
+                    monthly_expenses_labeled,
+                    tuition_labeled,
+                    remittance_labeled,
+                    incoming_labeled,
+                    horizon,
+                )
+                if use_scenario_wallet
+                else self.engine.forecast_portfolio(30)
+            )
+            forecast = {
+                "planning_currency": scenario_forecast["planning_currency"],
+                "projected_balance_planning": scenario_forecast["projected_balance_planning"],
+                "projected_balance_sgd": scenario_forecast["projected_balance_planning"],
+                "cash_position": scenario_forecast["cash_position"],
+                "scenario": scenario_forecast,
+            }
 
             priorities = []
             actions = []
@@ -975,8 +1051,8 @@ class LocalAgentPlanner:
                 priorities.append({
                     "rank": 0,
                     "goal": "incoming_funds",
-                    "reason": "Incoming funds are treated as expected support and simulated, not assumed to have arrived unless explicitly stated.",
-                    "status": "scenario",
+                    "reason": "Incoming funds are contingent support and are not counted in the base-case obligation test until they actually arrive.",
+                    "status": "contingent",
                 })
                 incoming_simulation = (
                     self.engine.simulate_income_impact(incoming_amount, incoming_currency)
@@ -1002,8 +1078,8 @@ class LocalAgentPlanner:
                         f"{incoming_currency} incoming funds could not be included in the projected impact because that currency is not configured."
                     )
                 actions.insert(0, {
-                    "priority": 0,
-                    "action": "APPLY_INCOMING_FUNDS_TO_PLAN",
+                    "priority": 3,
+                    "action": "SCENARIO_INCOMING_SUPPORT",
                     "detail": (
                         f"Scenario-check the {incoming_currency} {incoming_amount:,.2f} income before "
                         "committing to discretionary outflows."

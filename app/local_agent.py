@@ -710,14 +710,14 @@ class LocalAgentPlanner:
                     }
                     for index, candidate in enumerate(candidates)
                 ]
-                remaining_need = money(max(money(0), Decimal(str(target_amount)) - Decimal(str(
+                remaining_need = self.engine.money_value(max(self.engine.money_value(0), Decimal(str(target_amount)) - Decimal(str(
                     next((x["available_in_target"] for x in candidates if x["currency"] == target_code), 0)
                 ))))
                 single_source_options = []
                 for candidate in candidates:
-                    rate = Decimal("1") if candidate["currency"] == target_code else fxrate(candidate["rate_to_target"])
-                    use_amount = money(min(Decimal(str(candidate["available"])), remaining_need / rate)) if remaining_need > 0 else money(0)
-                    target_value = money(use_amount * rate)
+                    rate = Decimal("1") if candidate["currency"] == target_code else Decimal(str(candidate["rate_to_target"]))
+                    use_amount = self.engine.money_value(min(Decimal(str(candidate["available"])), remaining_need / rate)) if remaining_need > 0 else self.engine.money_value(0)
+                    target_value = self.engine.money_value(use_amount * rate)
                     single_source_options.append({
                         "currency": candidate["currency"],
                         "feasible_for_remaining_need": target_value >= remaining_need,

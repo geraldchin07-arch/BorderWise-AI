@@ -1424,7 +1424,8 @@ def test_local_agent_does_not_claim_missing_reserve_is_below_floor():
     e.update_profile_general({
         "planning_currency": "SGD",
         "balances": {"SGD": 2000, "CNY": 15000, "USD": 500},
-        "balance_fx_modes": {"CNY": "auto", "USD": "auto"},
+        "balance_fx_modes": {"CNY": "custom", "USD": "custom"},
+        "custom_fx_rates_to_sgd": {"CNY": 0.19, "USD": 1.28},
         "monthly_income_amount": 0,
         "monthly_income_currency": "SGD",
         "emergency_reserve_amount": 5000,

@@ -104,13 +104,22 @@ class LocalAgentPlanner:
             # Compact currency amounts are only wallet balances when they are
             # explicitly tied to possession language. Do not treat an obligation such
             # as "send RM2000" or "tuition SGD2500" as money the user owns.
-            reverse = re.search(
+            # Support reverse forms such as "2000 SGD", but reject amounts
+            # that are clearly attached to an outgoing obligation or payment.
+            for reverse in re.finditer(
                 rf"([0-9]+(?:\.[0-9]+)?)\s*{token}\b",
                 t,
                 re.I,
-            )
-            if reverse:
+            ):
+                context_before = t[max(0, reverse.start() - 80):reverse.start()]
+                if re.search(
+                    r"\b(?:need|needs|pay|paying|require|required|send|sending|remit|remittance|transfer|tuition)\b[^.;,]{0,50}$",
+                    context_before,
+                    re.I,
+                ):
+                    continue
                 balances[code] = self.engine.money_value(reverse.group(1))
+                break
 
         return balances
 

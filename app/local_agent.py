@@ -509,6 +509,68 @@ class LocalAgentPlanner:
             current_wallet or remembered_context.get("wallet_balances")
         )
 
+        # Conditional incoming money is never treated as confirmed funds.
+        # Handle this immediately so generic planning/FX branches cannot consume
+        # uncertain family support as if it were confirmed cash.
+        if conditional_income_question:
+            incoming = None
+            for code in [
+                "MYR", "SGD", "USD", "CNY", "JPY", "KRW", "THB", "EUR", "GBP",
+                "AUD", "CAD", "HKD", "TWD", "INR",
+            ]:
+                amount = self._amount(t, code)
+                if amount is not None:
+                    incoming = (amount, code)
+                    break
+
+            tuition_labeled = self._extract_labeled_amount(
+                t, ["tuition", "tuition fee", "tuition fees"]
+            )
+            answer = (
+                "No. Treat that money as conditional, not confirmed, until it is "
+                "actually received or otherwise reliably committed."
+            )
+            if incoming:
+                inc_amount, inc_code = incoming
+                inc_rate, _ = self.engine._currency_rate_to_sgd(inc_code)
+                inc_sgd = self.engine.money_value(inc_amount * inc_rate)
+                answer += (
+                    f" The possible {inc_code} {inc_amount:,.2f} would add about "
+                    f"SGD {inc_sgd:,.2f} only in a separate what-if scenario."
+                )
+            if tuition_labeled:
+                tuition_amount, tuition_code = tuition_labeled
+                tuition_rate, _ = self.engine._currency_rate_to_sgd(tuition_code)
+                tuition_sgd = self.engine.money_value(tuition_amount * tuition_rate)
+                answer += (
+                    f" Your stated tuition is about SGD {tuition_sgd:,.2f}, so BorderWise "
+                    "should not mark it funded using conditional money alone."
+                )
+
+            trace = [
+                {
+                    "step": "UNDERSTAND",
+                    "status": "completed",
+                    "detail": "Detected uncertain incoming family support.",
+                },
+                {
+                    "step": "REASON",
+                    "status": "completed",
+                    "detail": "Separated confirmed funds from hypothetical incoming funds.",
+                },
+                {
+                    "step": "SECURITY",
+                    "status": "completed",
+                    "detail": "No account state changed and no transaction was created.",
+                },
+            ]
+            return self._result(
+                "agentic_local",
+                answer,
+                trace,
+                {"conditional_income": True, "state_changed": False},
+            )
+
         # Explicit execution requests are handled before informational FX questions.
         # An execution command may NEVER create a new proposal or reuse an already
         # executed proposal. This is the anti-replay guard for agentic money movement.
@@ -1846,34 +1908,7 @@ class LocalAgentPlanner:
                 "valuation": {"currency": "SGD", "total": float(total_sgd), "balances": {k: float(v) for k, v in detected.items()}}
             })
 
-        # Conditional incoming money is never treated as confirmed funds.
-        if conditional_income_question:
-            incoming = None
-            for code in supported:
-                amount = self._amount(t, code)
-                if amount is not None:
-                    incoming = (amount, code)
-                    break
-            tuition_labeled = self._extract_labeled_amount(t, ["tuition", "tuition fee", "tuition fees"])
-            answer = "No. Treat that money as conditional, not confirmed, until it is actually received or otherwise reliably committed."
-            if incoming:
-                inc_amount, inc_code = incoming
-                inc_rate, _ = self.engine._currency_rate_to_sgd(inc_code)
-                inc_sgd = self.engine.money_value(inc_amount * inc_rate)
-                answer += f" The possible {inc_code} {inc_amount:,.2f} would add about SGD {inc_sgd:,.2f} only in a separate what-if scenario."
-            if tuition_labeled:
-                tuition_amount, tuition_code = tuition_labeled
-                tuition_rate, _ = self.engine._currency_rate_to_sgd(tuition_code)
-                tuition_sgd = self.engine.money_value(tuition_amount * tuition_rate)
-                answer += f" Your stated tuition is about SGD {tuition_sgd:,.2f}, so BorderWise should not mark it funded using conditional money alone."
-            trace = [
-                {"step": "UNDERSTAND", "status": "completed", "detail": "Detected uncertain incoming family support."},
-                {"step": "REASON", "status": "completed", "detail": "Separated confirmed funds from hypothetical incoming funds."},
-                {"step": "SECURITY", "status": "completed", "detail": "No account state changed and no transaction was created."},
-            ]
-            return self._result("agentic_local", answer, trace, {"conditional_income": True, "state_changed": False})
-
-        # Case W: what-if comparison between explicitly mentioned source currencies.
+                # Case W: what-if comparison between explicitly mentioned source currencies.
         # This is advisory only: each option is simulated independently and no wallet
         # balances, proposals, or transactions are changed.
         compare_question = any(k in t for k in [

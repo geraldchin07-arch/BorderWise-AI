@@ -211,12 +211,11 @@ class LocalAgentPlanner:
                 currency_pattern.append((re.escape(alias), code))
         currency_pattern.sort(key=lambda item: len(item[0]), reverse=True)
         token = "(?:" + "|".join(alias for alias, _ in currency_pattern) + ")"
-        code_by_alias = {alias: code for alias, code in currency_pattern}
 
         for label in labels:
             label_pattern = re.escape(label)
             window = re.search(
-                rf"\\b{label_pattern}\\b(?P<context>[^.;\\n]{{0,80}})",
+                rf"\b{label_pattern}\b(?P<context>[^.;\n]{{0,80}})",
                 t,
                 re.I,
             )
@@ -224,8 +223,8 @@ class LocalAgentPlanner:
                 continue
             context = window.group("context")
             amount_match = re.search(
-                rf"(?P<currency>{token})\\s*(?P<amount>[0-9]+(?:\\.[0-9]+)?)"
-                rf"|(?P<amount_rev>[0-9]+(?:\\.[0-9]+)?)\\s*(?P<currency_rev>{token})\\b",
+                rf"(?P<currency>{token})\s*(?P<amount>[0-9]+(?:\.[0-9]+)?)"
+                rf"|(?P<amount_rev>[0-9]+(?:\.[0-9]+)?)\s*(?P<currency_rev>{token})\b",
                 context,
                 re.I,
             )

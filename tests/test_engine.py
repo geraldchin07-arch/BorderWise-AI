@@ -947,3 +947,70 @@ def test_local_agent_what_if_comparison_respects_emergency_reserve():
     assert options["MYR"]["feasible"] is False
     assert options["CNY"]["feasible"] is True
     assert r["data"]["comparison"]["winner"]["currency"] == "CNY"
+
+
+def test_local_agent_plans_outbound_family_remittance_without_execution():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 500, "USD": 2000, "CNY": 10000, "MYR": 5000},
+        "balance_fx_modes": {"USD": "custom", "CNY": "custom", "MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"USD": 1.28, "CNY": 0.19, "MYR": 0.31},
+        "monthly_income_amount": 1000,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 0,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "accommodation_amount": 400,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 300},
+        "spending_classifications": {"Food & dining": "Adjustable"},
+    })
+    before = e.get_balance()
+    r = e.agent(
+        "I want to send SGD 1,000 to my family overseas. Should I use USD or CNY?"
+    )
+    rem = r["data"]["remittance"]
+    assert r["data"]["goal"] == "remittance_planning"
+    assert rem["target"] == {"currency": "SGD", "amount": 1000.0}
+    assert rem["action"] in {"PREPARE_REMITTANCE_PLAN", "REMITTANCE_FUNDING_GAP"}
+    assert rem["state_changed"] is False
+    assert r["data"]["judge"]["goal"] == "remittance_planning"
+    assert e.get_balance() == before
+    assert e.state["proposals"] == {}
+
+
+def test_local_agent_remittance_detects_send_home_as_planning_not_execution():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 3000, "MYR": 5000},
+        "balance_fx_modes": {"MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"MYR": 0.31},
+        "monthly_income_amount": 500,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 0,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "accommodation_amount": 300,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 200},
+        "spending_classifications": {"Food & dining": "Adjustable"},
+    })
+    r = e.agent("Should I send SGD 500 back home this month?")
+    assert r["data"]["goal"] == "remittance_planning"
+    assert r["data"]["remittance"]["target"]["currency"] == "SGD"
+    assert r["data"]["remittance"]["state_changed"] is False
+    assert r["data"]["judge"]["evidence_bounded"] is True

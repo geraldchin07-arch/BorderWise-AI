@@ -1253,8 +1253,10 @@ class FinanceEngine:
         # ---------- safety / transaction tools ----------
     def risk_check(self, amount_myr: Decimal, purpose: str) -> dict[str, Any]:
         amount_myr = money(amount_myr)
-        balance = money(self.state["balances"]["MYR"])
-        reserve = money(self.state["emergency_reserve_myr"])
+        # A multi-currency wallet may legitimately contain no MYR balance.
+        # Treat that as zero available MYR instead of raising a KeyError.
+        balance = money(self.state.get("balances", {}).get("MYR", 0))
+        reserve = money(self.state.get("emergency_reserve_myr", 0))
         reasons: list[str] = []
         risk = "LOW"
 

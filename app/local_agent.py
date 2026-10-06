@@ -721,6 +721,8 @@ class LocalAgentPlanner:
                 tuition_amount, tuition_currency = tuition_labeled
                 remittance_amount, remittance_currency = remittance_labeled
                 wallet_balances = self._extract_wallet_balances_from_text(t)
+                if not wallet_balances:
+                    wallet_balances = dict(remembered_context.get("wallet_balances", {}))
                 use_scenario_wallet = len(wallet_balances) >= 1
                 wallet = wallet_balances if use_scenario_wallet else self.engine.get_balance()
                 tuition_available = self.engine.money_value(wallet.get(tuition_currency, 0))
@@ -1438,7 +1440,14 @@ class LocalAgentPlanner:
                                     )["converted_amount"]
                                 )
                             )
-                            forecast = self.engine.forecast()
+                            scenario_wallet = dict(remembered_context.get("wallet_balances", {}))
+                            if scenario_wallet:
+                                forecast = self._scenario_forecast(
+                                    scenario_wallet, None, None,
+                                    (send_amount, send_target), None, 30
+                                )
+                            else:
+                                forecast = self.engine.forecast()
                             health = self.engine.health_analysis()
                             projected_after = self.engine.money_value(
                                 Decimal(str(forecast["projected_balance_planning"]))

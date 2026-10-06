@@ -746,6 +746,7 @@ class LocalAgentPlanner:
             actions = []
             constraints = []
             uncertainties = []
+            incoming_simulation = None
 
             incoming_mentioned = any(k in t for k in [
                 "parents can send", "parents will send", "family will send",
@@ -892,6 +893,17 @@ class LocalAgentPlanner:
                     "reason": "Incoming funds are treated as expected support and simulated, not assumed to have arrived unless explicitly stated.",
                     "status": "scenario",
                 })
+                incoming_simulation = (
+                    self.engine.simulate_income_impact(incoming_amount, incoming_currency)
+                    if incoming_currency in self.engine.get_balance()
+                    else {
+                        "hypothetical_only": True,
+                        "state_changed": False,
+                        "income": {"amount": float(incoming_amount), "currency": incoming_currency},
+                        "available_for_simulation": False,
+                        "note": f"{incoming_currency} is not configured in the current wallet; the expected income is not counted."
+                    }
+                )
                 actions.insert(0, {
                     "priority": 0,
                     "action": "APPLY_INCOMING_FUNDS_TO_PLAN",
@@ -899,17 +911,7 @@ class LocalAgentPlanner:
                         f"Scenario-check the {incoming_currency} {incoming_amount:,.2f} income before "
                         "committing to discretionary outflows."
                     ),
-                    "simulation": (
-                        self.engine.simulate_income_impact(incoming_amount, incoming_currency)
-                        if incoming_currency in self.engine.get_balance()
-                        else {
-                            "hypothetical_only": True,
-                            "state_changed": False,
-                            "income": {"amount": float(incoming_amount), "currency": incoming_currency},
-                            "available_for_simulation": False,
-                            "note": f"{incoming_currency} is not configured in the current wallet; the expected income is not counted."
-                        }
-                    ),
+                    "simulation": incoming_simulation,
                 })
 
             if "spending" in detected_goals:
@@ -1023,6 +1025,7 @@ class LocalAgentPlanner:
                     "goal": "financial_plan",
                     "planning_horizon_days": horizon,
                     "detected_goals": detected_goals,
+                    "incoming_funds": incoming_simulation,
                     "decision": decision,
                     "state_changed": False,
                 },

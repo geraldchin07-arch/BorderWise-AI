@@ -405,7 +405,7 @@ class LocalAgentPlanner:
                         "I would not automatically convert the entire wallet; another funding source is still needed. No transaction was created."
                     )
                 trace.append({"step": "RECOMMEND", "status": "completed", "detail": "Produced a wallet-wide funding recommendation without mutating account state."})
-                return self._result("agentic_local", answer, trace, {"funding_plan": funding, "wallet_balances_used": {k: float(v) for k, v in (wallet_balances if use_scenario_wallet else self.engine.get_balance()).items()}, "wallet_source": "message" if use_scenario_wallet else "saved_profile"})
+                return self._result("agentic_local", answer, trace, {"funding_plan": funding, "wallet": self.engine.currency_overview(), "wallet_balances_used": {k: float(v) for k, v in (wallet_balances if use_scenario_wallet else self.engine.get_balance()).items()}, "wallet_source": "message" if use_scenario_wallet else "saved_profile"})
 
         # Case A: explicit source/target conversion, e.g. "USD 500 to SGD".
         # Prefer semantic phrases such as "have/received USD 500" for the source and

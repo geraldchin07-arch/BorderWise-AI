@@ -435,18 +435,35 @@ class LocalAgentPlanner:
                             f"Use {leg['from_currency']} {leg['source_amount']:,.2f} → {leg['to_currency']} {leg['target_amount']:,.2f} at {leg['rate']:.8f}."
                         ),
                     })
-                trace.append({"step": "SECURITY", "status": "completed", "detail": f"Protected the configured {funding['reserve']['currency']} emergency reserve of {funding['reserve']['amount']:,.2f}; no balances were changed."})
+                trace.append({"step": "SECURITY", "status": "completed", "detail": f"Protected the configured {funding["reserve"]["currency"]} emergency reserve of {funding["reserve"]["amount"]:,.2f}; no balances were changed."})
 
                 if funding["status"] == "funded":
                     legs_text = "; ".join(
                         f"{x['from_currency']} {x['source_amount']:,.2f} → {x['to_currency']} {x['target_amount']:,.2f}"
                         for x in funding["plan"]
                     )
+                    ranked = [
+                        x for x in funding.get("candidates", [])
+                        if x.get("available_in_target", 0) > 0
+                    ]
+                    ranked_text = "; ".join(
+                        f"{x['currency']} has {x['available_in_target']:,.2f} {target_code} of usable value"
+                        for x in ranked[:3]
+                    )
+                    trace.append({
+                        "step": "REASON",
+                        "status": "completed",
+                        "detail": (
+                            "Compared target-currency funds first, then ranked usable source balances by their target-equivalent value "
+                            "to minimize the number of conversions while keeping the reserve protected."
+                        ),
+                    })
                     answer = (
-                        f"To fund {target_code} {target_amount:,.2f}, I would use the saved wallet rather than convert everything. "
+                        f"To fund {target_code} {target_amount:,.2f}, I would use the wallet rather than convert everything. "
                         f"Recommended funding: {legs_text}. "
-                        f"This covers the target with the fewest source-currency conversions under the current indicative rates while protecting the emergency reserve. "
-                        "No transaction was created or executed."
+                        f"The selection first uses existing {target_code} funds, then chooses the largest usable target-equivalent balance so fewer source currencies need to be converted. "
+                        f"Candidate snapshot: {ranked_text or 'no additional usable currency balances'}. "
+                        "The emergency reserve remains protected. No transaction was created or executed."
                     )
                 else:
                     gap = funding["remaining_gap"]

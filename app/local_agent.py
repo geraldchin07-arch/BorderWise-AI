@@ -663,6 +663,18 @@ class LocalAgentPlanner:
                             "rate_to_target": float(
                                 Decimal("1") / Decimal(str(conv["rate"]))
                             ),
+                            "target_coverage": float(
+                                self.engine.money_value(available * (
+                                    Decimal("1") / Decimal(str(conv["rate"]))
+                                ))
+                            ),
+                            "coverage_ratio": float(
+                                min(Decimal("1"), (
+                                    self.engine.money_value(available * (
+                                        Decimal("1") / Decimal(str(conv["rate"]))
+                                    )) / Decimal(str(target_amount))
+                                )) if target_amount else Decimal("0")
+                            ),
                             "feasible": feasible,
                             "remaining_source_after": float(
                                 self.engine.money_value(max(Decimal("0"), available - source_needed))
@@ -678,6 +690,8 @@ class LocalAgentPlanner:
                             "balance": float(balance),
                             "source_amount_needed": None,
                             "rate_to_target": None,
+                            "target_coverage": 0.0,
+                            "coverage_ratio": 0.0,
                             "feasible": False,
                             "remaining_source_after": float(balance),
                             "reserve_currency": reserve_currency,
@@ -690,17 +704,35 @@ class LocalAgentPlanner:
                 if feasible_options:
                     feasible_options.sort(key=lambda x: (
                         Decimal(str(x["source_amount_needed"])),
-                        x["currency"] == reserve_currency,
+                        -Decimal(str(x.get("coverage_ratio", 0)),
                     ))
                     winner = feasible_options[0]
+                    comparison_mode = "FULL_COVERAGE"
                     reason = (
                         f"{winner['currency']} requires about {winner['source_amount_needed']:,.2f} "
                         f"{winner['currency']} for the {target_code} {target_amount:,.2f} target while "
                         f"leaving about {winner['remaining_source_after']:,.2f} {winner['currency']} available."
                     )
                 else:
-                    winner = None
-                    reason = "None of the compared source currencies can safely cover the target from the available balance."
+                    partial_options = [
+                        x for x in options
+                        if x.get("source_amount_needed") is not None and x.get("target_coverage", 0) > 0
+                    ]
+                    if partial_options:
+                        partial_options.sort(key=lambda x: (
+                            -Decimal(str(x.get("coverage_ratio", 0))),
+                            -Decimal(str(x.get("target_coverage", 0))),
+                        ))
+                        winner = partial_options[0]
+                        comparison_mode = "BEST_PARTIAL_COVERAGE"
+                        reason = (
+                            f"None of the compared currencies can fully cover the {target_code} {target_amount:,.2f} target alone. "
+                            f"{winner['currency']} covers about {winner['target_coverage']:,.2f} {target_code} from its usable balance."
+                        )
+                    else:
+                        winner = None
+                        comparison_mode = "NO_FEASIBLE_OPTION"
+                        reason = "None of the compared source currencies can safely contribute to the target from the available balance."
 
                 trace.append({
                     "step": "REASON",
@@ -722,11 +754,17 @@ class LocalAgentPlanner:
                     comparison_text = " | ".join(
                         f"{x['currency']}: need {x['source_amount_needed']:,.2f}, "
                         f"balance {x['balance']:,.2f}, "
-                        f"{'feasible' if x['feasible'] else 'not feasible'}"
+                        f"coverage {x.get('target_coverage', 0):,.2f} {target_code}, "
+                        f"{'feasible' if x['feasible'] else 'partial only'}"
                         for x in options
                     )
+                    decision_phrase = (
+                        f"use {winner['currency']}"
+                        if comparison_mode == "FULL_COVERAGE"
+                        else f"prefer {winner['currency']} as the strongest partial funding source"
+                    )
                     answer = (
-                        f"Decision: use {winner['currency']} rather than the other compared source. "
+                        f"Decision: {decision_phrase}. "
                         f"Why: {reason} "
                         f"Comparison: {comparison_text}. "
                         "This is a what-if simulation; no balances or transactions were changed."
@@ -747,6 +785,7 @@ class LocalAgentPlanner:
                             "target": {"currency": target_code, "amount": float(target_amount)},
                             "options": options,
                             "winner": winner,
+                            "mode": comparison_mode,
                             "state_changed": False,
                         },
                     },

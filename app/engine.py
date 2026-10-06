@@ -854,6 +854,83 @@ class FinanceEngine:
             "calculation": f"starting {planning} balance + expected 30-day income − 30-day spending − obligations due within 30 days, normalized for arithmetic.",
         }
 
+    def forecast_portfolio(self, horizon_days: int = 30) -> dict[str, Any]:
+        """Forecast liquidity using the full multi-currency wallet, not only the planning-currency balance."""
+        horizon = int(horizon_days)
+        if horizon <= 0 or horizon > 365:
+            raise ValueError("Forecast horizon must be between 1 and 365 days.")
+
+        meta = self.state.get("profile_meta", {})
+        planning = str(meta.get("planning_currency", "SGD")).upper()
+        planning_rate = self._profile_rate_to_sgd(planning)
+
+        starting_sgd = money(0)
+        valuation_rows: list[dict[str, Any]] = []
+        for code, balance in self.state.get("balances", {}).items():
+            bal = money(balance)
+            if bal <= 0:
+                continue
+            rate, fx_meta = self._currency_rate_to_sgd(code)
+            value_sgd = money(bal * rate)
+            starting_sgd += value_sgd
+            valuation_rows.append({
+                "currency": code,
+                "balance": float(bal),
+                "sgd_value": float(value_sgd),
+                "rate_to_sgd": float(rate),
+                "fx_source": fx_meta.get("source"),
+                "fx_date": fx_meta.get("rate_date"),
+                "fx_live": bool(fx_meta.get("live", False)),
+            })
+
+        # Monthly income/spending are stored as normalized SGD values.
+        monthly_income_sgd = money(self.state.get("income_monthly_sgd", 0))
+        monthly_spending_sgd = money(
+            sum(self.state.get("monthly_spending_sgd", {}).values(), money(0))
+            + self.state.get("accommodation_monthly_sgd", 0)
+        )
+        obligations_sgd = sum(
+            (
+                money(x["amount_sgd"])
+                for x in self.get_obligations()
+                if int(x.get("days", horizon)) <= horizon
+            ),
+            money(0),
+        )
+
+        # Scale recurring income and spending proportionally when a horizon differs from 30 days.
+        horizon_factor = Decimal(str(horizon)) / Decimal("30")
+        projected_sgd = money(
+            starting_sgd
+            + monthly_income_sgd * horizon_factor
+            - monthly_spending_sgd * horizon_factor
+            - obligations_sgd
+        )
+        display = lambda x: money(Decimal(str(x)) / planning_rate)
+
+        return {
+            "horizon_days": horizon,
+            "planning_currency": planning,
+            "starting_portfolio_sgd": float(starting_sgd),
+            "starting_portfolio_planning": float(display(starting_sgd)),
+            "expected_income_sgd": float(money(monthly_income_sgd * horizon_factor)),
+            "expected_income_planning": float(display(monthly_income_sgd * horizon_factor)),
+            "spending_sgd": float(money(monthly_spending_sgd * horizon_factor)),
+            "spending_planning": float(display(monthly_spending_sgd * horizon_factor)),
+            "obligations_sgd": float(obligations_sgd),
+            "obligations_planning": float(display(obligations_sgd)),
+            "projected_balance_sgd": float(projected_sgd),
+            "projected_balance_planning": float(display(projected_sgd)),
+            "cash_position": "funding_gap" if projected_sgd < 0 else "surplus",
+            "wallet_valuation": valuation_rows,
+            "method": (
+                "Full-wallet indicative valuation in the selected planning currency, "
+                "plus expected income, minus proportional living costs and obligations within the horizon."
+            ),
+            "note": "Scenario planning only; FX rates and bank settlement outcomes may differ.",
+        }
+
+
     def spending_analysis(self) -> dict[str, Any]:
         meta = self.state.get("profile_meta", {})
         planning = str(meta.get("planning_currency", "SGD")).upper()

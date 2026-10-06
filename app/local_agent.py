@@ -435,7 +435,11 @@ class LocalAgentPlanner:
                             f"Use {leg['from_currency']} {leg['source_amount']:,.2f} → {leg['to_currency']} {leg['target_amount']:,.2f} at {leg['rate']:.8f}."
                         ),
                     })
-                trace.append({"step": "SECURITY", "status": "completed", "detail": f"Protected the configured {funding["reserve"]["currency"]} emergency reserve of {funding["reserve"]["amount"]:,.2f}; no balances were changed."})
+                trace.append({
+                    "step": "SECURITY",
+                    "status": "completed",
+                    "detail": f"Protected the configured {funding['reserve']['currency']} emergency reserve of {funding['reserve']['amount']:,.2f}; no balances were changed.",
+                })
 
                 if funding["status"] == "funded":
                     legs_text = "; ".join(

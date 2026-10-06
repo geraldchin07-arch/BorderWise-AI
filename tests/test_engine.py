@@ -1515,6 +1515,10 @@ def test_local_agent_exact_multi_obligation_scenario_is_self_contained():
     assert forecast["incoming_planning"] == 1500.0
     assert forecast["projected_balance_planning"] == -2030.0
     assert forecast["projected_balance_with_incoming"] == -530.0
+    assert forecast["projected_balance_sgd"] == -2030.0
+    assert forecast["projected_balance_with_incoming_sgd"] == -530.0
+    assert "21-day scenario position before conditional incoming funds" in r["answer"]
+    assert "projected position would be SGD -530.00" in r["answer"]
     assert "below its configured floor" not in r["answer"]
     assert "not represented in the supplied scenario" in r["answer"]
     assert e.get_balance() == before

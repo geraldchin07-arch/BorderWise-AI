@@ -176,10 +176,10 @@ class LocalAgentPlanner:
             item for item in status_by_step.get("AUTHORIZE", [])
             if str(item.get("status", "")).lower() == "required"
         ]
-        completed_actions = [
+        evidence_steps = [
             item["step"] for item in trace
-            if str(item.get("status", "")).lower() == "completed"
-            and item.get("step") in {"SIMULATE", "CALCULATE", "FX", "REASON", "RECOMMEND", "AUTHORIZE", "EXECUTE", "VERIFY", "AUDIT"}
+            if item.get("step") in {"UNDERSTAND", "OBSERVE", "SIMULATE", "CALCULATE", "FX", "REASON", "SECURITY", "RECOMMEND", "AUTHORIZE", "EXECUTE", "VERIFY", "AUDIT"}
+            and item.get("step") not in {"UNDERSTAND", "OBSERVE"}
         ]
 
         decision = enriched_data.get("decision")
@@ -227,7 +227,7 @@ class LocalAgentPlanner:
                 status_by_step.get("SECURITY", [{}])[-1].get("detail")
             ),
             "action_required": action_required,
-            "evidence_steps": completed_actions,
+            "evidence_steps": evidence_steps,
             "state_changed": bool(enriched_data.get("state_changed", False)),
         }
 

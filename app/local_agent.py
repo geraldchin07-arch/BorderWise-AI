@@ -813,7 +813,7 @@ class LocalAgentPlanner:
 
             if gap <= 0:
                 answer = (
-                    f"Your 30-day plan is to avoid unnecessary conversion: the forecast shows {planning} {forecast.get('surplus_planning', 0):,.2f} remaining after expected income, spending and obligations. "
+                    f"Your 30-day plan is to avoid unnecessary conversion: the forecast shows {planning} {forecast.get('surplus_planning', 0):,.2f} remaining after expected income, spending and obligations, without requiring an automatic currency conversion. "
                     f"{tuition_text} Keep the {reserve_currency} {reserve_amount:,.2f} emergency reserve intact and review again before the next major obligation."
                 )
             elif conversion_gap <= 0:

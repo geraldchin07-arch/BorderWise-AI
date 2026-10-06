@@ -1265,3 +1265,40 @@ def test_local_agent_does_not_assume_unquantified_incoming_support():
     assert r["data"]["goal"] == "financial_plan"
     assert any("without an amount" in x for x in r["data"]["decision"]["uncertainties"])
     assert "not counted in the forecast" in r["answer"]
+
+
+def test_local_agent_integrates_credit_as_a_multi_goal_readiness_goal():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 1800, "MYR": 5000},
+        "balance_fx_modes": {"MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"MYR": 0.31},
+        "monthly_income_amount": 700,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 1500,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 20,
+        "accommodation_amount": 300,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 200},
+        "spending_classifications": {"Food & dining": "Core"},
+    })
+    r = e.agent(
+        "I need to prepare for tuition in 20 days and I also want to build credit. "
+        "What should I prioritize?"
+    )
+    assert r["data"]["goal"] == "financial_plan"
+    assert {"tuition", "credit"}.issubset(set(r["data"]["detected_goals"]))
+    credit = r["data"]["decision"]["credit_readiness"]
+    assert credit["not_a_credit_score"] is True
+    assert credit["liquidity_supports_future_obligations"] is True
+    assert r["data"]["judge"]["evidence_bounded"] is True
+    assert r["data"]["state_changed"] is False

@@ -1071,10 +1071,20 @@ class FinanceEngine:
             fx = self.state["fx"]
             return fxrate(fx["MYRSGD"]), {"source": fx.get("source", "Frankfurter reference rate"), "rate_date": fx.get("rate_date"), "live": bool(fx.get("live"))}
         prefs = self.state.get("fx_preferences", {})
-        # Currencies that appear only in a hypothetical chat scenario should
-        # default to an automatic reference quote instead of failing because the
-        # saved wallet has no per-currency configuration yet.
-        mode = prefs.get("additional_fx_rate_modes", {}).get(code, "auto")
+        additional_modes = prefs.get("additional_fx_rate_modes", {})
+        additional_custom = prefs.get("custom_fx_rates_to_sgd", {})
+        # Currencies that appear only in a hypothetical chat scenario have no
+        # saved per-currency configuration. Fetch a direct reference pair for
+        # those scenario-only currencies instead of requiring a profile row.
+        mode = additional_modes.get(code, "auto")
+        if code not in additional_modes and code not in additional_custom:
+            meta = self._fetch_reference_pair(code, "SGD")
+            return fxrate(meta["rate"]), {
+                "source": meta.get("source", "Frankfurter reference rate"),
+                "rate_date": meta.get("date"),
+                "live": bool(meta.get("live", False)),
+                "mode": "scenario_reference",
+            }
         if mode == "auto":
             self.refresh_auto_fx(codes=[code])
             rate = prefs.get("auto_fx_rates_to_sgd", {}).get(code)

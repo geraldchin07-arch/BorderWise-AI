@@ -869,7 +869,10 @@ class FinanceEngine:
             if balances_override is None
             else {str(k).upper().strip(): money(v) for k, v in balances_override.items()}
         )
+        reserve_currency = str(meta.get("emergency_reserve_currency", "MYR")).upper()
+        reserve_amount = money(meta.get("emergency_reserve_amount", self.state.get("emergency_reserve_myr", 0)))
         starting_sgd = money(0)
+        protected_reserve_sgd = money(0)
         valuation_rows: list[dict[str, Any]] = []
         for code, balance in balances.items():
             bal = money(balance)
@@ -878,6 +881,10 @@ class FinanceEngine:
             rate, fx_meta = self._currency_rate_to_sgd(code)
             value_sgd = money(bal * rate)
             starting_sgd += value_sgd
+            if code == reserve_currency and reserve_amount > 0:
+                protected_reserve_sgd = money(
+                    min(bal, reserve_amount) * rate
+                )
             valuation_rows.append({
                 "currency": code,
                 "balance": float(bal),
@@ -905,8 +912,11 @@ class FinanceEngine:
 
         # Scale recurring income and spending proportionally when a horizon differs from 30 days.
         horizon_factor = Decimal(str(horizon)) / Decimal("30")
+        usable_starting_sgd = money(
+            max(money(0), starting_sgd - protected_reserve_sgd)
+        )
         projected_sgd = money(
-            starting_sgd
+            usable_starting_sgd
             + monthly_income_sgd * horizon_factor
             - monthly_spending_sgd * horizon_factor
             - obligations_sgd
@@ -918,6 +928,10 @@ class FinanceEngine:
             "planning_currency": planning,
             "starting_portfolio_sgd": float(starting_sgd),
             "starting_portfolio_planning": float(display(starting_sgd)),
+            "protected_reserve_sgd": float(protected_reserve_sgd),
+            "protected_reserve_planning": float(display(protected_reserve_sgd)),
+            "usable_starting_sgd": float(usable_starting_sgd),
+            "usable_starting_planning": float(display(usable_starting_sgd)),
             "expected_income_sgd": float(money(monthly_income_sgd * horizon_factor)),
             "expected_income_planning": float(display(monthly_income_sgd * horizon_factor)),
             "spending_sgd": float(money(monthly_spending_sgd * horizon_factor)),
@@ -927,6 +941,12 @@ class FinanceEngine:
             "projected_balance_sgd": float(projected_sgd),
             "projected_balance_planning": float(display(projected_sgd)),
             "cash_position": "funding_gap" if projected_sgd < 0 else "surplus",
+            "emergency_reserve": {
+                "currency": reserve_currency,
+                "configured_amount": float(reserve_amount),
+                "protected_value_sgd": float(protected_reserve_sgd),
+                "met": money(balances.get(reserve_currency, 0)) >= reserve_amount,
+            },
             "wallet_valuation": valuation_rows,
             "method": (
                 "Full-wallet indicative valuation in the selected planning currency, "

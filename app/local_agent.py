@@ -704,7 +704,7 @@ class LocalAgentPlanner:
                 if feasible_options:
                     feasible_options.sort(key=lambda x: (
                         Decimal(str(x["source_amount_needed"])),
-                        -Decimal(str(x.get("coverage_ratio", 0)),
+                        -Decimal(str(x.get("coverage_ratio", 0))),
                     ))
                     winner = feasible_options[0]
                     comparison_mode = "FULL_COVERAGE"

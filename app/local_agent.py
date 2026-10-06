@@ -222,8 +222,9 @@ class LocalAgentPlanner:
         limitations = []
         if enriched_data.get("credit_guidance"):
             limitations.extend(enriched_data["credit_guidance"].get("missing_evidence", []))
-        if enriched_data.get("funding_plan", {}).get("note"):
-            limitations.append(enriched_data["funding_plan"]["note"])
+        funding_data = enriched_data.get("funding_plan")
+        if isinstance(funding_data, dict) and funding_data.get("note"):
+            limitations.append(funding_data["note"])
         if not limitations:
             limitations.append("Reference/sandbox outputs are not guaranteed bank settlement results.")
         if decision:
@@ -953,7 +954,7 @@ class LocalAgentPlanner:
         # Infer source/target from the sentence semantics, not the order of the
         # supported-currency list. This is critical because the list contains SGD
         # before CNY.
-        if len(detected) >= 2 and tuition_context and any(code not in {"MYR", "SGD"} for code in detected):
+        if len(detected) >= 2 and tuition_context and not funding_question and any(code not in {"MYR", "SGD"} for code in detected):
             source_code = None
             source_amount = None
             target_code = None

@@ -291,6 +291,16 @@ class LocalAgentPlanner:
         else:
             action_required = "No transaction action required."
 
+        evidence_quality = (
+            "limited"
+            if limitations and any(
+                "missing" in str(item).lower()
+                or "not guaranteed" in str(item).lower()
+                or "insufficient" in str(item).lower()
+                for item in limitations
+            )
+            else "high"
+        )
         enriched_data["judge"] = {
             "title": "BorderWise decision evidence",
             "goal": goal,
@@ -318,6 +328,7 @@ class LocalAgentPlanner:
             "evidence_steps": evidence_steps,
             "state_changed": bool(enriched_data.get("state_changed", False)),
             "limitations": limitations,
+            "evidence_quality": evidence_quality,
             "evidence_bounded": True,
         }
 
@@ -712,6 +723,21 @@ class LocalAgentPlanner:
             priorities = []
             actions = []
             constraints = []
+            uncertainties = []
+
+            incoming_mentioned = any(k in t for k in [
+                "parents can send", "parents will send", "family will send",
+                "family can send", "receive next", "incoming next",
+            ])
+            if incoming_mentioned and not incoming_labeled:
+                uncertainties.append(
+                    "Expected incoming support was mentioned without an amount; it is not counted in the forecast."
+                )
+
+            if "fx" in detected_goals and not any(k in t for k in ["rate", "quote", "quoted", "exchange rate"]):
+                uncertainties.append(
+                    "No user-entered FX quote was supplied for the scenario; reference-rate calculations remain indicative."
+                )
 
             if tuition_labeled:
                 tuition_amount, tuition_currency = tuition_labeled
@@ -873,6 +899,7 @@ class LocalAgentPlanner:
                 "priorities": priorities,
                 "actions": actions,
                 "constraints": constraints,
+                "uncertainties": uncertainties,
                 "forecast": forecast,
                 "reserve": {
                     "currency": reserve_currency,
@@ -909,6 +936,11 @@ class LocalAgentPlanner:
                     f"Constraints: {' '.join(constraints)} "
                     if constraints else
                     "No immediate funding constraint was detected from the supplied scenario. "
+                )
+                + (
+                    f"Uncertainties: {' '.join(uncertainties)} "
+                    if uncertainties else
+                    ""
                 )
                 + "This is a planning simulation only; no transaction was created or executed."
             )

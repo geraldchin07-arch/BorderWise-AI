@@ -66,6 +66,61 @@ class LocalAgentPlanner:
 
         return None
 
+    def _extract_wallet_balances_from_text(self, text: str) -> dict[str, Decimal]:
+        """Extract explicit wallet balances stated in a hypothetical chat scenario."""
+        t = text.lower().replace(",", "").strip()
+        aliases = {
+            "MYR": ["myr", "rm", "ringgit"],
+            "SGD": ["sgd", "s$"],
+            "USD": ["usd", "us$", "$", "dollar", "dollars"],
+            "CNY": ["cny", "rmb", "yuan", "renminbi", "¥"],
+            "JPY": ["jpy", "yen", "¥"],
+            "KRW": ["krw", "won", "₩"],
+            "THB": ["thb", "baht", "฿"],
+            "EUR": ["eur", "€", "euro", "euros"],
+            "GBP": ["gbp", "£", "pound", "pounds"],
+            "AUD": ["aud", "a$", "australian dollar"],
+            "CAD": ["cad", "c$", "canadian dollar"],
+            "HKD": ["hkd", "hk$", "hong kong dollar"],
+            "TWD": ["twd", "nt$", "taiwan dollar"],
+            "INR": ["inr", "₹", "rupee", "rupees"],
+        }
+        balances: dict[str, Decimal] = {}
+
+        for code, names in aliases.items():
+            escaped = sorted((re.escape(x) for x in names), key=len, reverse=True)
+            token = "(?:" + "|".join(escaped) + ")"
+
+            # Prefer amounts explicitly associated with possession/holding language.
+            possession = re.search(
+                rf"\b(?:have|has|hold|holding|own|keep)\b[^.;,]*?{token}\s*([0-9]+(?:\.[0-9]+)?)",
+                t,
+                re.I,
+            )
+            if possession:
+                balances[code] = self.engine.money_value(possession.group(1))
+                continue
+
+            # Also support compact forms such as "CNY 10,000" before an obligation.
+            compact = re.search(
+                rf"{token}\s*([0-9]+(?:\.[0-9]+)?)",
+                t,
+                re.I,
+            )
+            if compact:
+                balances[code] = self.engine.money_value(compact.group(1))
+                continue
+
+            reverse = re.search(
+                rf"([0-9]+(?:\.[0-9]+)?)\s*{token}\b",
+                t,
+                re.I,
+            )
+            if reverse:
+                balances[code] = self.engine.money_value(reverse.group(1))
+
+        return balances
+
     def _amount_after_need(self, text: str, currency: str) -> Decimal | None:
         """Extract the amount associated with a need/payment requirement.
 
@@ -349,13 +404,9 @@ class LocalAgentPlanner:
                 # When the user explicitly supplies wallet balances in the request,
                 # use those values as a hypothetical scenario instead of silently
                 # mixing them with stale saved-profile balances. State is never mutated.
-                wallet_balances: dict[str, Decimal] = {}
                 first_need = re.search(r"\b(?:need|needs|require|required|pay|paying)\b", t, re.I)
                 wallet_text = t[:first_need.start()] if first_need else t
-                for code in supported:
-                    amount = self._amount(wallet_text, code)
-                    if amount is not None:
-                        wallet_balances[code] = amount
+                wallet_balances = self._extract_wallet_balances_from_text(wallet_text)
                 use_scenario_wallet = len(wallet_balances) >= 1
 
                 trace = [

@@ -562,7 +562,10 @@ class LocalAgentPlanner:
         competing_question = (
             "tuition" in t
             and any(k in t for k in ["send", "remit", "family", "home"])
-            and any(k in t for k in ["prioritize", "priority", "first", "before", "what should i do", "should i"])
+            and any(k in t for k in [
+                "prioritize", "priority", "first", "before", "what should i do",
+                "should i", "safest plan", "what is the safest", "safest option",
+            ])
         )
         incoming_support_mentioned = any(k in t for k in [
             "parents can send", "parents will send", "family can send",
@@ -700,11 +703,17 @@ class LocalAgentPlanner:
                 destination in t for destination in ["home", "family", "overseas", "abroad"]
             ):
                 detected_goals.append(goal)
+        # Treat feasibility/safety questions as planning requests when multiple
+        # financial goals are present. This prevents words such as "send" or "all"
+        # inside a broader planning scenario from being misrouted as a transaction command.
         goal_planning_question = any(k in t for k in [
             "what should i do", "what do i do", "help me plan", "make a plan",
             "how should i manage", "how should i handle", "what should i prioritize",
             "what do you recommend", "plan my finances", "financial plan",
             "should i convert", "should i use",
+            "can i", "will i", "can i meet", "meet all", "handle everything",
+            "can i handle", "afford", "safest plan", "what is the safest",
+            "safest option", "safest approach",
         ])
 
         goal_plan_ready = (

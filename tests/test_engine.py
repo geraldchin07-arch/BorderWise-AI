@@ -843,3 +843,35 @@ def test_local_agent_exposes_ranked_funding_alternatives_and_urgency():
     assert all("target_equivalent" in x for x in decision["alternatives"])
     assert r["data"]["urgency"] == "urgent"
     assert r["data"]["judge"]["urgency"] == "urgent"
+
+
+def test_local_agent_computes_single_source_funding_comparisons():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 500, "CNY": 10000, "USD": 500, "MYR": 5000},
+        "balance_fx_modes": {"CNY": "custom", "USD": "custom", "MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"CNY": 0.19, "USD": 1.28, "MYR": 0.31},
+        "monthly_income_amount": 1000,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 3000,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 5,
+        "accommodation_amount": 400,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 300, "Transport": 100},
+        "spending_classifications": {"Food & dining": "Adjustable", "Transport": "Core"},
+    })
+    r = e.agent("I need SGD 3,000 for tuition in 5 days. What should I use?")
+    options = r["data"]["decision"]["single_source_options"]
+    assert options
+    assert any(x["currency"] == "CNY" for x in options)
+    assert all("target_value" in x for x in options)
+    assert all("feasible_for_remaining_need" in x for x in options)

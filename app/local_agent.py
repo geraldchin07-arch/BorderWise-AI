@@ -351,6 +351,7 @@ class LocalAgentPlanner:
             "tuition", "school fees", "tuition fee", "tuition fees",
             "fees", "accommodation", "hostel", "semester fee",
         ])
+        message_horizon_days = self._extract_horizon_days(t)
         conversion_question = any(k in t for k in ["convert", "exchange", "should i", "what should i do", "enough", "need to"])
 
         # Explicit execution requests are handled before informational FX questions.
@@ -1394,7 +1395,6 @@ class LocalAgentPlanner:
                 mentioned.add(code)
 
         planning = str(self.engine.state.get("profile_meta", {}).get("planning_currency", "SGD")).upper()
-        message_horizon_days = self._extract_horizon_days(t)
         conversion_words = any(k in t for k in [
             "convert", "exchange", "to ", "into ", "worth", "how much is",
         ])

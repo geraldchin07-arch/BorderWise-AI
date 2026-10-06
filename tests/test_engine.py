@@ -121,6 +121,19 @@ def test_offline_local_agent_handles_received_money_planning():
     assert all(x in steps for x in ["UNDERSTAND", "OBSERVE", "SIMULATE", "REASON", "FX", "CALCULATE", "SECURITY", "RECOMMEND"])
 
 
+def test_local_agent_multi_currency_tuition_uses_correct_source_currency():
+    e = FinanceEngine()
+    r = e.agent("I have CNY 10,000 and need SGD 3,000 for tuition. Should I convert some of it?")
+    assert r["data"]["agent_mode"] == "local_agent_planner"
+    conv = r["data"]["conversion"]
+    assert conv["from_currency"] == "CNY"
+    assert conv["to_currency"] == "SGD"
+    assert abs(conv["amount"] - 10000.0) < 0.01
+    assert "I cannot safely" not in r["answer"]
+    assert "CNY" in r["answer"] and "SGD" in r["answer"]
+    assert e.state["proposals"] == {}
+
+
 def test_offline_local_agent_does_not_auto_create_proposal_for_advice():
     e = FinanceEngine()
     r = e.agent("I received RM10,000 and have tuition coming up. Should I convert some to SGD?")

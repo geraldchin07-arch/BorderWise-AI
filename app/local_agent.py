@@ -101,16 +101,9 @@ class LocalAgentPlanner:
                 balances[code] = self.engine.money_value(possession.group(1))
                 continue
 
-            # Also support compact forms such as "CNY 10,000" before an obligation.
-            compact = re.search(
-                rf"{token}\s*([0-9]+(?:\.[0-9]+)?)",
-                t,
-                re.I,
-            )
-            if compact:
-                balances[code] = self.engine.money_value(compact.group(1))
-                continue
-
+            # Compact currency amounts are only wallet balances when they are
+            # explicitly tied to possession language. Do not treat an obligation such
+            # as "send RM2000" or "tuition SGD2500" as money the user owns.
             reverse = re.search(
                 rf"([0-9]+(?:\.[0-9]+)?)\s*{token}\b",
                 t,

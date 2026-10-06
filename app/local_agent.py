@@ -555,7 +555,12 @@ class LocalAgentPlanner:
             and any(k in t for k in ["send", "remit", "family", "home"])
             and any(k in t for k in ["prioritize", "priority", "first", "before", "what should i do", "should i"])
         )
-        if competing_question and "incoming" not in detected_goals:
+        incoming_support_mentioned = any(k in t for k in [
+            "parents can send", "parents will send", "family can send",
+            "family will send", "family sent", "received", "allowance",
+            "incoming", "sent me",
+        ])
+        if competing_question and not incoming_support_mentioned:
             tuition_labeled = self._extract_labeled_amount(t, ["tuition", "tuition fee", "tuition fees"])
             remittance_labeled = self._extract_labeled_amount(
                 t, ["send", "sending", "remit", "remittance", "send to my family", "send home"]
@@ -685,6 +690,7 @@ class LocalAgentPlanner:
             "what should i do", "what do i do", "help me plan", "make a plan",
             "how should i manage", "how should i handle", "what should i prioritize",
             "what do you recommend", "plan my finances", "financial plan",
+            "should i convert", "should i use",
         ])
 
         if goal_planning_question and len(detected_goals) >= 2:
@@ -739,9 +745,25 @@ class LocalAgentPlanner:
                     "No user-entered FX quote was supplied for the scenario; reference-rate calculations remain indicative."
                 )
 
+            if not tuition_labeled and "tuition" in detected_goals:
+                profile = self.engine.get_profile()
+                saved_tuition = self.engine.money_value(
+                    Decimal(str(profile.get("tuition_amount", 0)))
+                    - Decimal(str(profile.get("scholarship_amount", 0)))
+                    - Decimal(str(profile.get("loan_amount", 0)))
+                )
+                saved_tuition_currency = str(
+                    profile.get("tuition_currency", planning)
+                ).upper()
+                saved_tuition_days = int(profile.get("tuition_due_days", 31))
+                if saved_tuition > 0 and (
+                    message_horizon_days is not None or saved_tuition_days <= 30
+                ):
+                    tuition_labeled = (saved_tuition, saved_tuition_currency)
+
             if tuition_labeled:
                 tuition_amount, tuition_currency = tuition_labeled
-                tuition_days = horizon if message_horizon_days is not None else int(
+                tuition_days = message_horizon_days if message_horizon_days is not None else int(
                     self.engine.state.get("education", {}).get("tuition_due_days", 30)
                 )
                 try:

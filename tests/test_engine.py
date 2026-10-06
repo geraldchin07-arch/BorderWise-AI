@@ -1602,3 +1602,195 @@ def test_local_agent_keeps_uncertain_parent_money_conditional():
     assert "conditional" in r["answer"].lower()
     assert "not confirmed" in r["answer"].lower()
     assert r["data"]["state_changed"] is False
+
+
+# Multi-currency regression coverage merged from docs-qa.
+
+def test_cny_10000_to_sgd_conversion():
+    e = FinanceEngine()
+
+    e.state.setdefault("fx_pair_cache", {})["CNY/SGD"] = {
+        "base": "CNY",
+        "quote": "SGD",
+        "rate": 0.18,
+        "date": "2026-10-06",
+        "source": "test reference rate",
+        "live": True,
+        "updated_at": "2999-01-01T00:00:00+00:00",
+    }
+
+    out = e.quote_conversion(10000, "CNY", "SGD")
+
+    assert out["amount"] == 10000
+    assert out["converted_amount"] == 1800.0
+    assert out["rate"] == 0.18
+
+
+def test_usd_500_to_sgd_conversion():
+    e = FinanceEngine()
+
+    e.state.setdefault("fx_pair_cache", {})["USD/SGD"] = {
+        "base": "USD",
+        "quote": "SGD",
+        "rate": 1.28,
+        "date": "2026-10-06",
+        "source": "test reference rate",
+        "live": True,
+        "updated_at": "2999-01-01T00:00:00+00:00",
+    }
+
+    out = e.quote_conversion(500, "USD", "SGD")
+
+    assert out["amount"] == 500
+    assert out["converted_amount"] == 640.0
+    assert out["rate"] == 1.28
+
+
+def test_four_currency_wallet_valuation_to_sgd():
+    e = FinanceEngine()
+
+    payload = {
+        "planning_currency": "SGD",
+        "balances": {
+            "CNY": 10000,
+            "USD": 500,
+            "MYR": 5000,
+            "SGD": 500,
+        },
+        "balance_fx_modes": {
+            "CNY": "custom",
+            "USD": "custom",
+            "MYR": "custom",
+            "SGD": "custom",
+        },
+        "custom_fx_rates_to_sgd": {
+            "CNY": 0.18,
+            "USD": 1.28,
+            "MYR": 0.305,
+            "SGD": 1.0,
+        },
+        "monthly_income_amount": 0,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 0,
+        "emergency_reserve_currency": "SGD",
+        "tuition_amount": 3000,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 20,
+        "accommodation_amount": 0,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {
+            "Food & dining": 0,
+        },
+        "spending_classifications": {},
+    }
+
+    e.update_profile_general(payload)
+
+    overview = e.currency_overview()
+
+    assert overview["base_currency"] == "SGD"
+    assert round(overview["total_indicative_planning"], 2) == 4465.0
+
+    currencies = {
+        item["currency"]: item
+        for item in overview["currencies"]
+    }
+
+    assert currencies["CNY"]["sgd_value"] == 1800.0
+    assert currencies["USD"]["sgd_value"] == 640.0
+    assert currencies["MYR"]["sgd_value"] == 1525.0
+    assert currencies["SGD"]["sgd_value"] == 500.0
+
+
+def test_same_currency_conversion_returns_same_amount():
+    e = FinanceEngine()
+
+    out = e.convert_currency(1000, "SGD", "SGD")
+
+    assert out["from_currency"] == "SGD"
+    assert out["to_currency"] == "SGD"
+    assert out["amount"] == 1000.0
+    assert out["converted_amount"] == 1000.0
+    assert out["rate"] == 1.0
+
+
+def test_automatic_fx_failure_falls_back_to_last_known_rate(monkeypatch):
+    e = FinanceEngine()
+
+    e.state.setdefault("fx_pair_cache", {})["USD/SGD"] = {
+        "base": "USD",
+        "quote": "SGD",
+        "rate": 1.28,
+        "date": "2026-10-06",
+        "source": "Frankfurter reference rate",
+        "live": True,
+        "updated_at": "2999-01-01T00:00:00+00:00",
+    }
+
+    def fail_network(*args, **kwargs):
+        raise OSError("simulated network failure")
+
+    monkeypatch.setattr(engine_module, "urlopen", fail_network)
+
+    out = e.quote_conversion(100, "USD", "SGD", force=True)
+
+    assert out["converted_amount"] == 128.0
+    assert out["rate"] == 1.28
+    assert out["fx"]["live"] is False
+    assert out["fx"]["source"] == "last known reference rate"
+    assert out["fx"]["mode"] == "auto_reference"
+
+
+def test_custom_fx_rate_overrides_automatic_reference():
+    e = FinanceEngine()
+
+    payload = {
+        "planning_currency": "SGD",
+        "balances": {
+            "USD": 500,
+            "SGD": 0,
+        },
+        "balance_fx_modes": {
+            "USD": "custom",
+            "SGD": "custom",
+        },
+        "custom_fx_rates_to_sgd": {
+            "USD": 1.30,
+            "SGD": 1.0,
+        },
+        "monthly_income_amount": 0,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 0,
+        "emergency_reserve_currency": "SGD",
+        "tuition_amount": 0,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 20,
+        "accommodation_amount": 0,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {
+            "Food & dining": 0,
+        },
+        "spending_classifications": {},
+    }
+
+    e.update_profile_general(payload)
+
+    overview = e.currency_overview()
+
+    usd = next(
+        item for item in overview["currencies"]
+        if item["currency"] == "USD"
+    )
+
+    assert usd["rate_to_planning"] == 1.30
+    assert usd["sgd_value"] == 650.0

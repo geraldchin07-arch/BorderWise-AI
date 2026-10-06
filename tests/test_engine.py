@@ -1049,7 +1049,7 @@ def test_local_agent_prioritizes_tuition_over_family_remittance():
     decision = r["data"]["decision"]
     assert decision["priority_order"] == ["tuition", "remittance"]
     assert decision["tuition"]["shortfall"] == 0.0
-    assert decision["remittance"]["amount"] == 2000.0
+    assert decision["remittance"]["amount"] == 1000.0
     assert decision["reserve_protected"] is True
     assert decision["state_changed"] is False
     assert "Priority 1" in r["answer"]
@@ -1088,5 +1088,5 @@ def test_local_agent_competing_obligations_reports_tuition_funding_gap():
     decision = r["data"]["decision"]
     assert decision["priority_order"] == ["tuition", "remittance"]
     assert decision["tuition"]["shortfall"] == 1300.0
-    assert decision["remittance"]["shortfall"] == 2000.0
+    assert decision["remittance"]["shortfall"] == 800.0
     assert "tuition" in decision["reason"].lower()

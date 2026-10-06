@@ -681,6 +681,7 @@ def test_local_agent_understands_natural_tuition_decision_request():
     assert r["data"]["funding_plan"]["status"] == "funded"
     assert "Decision:" in r["answer"]
     assert "Why:" in r["answer"]
-    assert "tuition" not in r["answer"].lower() or "emergency reserve" in r["answer"].lower()
+    assert "CNY" in r["answer"]
+    assert "emergency reserve" in r["answer"].lower()
     assert e.get_balance() == before
     assert e.state["proposals"] == {}

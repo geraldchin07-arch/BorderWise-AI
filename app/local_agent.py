@@ -744,12 +744,32 @@ class LocalAgentPlanner:
                 tuition_days = horizon if message_horizon_days is not None else int(
                     self.engine.state.get("education", {}).get("tuition_due_days", 30)
                 )
-                tuition_funding = self.engine.recommend_funding(
-                    tuition_amount,
-                    tuition_currency,
-                    balances_override=wallet_balances if use_scenario_wallet else None,
-                )
-                tuition_status = tuition_funding["status"]
+                try:
+                    tuition_funding = self.engine.recommend_funding(
+                        tuition_amount,
+                        tuition_currency,
+                        balances_override=wallet_balances if use_scenario_wallet else None,
+                    )
+                    tuition_status = tuition_funding["status"]
+                except ValueError as exc:
+                    tuition_funding = {
+                        "status": "review",
+                        "target_amount": float(tuition_amount),
+                        "target_currency": tuition_currency,
+                        "funded_amount": 0.0,
+                        "remaining_gap": float(tuition_amount),
+                        "plan": [],
+                        "candidates": [],
+                        "reserve": {
+                            "currency": reserve_currency,
+                            "amount": float(reserve_amount),
+                            "protected": reserve_protected,
+                        },
+                        "state_changed": False,
+                        "note": str(exc),
+                    }
+                    tuition_status = "review"
+                    constraints.append(f"Tuition funding could not be fully evaluated: {exc}")
                 priorities.append({
                     "rank": 1,
                     "goal": "tuition",
@@ -781,15 +801,19 @@ class LocalAgentPlanner:
             if remittance_labeled:
                 remittance_amount, remittance_currency = remittance_labeled
                 remittance_priority = 2 if tuition_labeled else 1
-                remittance_target_planning = (
-                    self.engine.money_value(remittance_amount)
-                    if remittance_currency == forecast["planning_currency"]
-                    else self.engine.money_value(
-                        self.engine.convert_currency(
-                            remittance_amount, remittance_currency, forecast["planning_currency"]
-                        )["converted_amount"]
+                try:
+                    remittance_target_planning = (
+                        self.engine.money_value(remittance_amount)
+                        if remittance_currency == forecast["planning_currency"]
+                        else self.engine.money_value(
+                            self.engine.convert_currency(
+                                remittance_amount, remittance_currency, forecast["planning_currency"]
+                            )["converted_amount"]
+                        )
                     )
-                )
+                except ValueError as exc:
+                    remittance_target_planning = self.engine.money_value(0)
+                    constraints.append(f"Remittance FX conversion could not be evaluated: {exc}")
                 projected_after = self.engine.money_value(
                     Decimal(str(forecast["projected_balance_planning"])) - remittance_target_planning
                 )
@@ -837,8 +861,16 @@ class LocalAgentPlanner:
                         f"Scenario-check the {incoming_currency} {incoming_amount:,.2f} income before "
                         "committing to discretionary outflows."
                     ),
-                    "simulation": self.engine.simulate_income_impact(
-                        incoming_amount, incoming_currency
+                    "simulation": (
+                        self.engine.simulate_income_impact(incoming_amount, incoming_currency)
+                        if incoming_currency in self.engine.get_balance()
+                        else {
+                            "hypothetical_only": True,
+                            "state_changed": False,
+                            "income": {"amount": float(incoming_amount), "currency": incoming_currency},
+                            "available_for_simulation": False,
+                            "note": f"{incoming_currency} is not configured in the current wallet; the expected income is not counted."
+                        }
                     ),
                 })
 

@@ -180,7 +180,14 @@ class LocalAgentPlanner:
     def _extract_labeled_amount(
         self, text: str, labels: list[str]
     ) -> tuple[Decimal, str] | None:
-        """Extract the first currency amount associated with one of several labels."""
+        """Extract the nearest currency amount associated with a label.
+
+        The old implementation searched one currency alias at a time. That could
+        match a later currency in the same sentence (for example, the RM3,000
+        remittance) instead of the SGD2,500 amount immediately following "tuition".
+        Search once across all currency aliases and take the first amount after
+        the label instead.
+        """
         t = text.lower().replace(",", "")
         supported_aliases = {
             "MYR": ["myr", "rm", "ringgit"],
@@ -201,20 +208,36 @@ class LocalAgentPlanner:
         currency_pattern = []
         for code, aliases in supported_aliases.items():
             for alias in aliases:
-                currency_pattern.append(
-                    (re.escape(alias), code)
-                )
+                currency_pattern.append((re.escape(alias), code))
+        currency_pattern.sort(key=lambda item: len(item[0]), reverse=True)
+        token = "(?:" + "|".join(alias for alias, _ in currency_pattern) + ")"
+        code_by_alias = {alias: code for alias, code in currency_pattern}
 
         for label in labels:
             label_pattern = re.escape(label)
-            for alias, code in currency_pattern:
-                match = re.search(
-                    rf"\b{label_pattern}\b[^.;\n]{{0,80}}?{alias}\s*([0-9]+(?:\.[0-9]+)?)",
-                    t,
-                    re.I,
-                )
-                if match:
-                    return self.engine.money_value(match.group(1)), code
+            window = re.search(
+                rf"\\b{label_pattern}\\b(?P<context>[^.;\\n]{{0,80}})",
+                t,
+                re.I,
+            )
+            if not window:
+                continue
+            context = window.group("context")
+            amount_match = re.search(
+                rf"(?P<currency>{token})\\s*(?P<amount>[0-9]+(?:\\.[0-9]+)?)"
+                rf"|(?P<amount_rev>[0-9]+(?:\\.[0-9]+)?)\\s*(?P<currency_rev>{token})\\b",
+                context,
+                re.I,
+            )
+            if not amount_match:
+                continue
+            alias = amount_match.group("currency") or amount_match.group("currency_rev")
+            amount = amount_match.group("amount") or amount_match.group("amount_rev")
+            matched_code = next(
+                code for raw_alias, code in currency_pattern
+                if raw_alias.lower() == alias.lower()
+            )
+            return self.engine.money_value(amount), matched_code
         return None
 
 

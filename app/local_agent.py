@@ -424,12 +424,44 @@ class LocalAgentPlanner:
             })
 
         # Case C: "I have CNY 10,000 and need SGD 3,000 of tuition".
+        # Infer source/target from the sentence semantics, not the order of the
+        # supported-currency list. This is critical because the list contains SGD
+        # before CNY.
         if len(detected) >= 2 and tuition_context and any(code not in {"MYR", "SGD"} for code in detected):
-            source_code, source_amount = next(iter(detected.items()))
-            target_candidates = [code for code in mentioned if code != source_code and code in detected]
-            if target_candidates:
-                target_code = target_candidates[0]
-                target_amount = detected[target_code]
+            source_code = None
+            source_amount = None
+            target_code = None
+            target_amount = None
+
+            for code, amount in detected.items():
+                if re.search(
+                    rf"\\b(?:have|has|hold|holding|own)\\s+(?:about\\s+)?(?:{re.escape(code.lower())})\\s*[0-9]",
+                    t,
+                    re.I,
+                ):
+                    source_code, source_amount = code, amount
+                    break
+
+            for code, amount in detected.items():
+                if code == source_code:
+                    continue
+                if re.search(
+                    rf"\\b(?:need|needs|pay|paying|require|required)\\s+(?:about\\s+)?(?:{re.escape(code.lower())})\\s*[0-9]",
+                    t,
+                    re.I,
+                ):
+                    target_code, target_amount = code, amount
+                    break
+
+            # Safe fallback only when the semantic wording is absent.
+            if source_code is None:
+                source_code, source_amount = next(iter(detected.items()))
+            if target_code is None:
+                remaining = [(code, amount) for code, amount in detected.items() if code != source_code]
+                if remaining:
+                    target_code, target_amount = remaining[0]
+
+            if source_code and target_code and source_code != target_code and target_amount is not None:
                 try:
                     conv = self.engine.convert_currency(source_amount, source_code, target_code)
                     needed_source = self.engine.money_value(Decimal(str(target_amount)) / Decimal(str(conv["rate"])))

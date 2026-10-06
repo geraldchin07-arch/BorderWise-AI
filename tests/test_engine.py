@@ -1464,3 +1464,58 @@ def test_local_agent_does_not_claim_missing_reserve_is_below_floor():
     assert reserve["represented_in_scenario"] is False
     assert "not represented in the supplied scenario" in r["answer"]
     assert "below its configured floor" not in r["answer"]
+
+
+def test_local_agent_exact_multi_obligation_scenario_is_self_contained():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 9000, "MYR": 8000},
+        "balance_fx_modes": {"MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"MYR": 0.31},
+        "monthly_income_amount": 5000,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 5000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 1000,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 60,
+        "accommodation_amount": 3000,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 1000,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 3000},
+        "spending_classifications": {"Food & dining": "Core"},
+    })
+
+    before = e.get_balance()
+    r = e.agent(
+        "I have SGD 2000, CNY 15000 and USD 500. "
+        "My tuition of SGD 6000 is due in 3 weeks, I need to send RM2000 home next week, "
+        "my monthly expenses are about SGD 900, and my parents may send SGD 1500 in two weeks. "
+        "Can I meet all my obligations while keeping my emergency reserve?"
+    )
+
+    decision = r["data"]["decision"]
+    forecast = r["data"]["scenario_forecast"]
+
+    # The chat scenario must not inherit the saved profile's SGD 9,000 wallet,
+    # SGD 3,000 food budget, or unrelated saved tuition/obligation values.
+    assert decision["reserve"]["verification_status"] == "not_represented"
+    assert decision["reserve"]["represented_in_scenario"] is False
+    assert decision["tuition"]["status"] == "partial"
+    assert decision["remittance"]["status"] == "needs_review"
+    assert forecast["starting_balance_planning"] == 5490.0
+    assert forecast["monthly_expenses_planning"] == 900.0
+    assert forecast["tuition_planning"] == 6000.0
+    assert forecast["remittance_planning"] == 620.0
+    assert forecast["incoming_planning"] == 1500.0
+    assert forecast["projected_balance_planning"] == -2030.0
+    assert forecast["projected_balance_with_incoming"] == -530.0
+    assert "below its configured floor" not in r["answer"]
+    assert "not represented in the supplied scenario" in r["answer"]
+    assert e.get_balance() == before
+    assert e.state["proposals"] == {}

@@ -615,27 +615,37 @@ class LocalAgentPlanner:
                     {
                         "step": "OBSERVE",
                         "status": "completed",
-                        "detail": f"Comparing candidate source currencies: {', '.join(source_codes[:3])}.",
+                        "detail": (
+                            f"Comparing candidate source currencies: {', '.join(source_codes[:3])}."
+                            + (" Using balances stated in this message as a hypothetical wallet." if use_scenario_wallet else " Using the saved wallet.")
+                        ),
                     },
                 ]
 
-                for source_code in source_codes[:3]:
-                    balance = self.engine.get_balance().get(source_code, 0)
-                    reserve_currency = str(
+                scenario_wallet = self._extract_wallet_balances_from_text(t)
+                use_scenario_wallet = len(scenario_wallet) >= 1
+                saved_wallet = self.engine.get_balance()
+                reserve_currency = str(
                         self.engine.state.get("profile_meta", {}).get("emergency_reserve_currency", "MYR")
                     ).upper()
-                    reserve_amount = self.engine.money_value(
-                        Decimal(str(
-                            self.engine.state.get("profile_meta", {}).get(
-                                "emergency_reserve_amount",
-                                self.engine.state.get("emergency_reserve_myr", 0),
-                            )
-                        ))
+                reserve_amount = self.engine.money_value(
+                    Decimal(str(
+                        self.engine.state.get("profile_meta", {}).get(
+                            "emergency_reserve_amount",
+                            self.engine.state.get("emergency_reserve_myr", 0),
+                        )
+                    ))
+                )
+                for source_code in source_codes[:3]:
+                    raw_balance = (
+                        scenario_wallet.get(source_code, 0)
+                        if use_scenario_wallet
+                        else saved_wallet.get(source_code, 0)
                     )
-                    reserve_hit = (
-                        source_code == reserve_currency
-                        and Decimal(str(balance)) - reserve_amount < Decimal("0")
-                    )
+                    balance = self.engine.money_value(raw_balance)
+                    protected = reserve_amount if source_code == reserve_currency else self.engine.money_value(0)
+                    available = self.engine.money_value(max(self.engine.money_value(0), balance - protected))
+                    reserve_block = source_code == reserve_currency and Decimal(str(balance)) < reserve_amount
                     try:
                         conv = self.engine.convert_currency(
                             target_amount,
@@ -645,8 +655,7 @@ class LocalAgentPlanner:
                         source_needed = self.engine.money_value(
                             Decimal(str(target_amount)) / Decimal(str(conv["rate"]))
                         )
-                        available = self.engine.money_value(balance)
-                        feasible = source_needed <= available and not reserve_hit
+                        feasible = source_needed <= available and not reserve_block
                         options.append({
                             "currency": source_code,
                             "balance": float(available),
@@ -657,7 +666,8 @@ class LocalAgentPlanner:
                                 self.engine.money_value(max(Decimal("0"), available - source_needed))
                             ),
                             "reserve_currency": reserve_currency,
-                            "reserve_protected": True,
+                            "protected_amount": float(protected),
+                            "reserve_protected": not reserve_block,
                             "fx": conv.get("fx", {}),
                         })
                     except ValueError as exc:
@@ -669,7 +679,8 @@ class LocalAgentPlanner:
                             "feasible": False,
                             "remaining_source_after": float(balance),
                             "reserve_currency": reserve_currency,
-                            "reserve_protected": True,
+                            "protected_amount": float(protected),
+                            "reserve_protected": not reserve_block,
                             "error": str(exc),
                         })
 

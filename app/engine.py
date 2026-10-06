@@ -386,10 +386,17 @@ class FinanceEngine:
         custom_rates: dict[str, Decimal] = {}
         custom_sources: dict[str, str] = {}
         custom_dates: dict[str, str] = {}
-        for code in balances:
+        # Wallet currencies always get a normal FX mode. Also preserve explicitly
+        # supplied custom quotes for scenario-only currencies: local-agent messages may
+        # introduce CNY/USD/etc. that are not part of the saved wallet, while tests and
+        # demos may intentionally provide deterministic quotes for those hypothetical
+        # currencies. These quotes must not be silently discarded.
+        fx_codes = set(balances) | set(raw_modes) | set(raw_custom_rates)
+        for code in fx_codes:
+            code = clean_code(code, "Currency code")
             if code == "SGD":
                 continue
-            mode = str(raw_modes.get(code, "auto")).strip().lower()
+            mode = str(raw_modes.get(code, "custom" if code in raw_custom_rates else "auto")).strip().lower()
             if mode not in {"auto", "custom"}:
                 raise ValueError(f"FX mode for {code} must be auto or custom.")
             fx_modes[code] = mode

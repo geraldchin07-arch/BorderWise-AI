@@ -1302,3 +1302,79 @@ def test_local_agent_integrates_credit_as_a_multi_goal_readiness_goal():
     assert credit["liquidity_supports_future_obligations"] is True
     assert r["data"]["judge"]["evidence_bounded"] is True
     assert r["data"]["state_changed"] is False
+
+
+def test_local_agent_multi_goal_feasibility_question_is_not_misrouted_as_transfer():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 2000, "MYR": 5000},
+        "balance_fx_modes": {"MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"MYR": 0.31},
+        "monthly_income_amount": 0,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 0,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 60,
+        "accommodation_amount": 300,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 900},
+        "spending_classifications": {"Food & dining": "Core"},
+    })
+    before = e.get_balance()
+    r = e.agent(
+        "I have SGD 2000, CNY 15000 and USD 500. "
+        "My tuition of SGD 6000 is due in 3 weeks, I need to send RM2000 home next week, "
+        "my monthly expenses are about SGD 900, and my parents may send SGD 1500 in two weeks. "
+        "Can I meet all my obligations while keeping my emergency reserve?"
+    )
+    assert r["data"]["goal"] == "financial_plan"
+    assert {"tuition", "remittance", "incoming", "spending", "reserve"}.issubset(
+        set(r["data"]["detected_goals"])
+    )
+    assert e.state["proposals"] == {}
+    assert e.get_balance() == before
+    assert "prepared a sandbox conversion" not in r["answer"].lower()
+
+
+def test_local_agent_safest_plan_is_not_misrouted_as_transfer():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 3000, "MYR": 5000},
+        "balance_fx_modes": {"MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"MYR": 0.31},
+        "monthly_income_amount": 0,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 0,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 60,
+        "accommodation_amount": 0,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 300},
+        "spending_classifications": {"Food & dining": "Adjustable"},
+    })
+    before = e.get_balance()
+    r = e.agent(
+        "I have SGD 3000. My tuition of SGD 2500 is due in two weeks, "
+        "but I want to send RM3000 to my family today. What is the safest plan?"
+    )
+    assert r["data"]["goal"] == "competing_obligations"
+    assert r["data"]["decision"]["priority_order"] == ["tuition", "remittance"]
+    assert e.state["proposals"] == {}
+    assert e.get_balance() == before
+    assert "prepared a sandbox conversion" not in r["answer"].lower()

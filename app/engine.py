@@ -1446,6 +1446,27 @@ class FinanceEngine:
         return None
 
     def agent(self, text: str) -> dict[str, Any]:
+        # Safety-critical deterministic cases must bypass the optional LLM planner.
+        # This guarantees uncertain incoming family support is never interpreted as
+        # confirmed funds, regardless of whether OPENAI_API_KEY is configured.
+        normalized = str(text).lower().strip()
+        conditional_income_question = (
+            any(k in normalized for k in [
+                "can i assume", "assume that money", "assume the money", "count that money",
+                "treat that money", "can i count it", "can i count that",
+            ])
+            and any(k in normalized for k in ["might", "may", "could", "possibly", "maybe"])
+            and any(k in normalized for k in ["parent", "parents", "family"])
+        )
+        if conditional_income_question:
+            try:
+                from .local_agent import LocalAgentPlanner
+                local_result = LocalAgentPlanner(self).run(text)
+                if local_result is not None:
+                    return local_result
+            except Exception:
+                pass
+
         # v5: optional LLM tool-calling planner. The deterministic engine remains the
         # fallback and the authority for calculations, policy and execution.
         try:

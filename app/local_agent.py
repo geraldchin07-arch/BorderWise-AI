@@ -655,6 +655,277 @@ class LocalAgentPlanner:
                     },
                 )
 
+        # Goal-driven planning: reason across multiple financial goals in one request.
+        # This is the main offline "agentic" path: it turns a situation into prioritized,
+        # constraint-aware actions while leaving execution behind authorization controls.
+        goal_keywords = {
+            "tuition": ["tuition", "school fees", "semester fee", "school fee"],
+            "remittance": ["send home", "send money", "family", "remit", "remittance", "back home"],
+            "incoming": ["receive", "received", "got paid", "family sent", "allowance", "incoming", "parents send"],
+            "spending": ["spending", "expenses", "living costs", "monthly costs"],
+            "reserve": ["emergency reserve", "emergency fund", "keep a reserve", "keep aside"],
+            "fx": ["convert", "exchange", "currency", "fx"],
+        }
+        detected_goals = [
+            goal for goal, words in goal_keywords.items()
+            if any(word in t for word in words)
+        ]
+        goal_planning_question = any(k in t for k in [
+            "what should i do", "what do i do", "help me plan", "make a plan",
+            "how should i manage", "how should i handle", "what should i prioritize",
+            "what do you recommend", "plan my finances", "financial plan",
+        ])
+
+        if goal_planning_question and len(detected_goals) >= 2:
+            wallet_balances = self._extract_wallet_balances_from_text(t)
+            use_scenario_wallet = len(wallet_balances) >= 1
+            forecast = self.engine.forecast_portfolio(
+                30,
+                balances_override=wallet_balances if use_scenario_wallet else None,
+            )
+            horizon = message_horizon_days or 30
+
+            tuition_labeled = self._extract_labeled_amount(t, ["tuition", "tuition fee", "tuition fees"])
+            remittance_labeled = self._extract_labeled_amount(
+                t, ["send", "sending", "send home", "remittance", "remit", "family"]
+            )
+            incoming_labeled = self._extract_labeled_amount(
+                t, ["receive", "received", "got", "allowance", "incoming", "family sent", "parents send"]
+            )
+
+            reserve_currency = str(
+                self.engine.state.get("profile_meta", {}).get("emergency_reserve_currency", "MYR")
+            ).upper()
+            reserve_amount = self.engine.money_value(
+                Decimal(str(
+                    self.engine.state.get("profile_meta", {}).get(
+                        "emergency_reserve_amount",
+                        self.engine.state.get("emergency_reserve_myr", 0),
+                    )
+                ))
+            )
+            reserve_balance = self.engine.money_value(
+                (wallet_balances if use_scenario_wallet else self.engine.get_balance()).get(reserve_currency, 0)
+            )
+            reserve_protected = reserve_balance >= reserve_amount
+
+            priorities = []
+            actions = []
+            constraints = []
+
+            if tuition_labeled:
+                tuition_amount, tuition_currency = tuition_labeled
+                tuition_days = horizon if message_horizon_days is not None else int(
+                    self.engine.state.get("education", {}).get("tuition_due_days", 30)
+                )
+                tuition_funding = self.engine.recommend_funding(
+                    tuition_amount,
+                    tuition_currency,
+                    balances_override=wallet_balances if use_scenario_wallet else None,
+                )
+                tuition_status = tuition_funding["status"]
+                priorities.append({
+                    "rank": 1,
+                    "goal": "tuition",
+                    "reason": (
+                        f"Tuition is an essential obligation with a stated/assumed horizon of "
+                        f"{tuition_days} days."
+                    ),
+                    "horizon_days": tuition_days,
+                    "status": tuition_status,
+                })
+                if tuition_status == "funded":
+                    actions.append({
+                        "priority": 1,
+                        "action": "SECURE_TUITION_FUNDING",
+                        "detail": "Use the deterministic minimum-conversion funding plan while protecting the emergency reserve.",
+                        "funding_plan": tuition_funding,
+                    })
+                else:
+                    constraints.append(
+                        f"Tuition remains short by {tuition_funding['remaining_gap']:,.2f} {tuition_currency}."
+                    )
+                    actions.append({
+                        "priority": 1,
+                        "action": "CLOSE_TUITION_GAP",
+                        "detail": f"Find another {tuition_funding['remaining_gap']:,.2f} {tuition_currency} funding source before the tuition deadline.",
+                        "funding_plan": tuition_funding,
+                    })
+
+            if remittance_labeled:
+                remittance_amount, remittance_currency = remittance_labeled
+                remittance_priority = 2 if tuition_labeled else 1
+                remittance_target_planning = (
+                    self.engine.money_value(remittance_amount)
+                    if remittance_currency == forecast["planning_currency"]
+                    else self.engine.money_value(
+                        self.engine.convert_currency(
+                            remittance_amount, remittance_currency, forecast["planning_currency"]
+                        )["converted_amount"]
+                    )
+                )
+                projected_after = self.engine.money_value(
+                    Decimal(str(forecast["projected_balance_planning"])) - remittance_target_planning
+                )
+                priorities.append({
+                    "rank": remittance_priority,
+                    "goal": "remittance",
+                    "reason": (
+                        "Family remittance is secondary to a dated tuition obligation when both are present."
+                        if tuition_labeled
+                        else "Remittance is evaluated against projected liquidity and the protected reserve."
+                    ),
+                    "status": "affordable" if projected_after >= 0 and reserve_protected else "needs_review",
+                })
+                if projected_after >= 0 and reserve_protected:
+                    actions.append({
+                        "priority": remittance_priority,
+                        "action": "REVIEW_REMITTANCE",
+                        "detail": (
+                            f"A hypothetical {remittance_currency} {remittance_amount:,.2f} remittance leaves "
+                            f"about {projected_after:,.2f} {forecast['planning_currency']} in the 30-day projected position."
+                        ),
+                    })
+                else:
+                    constraints.append(
+                        f"Sending {remittance_currency} {remittance_amount:,.2f} would put pressure on projected liquidity or the reserve."
+                    )
+                    actions.append({
+                        "priority": remittance_priority,
+                        "action": "DEFER_REMITTANCE",
+                        "detail": "Defer or reduce the remittance until essential obligations and reserve protection are secured.",
+                    })
+
+            if incoming_labeled:
+                incoming_amount, incoming_currency = incoming_labeled
+                priorities.append({
+                    "rank": 0,
+                    "goal": "incoming_funds",
+                    "reason": "Incoming funds are treated as expected support and simulated, not assumed to have arrived unless explicitly stated.",
+                    "status": "scenario",
+                })
+                actions.insert(0, {
+                    "priority": 0,
+                    "action": "APPLY_INCOMING_FUNDS_TO_PLAN",
+                    "detail": (
+                        f"Scenario-check the {incoming_currency} {incoming_amount:,.2f} income before "
+                        "committing to discretionary outflows."
+                    ),
+                    "simulation": self.engine.simulate_income_impact(
+                        incoming_amount, incoming_currency
+                    ),
+                })
+
+            if "spending" in detected_goals:
+                spending = self.engine.spending_analysis()
+                flexible = [
+                    x for x in spending["categories"]
+                    if x.get("classification") == "Adjustable"
+                ]
+                if flexible:
+                    actions.append({
+                        "priority": 3,
+                        "action": "TRIM_ADJUSTABLE_SPENDING",
+                        "detail": (
+                            f"Review adjustable categories first; current adjustable spending is "
+                            f"{spending['discretionary_total_planning']:,.2f} {spending['currency']} per month."
+                        ),
+                    })
+
+            if not reserve_protected:
+                constraints.append(
+                    f"The {reserve_currency} emergency reserve is below its configured {reserve_currency} {reserve_amount:,.2f} floor."
+                )
+
+            priorities.sort(key=lambda x: (x["rank"], x["goal"]))
+            actions.sort(key=lambda x: x["priority"])
+            trace = [
+                {
+                    "step": "UNDERSTAND",
+                    "status": "completed",
+                    "detail": f"Detected multiple financial goals: {', '.join(detected_goals)}.",
+                },
+                {
+                    "step": "OBSERVE",
+                    "status": "completed",
+                    "detail": (
+                        "Built a 30-day full-wallet liquidity forecast"
+                        + (" from explicitly stated hypothetical balances." if use_scenario_wallet else " from the saved wallet.")
+                    ),
+                },
+                {
+                    "step": "REASON",
+                    "status": "completed",
+                    "detail": (
+                        f"Prioritized essential obligations first, protected the {reserve_currency} reserve, "
+                        f"and evaluated discretionary/remittance decisions against projected {forecast['planning_currency']} liquidity."
+                    ),
+                },
+                {
+                    "step": "SECURITY",
+                    "status": "completed",
+                    "detail": "All planning actions are read-only; no transaction was created and no authorization was granted.",
+                },
+            ]
+
+            decision = {
+                "priority_order": [x["goal"] for x in priorities],
+                "priorities": priorities,
+                "actions": actions,
+                "constraints": constraints,
+                "forecast": forecast,
+                "reserve": {
+                    "currency": reserve_currency,
+                    "amount": float(reserve_amount),
+                    "balance": float(reserve_balance),
+                    "protected": reserve_protected,
+                },
+                "state_changed": False,
+            }
+            trace.append({
+                "step": "RECOMMEND",
+                "status": "completed",
+                "detail": (
+                    f"Produced {len(actions)} actionable planning step(s) across {len(priorities)} goal(s); "
+                    "no funds were moved."
+                ),
+            })
+
+            answer_parts = []
+            for item in priorities:
+                status = item.get("status", "review")
+                answer_parts.append(
+                    f"Priority {item['rank']}: {item['goal'].replace('_', ' ').title()} — {status}."
+                )
+            answer = (
+                "BorderWise's plan: " + " ".join(answer_parts) +
+                f" 30-day projected position: {forecast['planning_currency']} {forecast['projected_balance_planning']:,.2f}. "
+                + (
+                    "Your emergency reserve is protected. "
+                    if reserve_protected else
+                    "Your emergency reserve is below its configured floor, so discretionary outflows should pause. "
+                )
+                + (
+                    f"Constraints: {' '.join(constraints)} "
+                    if constraints else
+                    "No immediate funding constraint was detected from the supplied scenario. "
+                )
+                + "This is a planning simulation only; no transaction was created or executed."
+            )
+
+            return self._result(
+                "agentic_local",
+                answer,
+                trace,
+                {
+                    "goal": "financial_plan",
+                    "planning_horizon_days": horizon,
+                    "detected_goals": detected_goals,
+                    "decision": decision,
+                    "state_changed": False,
+                },
+            )
+
         # Remittance planning must run before the generic "send" action handler.
         # A planning question such as "Should I send SGD 500 home?" is advisory and
         # must not be mistaken for an instruction to create a MYR transfer proposal.

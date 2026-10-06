@@ -511,13 +511,14 @@ class LocalAgentPlanner:
                 send_target = None
                 send_amount = None
                 mentioned_codes = []
+                remittance_text = t.replace(",", "")
                 for code in remittance_supported:
                     amount = self._amount(t, code)
                     if amount is not None:
                         mentioned_codes.append(code)
                     match = re.search(
                         rf"\b(?:send|sending|remit|remittance|transfer)\b[^.;,]{{0,80}}\b{re.escape(code.lower())}\b\s*([0-9]+(?:\.[0-9]+)?)",
-                        t,
+                        remittance_text,
                         re.I,
                     )
                     if match:

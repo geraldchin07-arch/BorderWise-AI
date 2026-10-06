@@ -992,8 +992,9 @@ class LocalAgentPlanner:
                         ),
                     },
                 ])
-            trace.append({
-                "step": "REASON",
+            trace.extend([
+                {
+                    "step": "REASON",
                     "status": "completed",
                     "detail": (
                         f"Prioritized essential obligations first, protected the {reserve_currency} reserve, "
@@ -1005,7 +1006,7 @@ class LocalAgentPlanner:
                     "status": "completed",
                     "detail": "All planning actions are read-only; no transaction was created and no authorization was granted.",
                 },
-            ]
+            ])
 
             decision = {
                 "priority_order": [x["goal"] for x in priorities],

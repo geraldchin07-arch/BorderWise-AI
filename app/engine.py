@@ -854,7 +854,7 @@ class FinanceEngine:
             "calculation": f"starting {planning} balance + expected 30-day income − 30-day spending − obligations due within 30 days, normalized for arithmetic.",
         }
 
-    def forecast_portfolio(self, horizon_days: int = 30) -> dict[str, Any]:
+    def forecast_portfolio(self, horizon_days: int = 30, balances_override: dict[str, Any] | None = None) -> dict[str, Any]:
         """Forecast liquidity using the full multi-currency wallet, not only the planning-currency balance."""
         horizon = int(horizon_days)
         if horizon <= 0 or horizon > 365:
@@ -864,9 +864,14 @@ class FinanceEngine:
         planning = str(meta.get("planning_currency", "SGD")).upper()
         planning_rate = self._profile_rate_to_sgd(planning)
 
+        balances = (
+            self.state.get("balances", {})
+            if balances_override is None
+            else {str(k).upper().strip(): money(v) for k, v in balances_override.items()}
+        )
         starting_sgd = money(0)
         valuation_rows: list[dict[str, Any]] = []
-        for code, balance in self.state.get("balances", {}).items():
+        for code, balance in balances.items():
             bal = money(balance)
             if bal <= 0:
                 continue

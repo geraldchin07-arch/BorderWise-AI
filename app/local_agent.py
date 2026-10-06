@@ -277,6 +277,85 @@ class LocalAgentPlanner:
             "convert", "exchange", "to ", "into ", "worth", "how much is",
         ])
 
+        # Case D: wallet-wide funding optimization for an explicit obligation.
+        # Example: "I have CNY 10,000, USD 500 and MYR 5,000. I need SGD 3,000 for tuition. What should I convert?"
+        funding_question = any(k in t for k in [
+            "what should i convert", "which currency should i use", "which currency to use",
+            "what should i use", "how should i fund", "which account should i use",
+            "best currency to use", "best currency", "how much should i convert",
+        ])
+        if funding_question and tuition_context:
+            target_code = None
+            target_amount = None
+            for code, amount in detected.items():
+                if re.search(
+                    rf"\\b(?:need|needs|pay|paying|require|required)\\b[^.;,]*?{re.escape(code.lower())}\\s*{re.escape(str(amount).replace('.', r'\\.'))}\\b",
+                    t,
+                    re.I,
+                ):
+                    target_code, target_amount = code, amount
+                    break
+            if target_code is None:
+                for code, amount in detected.items():
+                    if code == planning and re.search(r"\\b(?:need|needs|pay|paying|require|required)\\b", t, re.I):
+                        target_code, target_amount = code, amount
+                        break
+            if target_code is None:
+                # If the user says "upcoming tuition" without an amount, use the saved
+                # net tuition only when it is actually due within the 30-day horizon.
+                profile = self.engine.get_profile()
+                tuition_due = int(profile.get("tuition_due_days", 31)) <= 30
+                tuition_value = self.engine.money_value(
+                    Decimal(str(profile.get("tuition_amount", 0)))
+                    - Decimal(str(profile.get("scholarship_amount", 0)))
+                    - Decimal(str(profile.get("loan_amount", 0)))
+                )
+                saved_tuition_currency = str(profile.get("tuition_currency", planning)).upper()
+                if tuition_due and tuition_value > 0:
+                    target_code, target_amount = saved_tuition_currency, tuition_value
+
+            if target_code and target_amount and target_amount > 0:
+                trace = [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": f"Detected a funding-optimization request for {target_code} {target_amount:,.2f}."},
+                    {"step": "OBSERVE", "status": "completed", "detail": "Inspected the entire saved multi-currency wallet before recommending a source."},
+                ]
+                try:
+                    funding = self.engine.recommend_funding(target_amount, target_code)
+                except ValueError as exc:
+                    trace.append({"step": "REASON", "status": "blocked", "detail": str(exc)})
+                    return self._result("agentic_local", f"I could not build a safe funding plan: {exc}", trace, {"blocked_reason": "funding_plan_unavailable"})
+
+                for leg in funding["plan"]:
+                    trace.append({
+                        "step": "FX" if leg["from_currency"] != leg["to_currency"] else "OBSERVE",
+                        "status": "completed",
+                        "detail": (
+                            f"Use {leg['from_currency']} {leg['source_amount']:,.2f} → {leg['to_currency']} {leg['target_amount']:,.2f} at {leg['rate']:.8f}."
+                        ),
+                    })
+                trace.append({"step": "SECURITY", "status": "completed", "detail": f"Protected the configured {funding['reserve']['currency']} emergency reserve of {funding['reserve']['amount']:,.2f}; no balances were changed."})
+
+                if funding["status"] == "funded":
+                    legs_text = "; ".join(
+                        f"{x['from_currency']} {x['source_amount']:,.2f} → {x['to_currency']} {x['target_amount']:,.2f}"
+                        for x in funding["plan"]
+                    )
+                    answer = (
+                        f"To fund {target_code} {target_amount:,.2f}, I would use the saved wallet rather than convert everything. "
+                        f"Recommended funding: {legs_text}. "
+                        f"This covers the target with the fewest source-currency conversions under the current indicative rates while protecting the emergency reserve. "
+                        "No transaction was created or executed."
+                    )
+                else:
+                    gap = funding["remaining_gap"]
+                    answer = (
+                        f"I checked the full saved wallet for the {target_code} {target_amount:,.2f} requirement. "
+                        f"The available balances can fund about {funding['funded_amount']:,.2f} {target_code}, leaving a gap of about {gap:,.2f} {target_code}. "
+                        "I would not automatically convert the entire wallet; another funding source is still needed. No transaction was created."
+                    )
+                trace.append({"step": "RECOMMEND", "status": "completed", "detail": "Produced a wallet-wide funding recommendation without mutating account state."})
+                return self._result("agentic_local", answer, trace, {"funding_plan": funding, "wallet": self.engine.currency_overview()})
+
         # Case A: explicit source/target conversion, e.g. "USD 500 to SGD".
         # Prefer semantic phrases such as "have/received USD 500" for the source and
         # "need/pay SGD 3,000" for the target. This avoids selecting a currency

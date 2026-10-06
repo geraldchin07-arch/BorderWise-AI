@@ -163,11 +163,79 @@ class LocalAgentPlanner:
             intent, answer, trace, data = "agentic_local", args[0], args[1], args[2]
         else:
             raise TypeError("LocalAgentPlanner._result expects 3 or 4 arguments after self.")
+        enriched_data = {**data, "agent_mode": "local_agent_planner"}
+        status_by_step: dict[str, list[dict[str, Any]]] = {}
+        for item in trace:
+            status_by_step.setdefault(str(item.get("step", "UNKNOWN")), []).append(item)
+
+        blocked_security = [
+            item for item in status_by_step.get("SECURITY", [])
+            if str(item.get("status", "")).lower() == "blocked"
+        ]
+        required_authorization = [
+            item for item in status_by_step.get("AUTHORIZE", [])
+            if str(item.get("status", "")).lower() == "required"
+        ]
+        completed_actions = [
+            item["step"] for item in trace
+            if str(item.get("status", "")).lower() == "completed"
+            and item.get("step") in {"SIMULATE", "CALCULATE", "FX", "REASON", "RECOMMEND", "AUTHORIZE", "EXECUTE", "VERIFY", "AUDIT"}
+        ]
+
+        decision = enriched_data.get("decision")
+        if decision:
+            decision_label = {
+                "FUND_TARGET": "Fund the target obligation",
+                "FUND_PARTIAL": "Fund as much as safely possible",
+                "NO_FX_CONVERSION": "No currency conversion needed",
+            }.get(decision.get("action"), str(decision.get("action", "Review recommendation")))
+        else:
+            decision_label = "Review the agent recommendation"
+
+        if blocked_security:
+            security_label = "BLOCKED by deterministic security policy"
+        elif required_authorization:
+            security_label = "Level 2 authorization required before execution"
+        else:
+            security_label = "Policy checks completed; no transaction was executed"
+
+        if required_authorization:
+            action_required = "Explicitly authorize the pending proposal before any sandbox execution."
+        elif blocked_security:
+            action_required = "Resolve the blocked condition; no transaction was created."
+        else:
+            action_required = "No transaction action required."
+
+        enriched_data["judge"] = {
+            "title": "BorderWise decision evidence",
+            "decision": decision_label,
+            "decision_detail": decision,
+            "observed": [
+                item.get("detail", "")
+                for item in trace
+                if item.get("step") in {"UNDERSTAND", "OBSERVE", "SIMULATE"}
+                and item.get("detail")
+            ],
+            "reasoning": [
+                item.get("detail", "")
+                for item in trace
+                if item.get("step") in {"REASON", "CALCULATE", "FX", "RECOMMEND"}
+                and item.get("detail")
+            ],
+            "security": security_label,
+            "security_detail": blocked_security[-1].get("detail") if blocked_security else (
+                status_by_step.get("SECURITY", [{}])[-1].get("detail")
+            ),
+            "action_required": action_required,
+            "evidence_steps": completed_actions,
+            "state_changed": bool(enriched_data.get("state_changed", False)),
+        }
+
         return {
             "intent": intent,
             "answer": answer,
             "trace": trace,
-            "data": {**data, "agent_mode": "local_agent_planner"},
+            "data": enriched_data,
             "state": self.engine.snapshot(),
         }
 

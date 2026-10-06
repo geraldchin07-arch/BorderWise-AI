@@ -1158,3 +1158,110 @@ def test_local_agent_remittance_affordability_blocks_negative_projection():
     assert rem["projected_after"] < 0
     assert "would fall to about" in r["answer"]
     assert r["data"]["judge"]["goal"] == "remittance_affordability"
+
+
+def test_forecast_portfolio_includes_all_currency_balances():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 1000, "USD": 1000, "CNY": 10000, "MYR": 5000},
+        "balance_fx_modes": {"USD": "custom", "CNY": "custom", "MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"USD": 1.28, "CNY": 0.19, "MYR": 0.31},
+        "monthly_income_amount": 0,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 0,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 60,
+        "accommodation_amount": 0,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 200},
+        "spending_classifications": {"Food & dining": "Adjustable"},
+    })
+    f = e.forecast_portfolio(30)
+    expected = 1000 + 1000 * 1.28 + 10000 * 0.19 + 5000 * 0.31
+    assert f["starting_portfolio_sgd"] == expected
+    assert f["cash_position"] == "surplus"
+    assert {x["currency"] for x in f["wallet_valuation"]} == {"SGD", "USD", "CNY", "MYR"}
+
+
+def test_local_agent_builds_multi_goal_plan_for_complex_student_scenario():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 1500, "USD": 1500, "CNY": 10000, "MYR": 5000},
+        "balance_fx_modes": {"USD": "custom", "CNY": "custom", "MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"USD": 1.28, "CNY": 0.19, "MYR": 0.31},
+        "monthly_income_amount": 800,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 3000,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 14,
+        "accommodation_amount": 500,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 200,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 300, "Transport": 100},
+        "spending_classifications": {"Food & dining": "Adjustable", "Transport": "Core"},
+    })
+    before = e.get_balance()
+    r = e.agent(
+        "I have SGD 1,500, USD 1,500, CNY 10,000 and MYR 5,000. "
+        "Tuition is SGD 3,000 due in 14 days. My parents can send SGD 800 next week "
+        "and I also want to send SGD 1,000 home. What should I do?"
+    )
+    decision = r["data"]["decision"]
+    assert r["data"]["goal"] == "financial_plan"
+    assert {"tuition", "remittance", "incoming"}.issubset(set(r["data"]["detected_goals"]))
+    assert decision["priorities"]
+    assert any(x["goal"] == "tuition" for x in decision["priorities"])
+    assert any(x["goal"] == "remittance" for x in decision["priorities"])
+    assert decision["forecast"]["starting_portfolio_sgd"] > 0
+    assert decision["reserve"]["protected"] is True
+    assert decision["state_changed"] is False
+    assert e.get_balance() == before
+    assert e.state["proposals"] == {}
+
+
+def test_local_agent_does_not_assume_unquantified_incoming_support():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 2000, "MYR": 5000},
+        "balance_fx_modes": {"MYR": "custom"},
+        "custom_fx_rates_to_sgd": {"MYR": 0.31},
+        "monthly_income_amount": 500,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 1000,
+        "emergency_reserve_currency": "MYR",
+        "tuition_amount": 2000,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 20,
+        "accommodation_amount": 300,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food & dining": 200},
+        "spending_classifications": {"Food & dining": "Adjustable"},
+    })
+    r = e.agent(
+        "Tuition is SGD 2,000 due in 20 days. My parents can send money next week. "
+        "What should I prioritize?"
+    )
+    assert r["data"]["goal"] == "financial_plan"
+    assert any("without an amount" in x for x in r["data"]["decision"]["uncertainties"])
+    assert "not counted in the forecast" in r["answer"]

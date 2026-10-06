@@ -346,12 +346,32 @@ class LocalAgentPlanner:
                     target_code, target_amount = saved_tuition_currency, tuition_value
 
             if target_code and target_amount and target_amount > 0:
+                # When the user explicitly supplies wallet balances in the request,
+                # use those values as a hypothetical scenario instead of silently
+                # mixing them with stale saved-profile balances. State is never mutated.
+                wallet_balances: dict[str, Decimal] = {}
+                first_need = re.search(r"\b(?:need|needs|require|required|pay|paying)\b", t, re.I)
+                wallet_text = t[:first_need.start()] if first_need else t
+                for code in supported:
+                    amount = self._amount(wallet_text, code)
+                    if amount is not None:
+                        wallet_balances[code] = amount
+                use_scenario_wallet = len(wallet_balances) >= 1
+
                 trace = [
                     {"step": "UNDERSTAND", "status": "completed", "detail": f"Detected a funding-optimization request for {target_code} {target_amount:,.2f}."},
-                    {"step": "OBSERVE", "status": "completed", "detail": "Inspected the entire saved multi-currency wallet before recommending a source."},
+                    {"step": "OBSERVE", "status": "completed", "detail": (
+                        "Used the wallet balances explicitly supplied in this message as a hypothetical scenario."
+                        if use_scenario_wallet
+                        else "Inspected the entire saved multi-currency wallet."
+                    )},
                 ]
                 try:
-                    funding = self.engine.recommend_funding(target_amount, target_code)
+                    funding = self.engine.recommend_funding(
+                        target_amount,
+                        target_code,
+                        balances_override=wallet_balances if use_scenario_wallet else None,
+                    )
                 except ValueError as exc:
                     trace.append({"step": "REASON", "status": "blocked", "detail": str(exc)})
                     return self._result("agentic_local", f"I could not build a safe funding plan: {exc}", trace, {"blocked_reason": "funding_plan_unavailable"})
@@ -385,7 +405,7 @@ class LocalAgentPlanner:
                         "I would not automatically convert the entire wallet; another funding source is still needed. No transaction was created."
                     )
                 trace.append({"step": "RECOMMEND", "status": "completed", "detail": "Produced a wallet-wide funding recommendation without mutating account state."})
-                return self._result("agentic_local", answer, trace, {"funding_plan": funding, "wallet": self.engine.currency_overview()})
+                return self._result("agentic_local", answer, trace, {"funding_plan": funding, "wallet_balances_used": {k: float(v) for k, v in (wallet_balances if use_scenario_wallet else self.engine.get_balance()).items()}, "wallet_source": "message" if use_scenario_wallet else "saved_profile"})
 
         # Case A: explicit source/target conversion, e.g. "USD 500 to SGD".
         # Prefer semantic phrases such as "have/received USD 500" for the source and

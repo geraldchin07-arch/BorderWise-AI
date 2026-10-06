@@ -1488,6 +1488,104 @@ class FinanceEngine:
                 },
             )
 
+        # Deterministic portfolio-valuation gate.
+        # Simple explicit multi-currency valuation questions must never depend on
+        # the optional LLM or the broader local planner.
+        valuation_markers = [
+            "how much is that worth", "worth in sgd", "total in sgd",
+            "total worth", "total wealth", "what is that worth in sgd",
+            "how much do i have in sgd",
+        ]
+        currency_aliases = {
+            "SGD": ["sgd"],
+            "CNY": ["cny", "rmb", "yuan"],
+            "USD": ["usd", "us$"],
+            "MYR": ["myr", "rm"],
+            "JPY": ["jpy", "yen"],
+            "KRW": ["krw", "won"],
+            "THB": ["thb", "baht"],
+            "EUR": ["eur", "euro", "euros"],
+            "GBP": ["gbp", "pound", "pounds"],
+            "AUD": ["aud"],
+            "CAD": ["cad"],
+            "HKD": ["hkd"],
+            "TWD": ["twd"],
+            "INR": ["inr"],
+        }
+        explicit_wallet = {}
+        for code, aliases in currency_aliases.items():
+            escaped = sorted((re.escape(x) for x in aliases), key=len, reverse=True)
+            alias_pattern = "|".join(escaped)
+            match = re.search(
+                rf"(?:\b(?:{alias_pattern})\b|(?:{alias_pattern}))\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
+                normalized,
+                re.IGNORECASE,
+            )
+            if not match:
+                match = re.search(
+                    rf"([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:\b(?:{alias_pattern})\b|(?:{alias_pattern}))",
+                    normalized,
+                    re.IGNORECASE,
+                )
+            if match:
+                explicit_wallet[code] = money(match.group(1).replace(",", ""))
+
+        if any(marker in normalized for marker in valuation_markers) and len(explicit_wallet) >= 2:
+            total_sgd = money(0)
+            lines = []
+            for code, amount in explicit_wallet.items():
+                if code == "SGD":
+                    rate = Decimal("1")
+                    value = amount
+                else:
+                    rate, _ = self._currency_rate_to_sgd(code)
+                    value = money(amount * rate)
+                total_sgd = money(total_sgd + value)
+                if code == "SGD":
+                    lines.append(f"SGD {amount:,.2f} = SGD {value:,.2f}")
+                else:
+                    lines.append(
+                        f"{code} {amount:,.2f} ≈ SGD {value:,.2f} at 1 {code} = {rate:.8f} SGD"
+                    )
+
+            trace = [
+                {
+                    "step": "UNDERSTAND",
+                    "status": "completed",
+                    "detail": "Detected an explicit multi-currency portfolio valuation request.",
+                },
+                {
+                    "step": "FX",
+                    "status": "completed",
+                    "detail": "Valued every explicitly stated currency using the deterministic SGD reference-rate path.",
+                },
+                {
+                    "step": "CALCULATE",
+                    "status": "completed",
+                    "detail": f"Total stated portfolio value: SGD {total_sgd:,.2f}.",
+                },
+            ]
+            answer = (
+                "Your stated balances are approximately:\n"
+                + "\n".join(lines)
+                + f"\n\nTotal ≈ SGD {total_sgd:,.2f}. "
+                "FX quotes are indicative and may differ from bank settlement rates or fees."
+            )
+            return self._result(
+                "agentic_local",
+                answer,
+                trace,
+                {
+                    "valuation": {
+                        "currency": "SGD",
+                        "total": float(total_sgd),
+                        "balances": {k: float(v) for k, v in explicit_wallet.items()},
+                    },
+                    "state_changed": False,
+                    "agent_mode": "deterministic_portfolio_valuation",
+                },
+            )
+
         # v5: optional LLM tool-calling planner. The deterministic engine remains the
         # fallback and the authority for calculations, policy and execution.
         try:

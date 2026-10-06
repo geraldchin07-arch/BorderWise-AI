@@ -977,16 +977,30 @@ class LocalAgentPlanner:
                         tuition_currency,
                         balances_override=wallet_balances if use_scenario_wallet else None,
                     )
-                    # Derive the user-facing status from the actual funded amount,
-                    # not from a potentially stale helper status field. This keeps scenario
-                    # planning truthful when only part of the target can be covered.
-                    funded_amount = self.engine.money_value(tuition_funding.get("funded_amount", 0))
-                    target_amount = self.engine.money_value(tuition_funding.get("target_amount", tuition_amount))
-                    tuition_status = (
-                        "funded"
-                        if funded_amount >= target_amount
-                        else "partial"
-                    )
+                    # For an explicit scenario wallet, the scenario forecast is the
+                    # authoritative valuation because it uses the same wallet and FX inputs
+                    # as the multi-obligation forecast. Do not let a profile-based funding
+                    # helper overstate coverage when the chat scenario supplies its own wallet.
+                    if use_scenario_wallet:
+                        scenario_available = self.engine.money_value(
+                            scenario_forecast.get("usable_starting_sgd", scenario_forecast.get("usable_starting_planning", 0))
+                        )
+                        tuition_target = self.engine.money_value(
+                            scenario_forecast.get("tuition_sgd", tuition_amount)
+                        )
+                        tuition_status = (
+                            "funded"
+                            if scenario_available >= tuition_target
+                            else "partial"
+                        )
+                    else:
+                        funded_amount = self.engine.money_value(tuition_funding.get("funded_amount", 0))
+                        target_amount = self.engine.money_value(tuition_funding.get("target_amount", tuition_amount))
+                        tuition_status = (
+                            "funded"
+                            if funded_amount >= target_amount
+                            else "partial"
+                        )
                 except ValueError as exc:
                     tuition_funding = {
                         "status": "review",

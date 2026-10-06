@@ -112,8 +112,10 @@ class LocalAgentPlanner:
                 re.I,
             ):
                 context_before = t[max(0, reverse.start() - 80):reverse.start()]
+                # Any nearby transaction/obligation verb makes this amount an
+                # outgoing requirement rather than an owned wallet balance.
                 if re.search(
-                    r"\b(?:need|needs|pay|paying|require|required|send|sending|remit|remittance|transfer|tuition)\b[^.;,]{0,50}$",
+                    r"\b(?:need|needs|pay|paying|require|required|send|sending|remit|remittance|transfer|tuition)\b",
                     context_before,
                     re.I,
                 ):

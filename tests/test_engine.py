@@ -685,3 +685,29 @@ def test_local_agent_understands_natural_tuition_decision_request():
     assert "emergency reserve" in r["answer"].lower()
     assert e.get_balance() == before
     assert e.state["proposals"] == {}
+
+
+def test_local_agent_returns_structured_decision_summary():
+    e = FinanceEngine()
+    r = e.agent(
+        "I have CNY 10,000, USD 500, MYR 5,000 and SGD 500. "
+        "I need SGD 3,000 for tuition. What should I do?"
+    )
+    decision = r["data"]["decision"]
+    assert decision["action"] == "FUND_TARGET"
+    assert decision["target"] == {"currency": "SGD", "amount": 3000.0}
+    assert decision["conversion_count"] >= 1
+    assert decision["reserve_protected"]["protected"] is True
+    assert decision["state_changed"] is False
+
+
+def test_local_agent_structured_decision_can_be_no_fx():
+    e = FinanceEngine()
+    r = e.agent(
+        "I have SGD 4,000 and MYR 5,000. "
+        "I need SGD 3,000 for tuition. What should I do?"
+    )
+    decision = r["data"]["decision"]
+    assert decision["action"] == "NO_FX_CONVERSION"
+    assert decision["conversion_count"] == 0
+    assert decision["state_changed"] is False

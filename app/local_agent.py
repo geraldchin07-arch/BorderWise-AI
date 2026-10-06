@@ -662,6 +662,7 @@ class LocalAgentPlanner:
             remittance_advice = any(k in t for k in [
                 "should i", "which", "what should", "best", "how should",
                 "compare", "versus", " vs ", "help me decide",
+                "can i afford", "can i safely afford", "safe to send",
             ])
             if remittance_advice:
                 remittance_supported = [

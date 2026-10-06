@@ -281,7 +281,9 @@ class LocalAgentPlanner:
         # Prefer semantic phrases such as "have/received USD 500" for the source and
         # "need/pay SGD 3,000" for the target. This avoids selecting a currency
         # merely because its code appears earlier in the supported-currency list.
-        if detected and conversion_words and not received:
+        # When the request contains an obligation amount (for example, tuition), let the
+        # obligation-aware path compare the source funds against the required target amount.
+        if detected and conversion_words and not received and not (len(detected) >= 2 and tuition_context):
             source_candidates = list(detected.items())
 
             source_code = None

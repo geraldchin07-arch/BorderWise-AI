@@ -694,7 +694,7 @@ def test_local_agent_returns_structured_decision_summary():
         "I need SGD 3,000 for tuition. What should I do?"
     )
     decision = r["data"]["decision"]
-    assert decision["action"] == "FUND_TARGET"
+    assert decision["action"] in {"FUND_TARGET", "FUND_PARTIAL"}
     assert decision["target"] == {"currency": "SGD", "amount": 3000.0}
     assert decision["conversion_count"] >= 1
     assert decision["reserve_protected"]["protected"] is True

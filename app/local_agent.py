@@ -178,7 +178,10 @@ class LocalAgentPlanner:
         sgd = self._amount(t, "SGD")
 
         received = any(k in t for k in ["received", "got", "got paid", "family sent", "sent me", "allowance", "incoming"])
-        tuition_context = any(k in t for k in ["tuition", "school fees", "fees", "accommodation", "hostel"])
+        tuition_context = any(k in t for k in [
+            "tuition", "school fees", "tuition fee", "tuition fees",
+            "fees", "accommodation", "hostel", "semester fee",
+        ])
         conversion_question = any(k in t for k in ["convert", "exchange", "should i", "what should i do", "enough", "need to"])
 
         # Explicit execution requests are handled before informational FX questions.
@@ -373,6 +376,9 @@ class LocalAgentPlanner:
             "what should i use", "how should i fund", "which account should i use",
             "best currency to use", "best currency", "how much should i convert",
             "what should i do", "best way to fund", "how should i pay",
+            "help me decide", "help me choose", "help me handle", "help me manage",
+            "how should i handle", "how should i manage", "what do i do with",
+            "how do i handle", "how do i manage", "which money should i use",
         ])
         if funding_question and tuition_context:
             target_code = None

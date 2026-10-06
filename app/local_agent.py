@@ -510,7 +510,7 @@ class LocalAgentPlanner:
                         "step": "REASON",
                         "status": "completed",
                         "detail": (
-                            f"Selected {", ".join(selected_sources)} with {conversion_count} FX conversion(s). "
+                            f"Selected {', '.join(selected_sources)} with {conversion_count} FX conversion(s). "
                             f"Reason: {decision_reason}"
                         ),
                     })
@@ -518,7 +518,7 @@ class LocalAgentPlanner:
                         f"Decision: fund {target_code} {target_amount:,.2f} using {legs_text}. "
                         f"Why: {decision_reason}"
                         f"{not_selected_text} "
-                        f"Usable-wallet ranking: {ranked_text or "no additional usable balances"}. "
+                        f"Usable-wallet ranking: {ranked_text or 'no additional usable balances'}. "
                         f"The {funding['reserve']['currency']} {funding['reserve']['amount']:,.2f} emergency reserve stays protected. "
                         "This is an advisory scenario only; no transaction was created or executed."
                     )
@@ -528,7 +528,7 @@ class LocalAgentPlanner:
                         "step": "REASON",
                         "status": "completed",
                         "detail": (
-                            f"Selected {", ".join(selected_sources) or "no currencies"} with {conversion_count} FX conversion(s), "
+                            f"Selected {', '.join(selected_sources) or 'no currencies'} with {conversion_count} FX conversion(s), "
                             f"but the wallet remained short by {gap:,.2f} {target_code}."
                         ),
                     })

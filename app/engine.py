@@ -1533,20 +1533,40 @@ class FinanceEngine:
         if any(marker in normalized for marker in valuation_markers) and len(explicit_wallet) >= 2:
             total_sgd = money(0)
             lines = []
-            for code, amount in explicit_wallet.items():
-                if code == "SGD":
-                    rate = Decimal("1")
-                    value = amount
-                else:
-                    rate, _ = self._currency_rate_to_sgd(code)
-                    value = money(amount * rate)
-                total_sgd = money(total_sgd + value)
-                if code == "SGD":
-                    lines.append(f"SGD {amount:,.2f} = SGD {value:,.2f}")
-                else:
-                    lines.append(
-                        f"{code} {amount:,.2f} ≈ SGD {value:,.2f} at 1 {code} = {rate:.8f} SGD"
-                    )
+            try:
+                for code, amount in explicit_wallet.items():
+                    if code == "SGD":
+                        rate = Decimal("1")
+                        value = amount
+                    else:
+                        rate, _ = self._currency_rate_to_sgd(code)
+                        value = money(amount * rate)
+                    total_sgd = money(total_sgd + value)
+                    if code == "SGD":
+                        lines.append(f"SGD {amount:,.2f} = SGD {value:,.2f}")
+                    else:
+                        lines.append(
+                            f"{code} {amount:,.2f} ≈ SGD {value:,.2f} at 1 {code} = {rate:.8f} SGD"
+                        )
+            except (ValueError, HTTPError, URLError, TimeoutError, OSError) as exc:
+                return self._result(
+                    "agentic_local",
+                    f"I can see all of the balances, but I cannot safely calculate the SGD total right now because the reference FX quote for one of the currencies is unavailable ({type(exc).__name__}). No account state was changed. Add a quoted FX rate for the missing currency or retry when reference FX is available.",
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an explicit multi-currency portfolio valuation request."},
+                        {"step": "FX", "status": "blocked", "detail": f"Reference FX was unavailable: {type(exc).__name__}."},
+                        {"step": "SECURITY", "status": "completed", "detail": "No state was changed and no transaction was created."},
+                    ],
+                    {
+                        "valuation": {
+                            "currency": "SGD",
+                            "balances": {k: float(v) for k, v in explicit_wallet.items()},
+                            "state_changed": False,
+                        },
+                        "blocked_reason": "reference_fx_unavailable",
+                        "agent_mode": "deterministic_portfolio_valuation",
+                    },
+                )
 
             trace = [
                 {

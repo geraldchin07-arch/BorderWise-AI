@@ -792,7 +792,7 @@ class LocalAgentPlanner:
                 t, ["send", "sending", "remit", "remittance", "send to my family", "send home"]
             )
             tuition_days = self._extract_horizon_days(t)
-            if tuition_labeled and remittance_labeled:
+            if competing_question and tuition_labeled and remittance_labeled:
                 tuition_amount, tuition_currency = tuition_labeled
                 remittance_amount, remittance_currency = remittance_labeled
                 wallet_balances = self._extract_wallet_balances_from_text(t)

@@ -1514,6 +1514,78 @@ class FinanceEngine:
                 },
             )
 
+        # Deterministic hypothetical-income gate.
+        # Questions such as "What if I receive another 2000 SGD next month?"
+        # must simulate the stated incoming funds without mutating the wallet.
+        hypothetical_income_question = (
+            any(k in normalized for k in ["what if", "if i receive", "if i get", "if i were to receive"])
+            and any(k in normalized for k in ["receive", "get", "incoming"])
+            and any(k in normalized for k in ["next month", "later", "tomorrow", "next week", "in a month"])
+        )
+        if hypothetical_income_question:
+            income_match = re.search(
+                r"(?:receive|get|incoming)\s+(?:another\s+)?([0-9][0-9,]*(?:\.[0-9]+)?)([km]?)\s*(sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)",
+                normalized,
+                re.IGNORECASE,
+            )
+            if income_match:
+                amount_text, suffix, currency_text = income_match.groups()
+                multiplier = (
+                    Decimal("1000") if suffix.lower() == "k"
+                    else Decimal("1000000") if suffix.lower() == "m"
+                    else Decimal("1")
+                )
+                amount = money(Decimal(amount_text.replace(",", "")) * multiplier)
+                currency_alias_to_code = {
+                    "sgd": "SGD", "s$": "SGD",
+                    "myr": "MYR", "rm": "MYR",
+                    "usd": "USD", "us$": "USD",
+                    "cny": "CNY", "rmb": "CNY", "yuan": "CNY",
+                }
+                currency = currency_alias_to_code[currency_text.lower()]
+                try:
+                    simulation = self.simulate_income_impact(float(amount), currency)
+                    after = simulation["projected_balance_after_hypothetical_income_sgd"]
+                    before = simulation["forecast_before"]["projected_balance_sgd"]
+                    improvement = simulation["projected_added_sgd"]
+                    answer = (
+                        f"If you receive {currency} {amount:,.2f}, your projected 30-day position "
+                        f"would improve by about SGD {improvement:,.2f}, from SGD {before:,.2f} "
+                        f"to about SGD {after:,.2f}. This is a hypothetical simulation only; "
+                        f"your actual wallet balance has not changed."
+                    )
+                    return self._result(
+                        "agentic_local",
+                        answer,
+                        [
+                            {"step": "UNDERSTAND", "status": "completed", "detail": "Detected hypothetical incoming funds."},
+                            {"step": "SIMULATE", "status": "completed", "detail": f"Simulated {currency} {amount:,.2f} without mutating account state."},
+                            {"step": "SECURITY", "status": "completed", "detail": "No account state changed and no transaction was created."},
+                        ],
+                        {
+                            "hypothetical_income": True,
+                            "state_changed": False,
+                            "simulation": simulation,
+                            "agent_mode": "deterministic_hypothetical_income_gate",
+                        },
+                    )
+                except (ValueError, HTTPError, URLError, TimeoutError, OSError) as exc:
+                    return self._result(
+                        "agentic_local",
+                        f"I can model that hypothetical income, but I could not safely calculate its impact because the required reference data is unavailable ({type(exc).__name__}). No account state was changed.",
+                        [
+                            {"step": "UNDERSTAND", "status": "completed", "detail": "Detected hypothetical incoming funds."},
+                            {"step": "SIMULATE", "status": "blocked", "detail": f"Simulation data was unavailable: {type(exc).__name__}."},
+                            {"step": "SECURITY", "status": "completed", "detail": "No account state changed and no transaction was created."},
+                        ],
+                        {
+                            "hypothetical_income": True,
+                            "state_changed": False,
+                            "blocked_reason": "simulation_data_unavailable",
+                            "agent_mode": "deterministic_hypothetical_income_gate",
+                        },
+                    )
+
         # Deterministic portfolio-valuation gate.
         # Simple explicit multi-currency valuation questions must never depend on
         # the optional LLM or the broader local planner.

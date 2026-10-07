@@ -583,6 +583,31 @@ class LocalAgentPlanner:
                 {"conditional_income": True, "state_changed": False},
             )
 
+        # Never infer a transaction amount from conversational shortcuts. A financial
+        # command must name the exact amount; history, defaults, recommendations, or
+        # remaining balances are not authorization.
+        implicit_amount_request = any(k in t for k in [
+            "usual amount", "same as last", "same amount as last", "same as before",
+            "last time", "previous amount", "remaining balance", "my remaining balance",
+            "whatever remains", "whatever is left", "the rest", "recommended amount",
+            "recommendation amount", "recommended conversion",
+        ])
+        implicit_money_action = any(k in t for k in [
+            "transfer", "send", "remit", "remittance", "prepare", "convert", "exchange",
+            "pay", "execute", "approve", "authorize", "confirm",
+        ])
+        if implicit_amount_request and implicit_money_action:
+            return self._result(
+                "agentic_local",
+                "I did not create or execute a transaction. Please specify the exact amount and currency. "
+                "I will not infer a transfer amount from past transactions, a recommended amount, or the remaining balance.",
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an implicit transaction amount."},
+                    {"step": "SECURITY", "status": "blocked", "detail": "Exact transaction amounts are required; conversational shortcuts cannot authorize money movement."},
+                ],
+                {"blocked_reason": "implicit_transaction_amount", "state_changed": False},
+            )
+
         # Explicit execution requests are handled before informational FX questions.
         # An execution command may NEVER create a new proposal or reuse an already
         # executed proposal. This is the anti-replay guard for agentic money movement.

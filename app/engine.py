@@ -2180,6 +2180,41 @@ class FinanceEngine:
                     {"state_changed": False, "agent_mode": "deterministic_cross_currency_transfer_gate"},
                 )
 
+        # Typo-tolerant FX fast path: simple exchange-rate questions should never depend
+        # on the LLM understanding every word perfectly. Repair small typos, resolve the pair
+        # deterministically, and return a safe reference quote before invoking any planner.
+        if self.detect_intent(text) == "fx":
+            try:
+                repaired = self.repair_user_text(text)
+                pair = self.extract_conversion_pair(repaired)
+                generic_amount = self.extract_generic_currency_amount(repaired)
+                if pair:
+                    base, quote = pair
+                    amount = generic_amount[0] if generic_amount else money(1)
+                    conv = self.quote_conversion(amount, base, quote)
+                    rate_date = conv.get("fx", {}).get("rate_date") or "date unavailable"
+                    source = conv.get("fx", {}).get("source", "reference source")
+                    answer = (
+                        f"The current reference rate is 1 {base} = {conv['rate']:.6f} {quote} "
+                        f"(rate date {rate_date}). "
+                        f"{amount:,.2f} {base} is approximately {conv['converted_amount']:,.2f} {quote}. "
+                        f"Source: {source}. This is an indicative reference rate, not a guaranteed bank quote."
+                    )
+                    return self._result(
+                        "fx",
+                        answer,
+                        [
+                            {"step": "UNDERSTAND", "status": "completed", "detail": f"Recognized FX request after typo normalization: {base}→{quote}."},
+                            {"step": "OBSERVE", "status": "completed", "detail": f"Retrieved the deterministic {base}/{quote} reference rate."},
+                            {"step": "CALCULATE", "status": "completed", "detail": f"Calculated the indicative conversion for {amount:,.2f} {base}."},
+                        ],
+                        {"conversion": conv, "input_normalized": repaired},
+                    )
+            except (ValueError, HTTPError, URLError, TimeoutError, OSError, KeyError, TypeError) as exc:
+                # Do not crash on malformed/unsupported FX wording. Let the normal
+                # planner explain the issue rather than returning a server error.
+                pass
+
         # v5: optional LLM tool-calling planner. The deterministic engine remains the
         # fallback and the authority for calculations, policy and execution.
         try:

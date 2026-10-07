@@ -1647,32 +1647,24 @@ class FinanceEngine:
         )
         if casual_tuition_question:
             casual_sgd_values = []
-            casual_amount_pattern = r"([0-9][0-9,]*(?:\.[0-9]+)?)(?:\s*([km]))?"
-            for amount_text, suffix in re.findall(
-                rf"(?:sgd|s\$)\s*{casual_amount_pattern}|{casual_amount_pattern}\s*(?:sgd|s\$)",
-                normalized,
-                re.IGNORECASE,
-            ):
-                # The alternation above yields two capture pairs; normalize the
-                # non-empty pair so shorthand such as "2k SGD" and "6k SGD"
-                # is understood as 2,000 and 6,000.
-                pairs = [(amount_text[0], amount_text[1])] if isinstance(amount_text, tuple) else []
+            casual_amount_pattern = r"([0-9][0-9,]*(?:\\.[0-9]+)?)(?:\\s*([km]))?"
             casual_matches = re.findall(
-                rf"(?:sgd|s\$)\s*{casual_amount_pattern}|{casual_amount_pattern}\s*(?:sgd|s\$)",
+                rf"(?:sgd|s\\$)\\s*{casual_amount_pattern}|{casual_amount_pattern}\\s*(?:sgd|s\\$)",
                 normalized,
                 re.IGNORECASE,
             )
             for match in casual_matches:
-                if len(match) == 4:
-                    candidates = [(match[0], match[1]), (match[2], match[3])]
-                else:
-                    candidates = []
+                candidates = [(match[0], match[1]), (match[2], match[3])]
                 for amount_text, suffix in candidates:
                     if amount_text:
-                        multiplier = Decimal("1000") if suffix.lower() == "k" else (
-                            Decimal("1000000") if suffix.lower() == "m" else Decimal("1")
+                        multiplier = (
+                            Decimal("1000") if suffix.lower() == "k"
+                            else Decimal("1000000") if suffix.lower() == "m"
+                            else Decimal("1")
                         )
-                        casual_sgd_values.append(money(Decimal(amount_text.replace(",", "")) * multiplier))
+                        casual_sgd_values.append(
+                            money(Decimal(amount_text.replace(",", "")) * multiplier)
+                        )
                         break
             if len(casual_sgd_values) >= 2:
                 starting_balance, tuition_amount = casual_sgd_values[:2]

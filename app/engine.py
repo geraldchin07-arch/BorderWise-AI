@@ -1586,6 +1586,134 @@ class FinanceEngine:
                         },
                     )
 
+        # Deterministic multi-currency affordability gate.
+        # This safety-critical advisory path runs before the optional LLM and local
+        # planner so explicit scenario amounts can never fall through to the saved demo wallet.
+        multi_currency_affordability = (
+            "tuition" in normalized
+            and any(k in normalized for k in ["can i do", "can i afford", "will i have enough", "can i cover"])
+            and any(k in normalized for k in ["emergency savings", "emergency reserve", "emergency fund"])
+        )
+        if multi_currency_affordability:
+            aliases = {
+                "MYR": ["myr", "rm"],
+                "SGD": ["sgd", "s$"],
+                "USD": ["usd", "us$"],
+                "CNY": ["cny", "rmb", "yuan"],
+            }
+
+            def parse_human(raw):
+                raw = str(raw).replace(",", "").strip()
+                suffix = raw[-1:].lower()
+                multiplier = Decimal("1000") if suffix == "k" else Decimal("1000000") if suffix == "m" else Decimal("1")
+                if suffix in {"k", "m"}:
+                    raw = raw[:-1]
+                return money(Decimal(raw) * multiplier)
+
+            wallet = {}
+            # Only read balances from the explicit "I've got/have..." possession clause.
+            possession = re.search(
+                r"\b(?:have|has|hold|holding|own|keep|got|gotten)\b(?P<body>.*?)"
+                r"(?=\b(?:need|needs|want to|would like to|send|sending|remit|transfer|pay|paying|require|required|tuition|school fees)\b|[.!?]|$)",
+                normalized,
+                re.I,
+            )
+            body = possession.group("body") if possession else ""
+            for code, names in aliases.items():
+                token = "|".join(re.escape(x) for x in sorted(names, key=len, reverse=True))
+                m = re.search(
+                    rf"(?:{token})\s*([0-9]+(?:,[0-9]{{3}})*(?:\.[0-9]+)?[km]?)|"
+                    rf"([0-9]+(?:,[0-9]{{3}})*(?:\.[0-9]+)?[km]?)\s*(?:{token})\b",
+                    body,
+                    re.I,
+                )
+                if m:
+                    wallet[code] = parse_human(m.group(1) or m.group(2))
+
+            tuition = re.search(
+                r"([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?[km]?)\s*"
+                r"(sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)\s+tuition\b",
+                normalized,
+                re.I,
+            )
+            reserve = re.search(
+                r"\bkeep\s+(?:an?\s+)?([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?[km]?)\s*"
+                r"(sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)\b[^.]*?\bemergency\s+"
+                r"(?:savings|reserve|fund)\b",
+                normalized,
+                re.I,
+            )
+            if tuition and reserve and len(wallet) >= 2:
+                code_map = {
+                    "sgd": "SGD", "s$": "SGD",
+                    "myr": "MYR", "rm": "MYR",
+                    "usd": "USD", "us$": "USD",
+                    "cny": "CNY", "rmb": "CNY", "yuan": "CNY",
+                }
+                tuition_amount = parse_human(tuition.group(1))
+                tuition_currency = code_map[tuition.group(2).lower()]
+                reserve_amount = parse_human(reserve.group(1))
+                reserve_currency = code_map[reserve.group(2).lower()]
+
+                total_sgd = money(0)
+                valuation = []
+                for code, amount in wallet.items():
+                    if code == "SGD":
+                        rate = Decimal("1")
+                    else:
+                        rate, _ = self._currency_rate_to_sgd(code)
+                    value = money(amount * rate)
+                    total_sgd = money(total_sgd + value)
+                    valuation.append(f"{code} {amount:,.2f} ≈ SGD {value:,.2f}")
+
+                tuition_rate = Decimal("1") if tuition_currency == "SGD" else self._currency_rate_to_sgd(tuition_currency)[0]
+                reserve_rate = Decimal("1") if reserve_currency == "SGD" else self._currency_rate_to_sgd(reserve_currency)[0]
+                tuition_sgd = money(tuition_amount * tuition_rate)
+                reserve_sgd = money(reserve_amount * reserve_rate)
+                usable_sgd = money(max(Decimal("0"), total_sgd - reserve_sgd))
+                shortfall_sgd = money(max(Decimal("0"), tuition_sgd - usable_sgd))
+                remaining_sgd = money(usable_sgd - tuition_sgd)
+
+                if shortfall_sgd > 0:
+                    answer = (
+                        f"No. Your stated wallet is worth about SGD {total_sgd:,.2f} across "
+                        f"{', '.join(valuation)}. After keeping SGD {reserve_sgd:,.2f} "
+                        f"equivalent as emergency savings, you would have about SGD {usable_sgd:,.2f} "
+                        f"available for the SGD {tuition_sgd:,.2f} tuition, leaving a shortfall "
+                        f"of about SGD {shortfall_sgd:,.2f}. This is an affordability simulation only; "
+                        "no transaction was created."
+                    )
+                else:
+                    answer = (
+                        f"Yes. Your stated wallet is worth about SGD {total_sgd:,.2f} across "
+                        f"{', '.join(valuation)}. After keeping SGD {reserve_sgd:,.2f} "
+                        f"equivalent as emergency savings, you would have about SGD {usable_sgd:,.2f} "
+                        f"available for the SGD {tuition_sgd:,.2f} tuition, leaving about SGD {remaining_sgd:,.2f} "
+                        "after tuition. This is an affordability simulation only; no transaction was created."
+                    )
+                return self._result(
+                    "agentic_local",
+                    answer,
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an explicit multi-currency tuition affordability scenario."},
+                        {"step": "FX", "status": "completed", "detail": "Converted all explicitly stated wallet currencies into SGD."},
+                        {"step": "CALCULATE", "status": "completed", "detail": "Protected the stated emergency-savings floor before assessing tuition affordability."},
+                        {"step": "SECURITY", "status": "completed", "detail": "Read-only simulation; no proposal or transaction was created."},
+                    ],
+                    {
+                        "affordability": {
+                            "wallet_total_sgd": float(total_sgd),
+                            "reserve_sgd": float(reserve_sgd),
+                            "usable_sgd": float(usable_sgd),
+                            "tuition_sgd": float(tuition_sgd),
+                            "shortfall_sgd": float(shortfall_sgd),
+                            "remaining_sgd": float(remaining_sgd),
+                        },
+                        "state_changed": False,
+                        "agent_mode": "deterministic_multi_currency_affordability_gate",
+                    },
+                )
+
         # Deterministic portfolio-valuation gate.
         # Simple explicit multi-currency valuation questions must never depend on
         # the optional LLM or the broader local planner.

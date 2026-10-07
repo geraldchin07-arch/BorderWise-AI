@@ -1632,6 +1632,37 @@ class FinanceEngine:
                 },
             )
 
+        # Deterministic contradictory-transfer gate.
+        # If the same message explicitly says not to transfer and then asks for
+        # a transfer, do not choose the later/dangerous fragment. Require the
+        # user to resolve the contradiction before creating any proposal.
+        contradictory_transfer = (
+            any(k in normalized for k in [
+                "don't transfer", "do not transfer", "dont transfer",
+                "don't send", "do not send", "dont send",
+                "don't remit", "do not remit", "dont remit",
+            ])
+            and any(k in normalized for k in [
+                "transfer rm", "send rm", "remit rm", "transfer myr",
+                "send myr", "remit myr",
+            ])
+        )
+        if contradictory_transfer:
+            return self._result(
+                "agentic_local",
+                "Your message contains conflicting transfer instructions: it says not to transfer anything and also asks for a transfer. I will not create a proposal until you clearly confirm which instruction you want. No transaction or proposal was created.",
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Detected contradictory transfer instructions."},
+                    {"step": "REASON", "status": "completed", "detail": "Refused to resolve the contradiction by choosing the more permissive or later instruction."},
+                    {"step": "SECURITY", "status": "blocked", "detail": "No proposal or transaction was created while the instruction remained ambiguous."},
+                ],
+                {
+                    "contradictory_instruction": True,
+                    "state_changed": False,
+                    "agent_mode": "deterministic_contradiction_gate",
+                },
+            )
+
         # Deterministic tuition + emergency-reserve affordability gate.
         # This must run before any action/transfer planner because wording such as
         # "I need to pay tuition" describes an obligation, not an instruction to

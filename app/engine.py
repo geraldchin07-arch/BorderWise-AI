@@ -1647,24 +1647,36 @@ class FinanceEngine:
         )
         if casual_tuition_question:
             casual_sgd_values = []
-            # Parse both "SGD 2k" and "2k SGD" forms without relying on
-            # the generic currency parser.
-            casual_patterns = [
-                r"(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)(?:\\s*([km]))?",
-                r"([0-9][0-9,]*(?:\\.[0-9]+)?)(?:\\s*([km]))?\\s*(?:sgd|s\\$)",
-            ]
-            for pattern in casual_patterns:
-                for match in re.finditer(pattern, normalized, re.IGNORECASE):
-                    amount_text = match.group(1)
-                    suffix = (match.group(2) or "").lower()
-                    multiplier = (
-                        Decimal("1000") if suffix == "k"
-                        else Decimal("1000000") if suffix == "m"
-                        else Decimal("1")
-                    )
-                    casual_sgd_values.append(
-                        money(Decimal(amount_text.replace(",", "")) * multiplier)
-                    )
+            # Keep these regexes simple: support "SGD 2k" and "2k SGD"
+            # without nested escaping.
+            for match in re.finditer(
+                r"(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)([km]?)",
+                normalized,
+                re.IGNORECASE,
+            ):
+                amount_text, suffix = match.groups()
+                multiplier = (
+                    Decimal("1000") if suffix.lower() == "k"
+                    else Decimal("1000000") if suffix.lower() == "m"
+                    else Decimal("1")
+                )
+                casual_sgd_values.append(
+                    money(Decimal(amount_text.replace(",", "")) * multiplier)
+                )
+            for match in re.finditer(
+                r"([0-9][0-9,]*(?:\.[0-9]+)?)([km]?)\s*(?:sgd|s\$)",
+                normalized,
+                re.IGNORECASE,
+            ):
+                amount_text, suffix = match.groups()
+                multiplier = (
+                    Decimal("1000") if suffix.lower() == "k"
+                    else Decimal("1000000") if suffix.lower() == "m"
+                    else Decimal("1")
+                )
+                casual_sgd_values.append(
+                    money(Decimal(amount_text.replace(",", "")) * multiplier)
+                )
             if len(casual_sgd_values) >= 2:
                 starting_balance, tuition_amount = casual_sgd_values[:2]
                 shortfall = money(max(Decimal("0"), tuition_amount - starting_balance))

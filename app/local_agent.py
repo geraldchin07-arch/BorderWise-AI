@@ -19,6 +19,17 @@ class LocalAgentPlanner:
         if not hasattr(self.engine, "_agent_scenario_context"):
             self.engine._agent_scenario_context = {}
 
+    def _parse_human_amount(self, raw_amount: str) -> Decimal:
+        """Parse plain and shorthand amounts such as 2000, 2k, and 1.5m."""
+        raw = str(raw_amount).strip().replace(",", "")
+        suffix = raw[-1:].lower()
+        if suffix in {"k", "m"}:
+            multiplier = Decimal("1000") if suffix == "k" else Decimal("1000000")
+            raw = raw[:-1]
+        else:
+            multiplier = Decimal("1")
+        return self.engine.money_value(Decimal(raw) * multiplier)
+
     def _amount(self, text: str, currency: str) -> Decimal | None:
         """Extract an amount for a requested currency.
 
@@ -57,15 +68,16 @@ class LocalAgentPlanner:
         prefix_pattern = r"(?:" + "|".join(escaped) + r")\s*"
         suffix_pattern = r"\s*(?:" + "|".join(escaped) + r")\b"
 
+        amount_pattern = r"([0-9]+(?:\.[0-9]+)?[km]?)"
         patterns = [
-            rf"{prefix_pattern}([0-9]+(?:\.[0-9]+)?)",
-            rf"([0-9]+(?:\.[0-9]+)?){suffix_pattern}",
+            rf"{prefix_pattern}{amount_pattern}",
+            rf"{amount_pattern}{suffix_pattern}",
         ]
 
         for pattern in patterns:
             match = re.search(pattern, t, re.IGNORECASE)
             if match:
-                return self.engine.money_value(match.group(1))
+                return self._parse_human_amount(match.group(1))
 
         return None
 
@@ -100,7 +112,7 @@ class LocalAgentPlanner:
         for code, names in aliases.items():
             escaped = sorted((re.escape(x) for x in names), key=len, reverse=True)
             token = "(?:" + "|".join(escaped) + ")"
-            amount = r"[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?"
+            amount = r"[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?[km]?"
             patterns_by_code[code] = rf"(?:{token}\s*({amount})|({amount})\s*{token}\b)"
 
         # First parse every explicit possession list. The lookahead stops before a
@@ -118,7 +130,7 @@ class LocalAgentPlanner:
                 match = re.search(pattern, segment, re.I)
                 if match:
                     raw_amount = match.group(1) or match.group(2)
-                    balances[code] = self.engine.money_value(raw_amount.replace(",", ""))
+                    balances[code] = self._parse_human_amount(raw_amount)
 
         # Also support a standalone reverse form such as "2,000 SGD" when it is not
         # associated with an outgoing obligation. This is a fallback for short scenarios
@@ -251,8 +263,8 @@ class LocalAgentPlanner:
                 continue
             context = window.group("context")
             amount_match = re.search(
-                rf"(?P<currency>{token})\s*(?P<amount>[0-9]+(?:\.[0-9]+)?)"
-                rf"|(?P<amount_rev>[0-9]+(?:\.[0-9]+)?)\s*(?P<currency_rev>{token})\b",
+                rf"(?P<currency>{token})\s*(?P<amount>[0-9]+(?:\.[0-9]+)?[km]?)"
+                rf"|(?P<amount_rev>[0-9]+(?:\.[0-9]+)?[km]?)\s*(?P<currency_rev>{token})\b",
                 context,
                 re.I,
             )
@@ -264,7 +276,7 @@ class LocalAgentPlanner:
                 code for raw_alias, code in currency_pattern
                 if raw_alias.lower() == alias.lower()
             )
-            return self.engine.money_value(amount), matched_code
+            return self._parse_human_amount(amount), matched_code
         return None
 
 
@@ -974,7 +986,7 @@ class LocalAgentPlanner:
             )
             reserve_match = re.search(
                 r"\bkeep\s+(?:an?\s+)?(?P<currency>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)\s*"
-                r"(?P<amount>[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\b[^.]*?\bemergency\s+"
+                r"(?P<amount>[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?[km]?)\b[^.]*?\bemergency\s+"
                 r"(?:savings|reserve|fund)\b",
                 t,
                 re.I,
@@ -989,9 +1001,7 @@ class LocalAgentPlanner:
                     re.I,
                 )
                 if reverse_tuition:
-                    tuition_amount = self.engine.money_value(
-                        reverse_tuition.group(1).replace(",", "")
-                    )
+                    tuition_amount = self._parse_human_amount(reverse_tuition.group(1))
                     tuition_currency = {
                         "sgd": "SGD", "s$": "SGD",
                         "myr": "MYR", "rm": "MYR",
@@ -1003,9 +1013,7 @@ class LocalAgentPlanner:
             if tuition_labeled and reserve_match:
                 tuition_amount, tuition_currency = tuition_labeled
                 reserve_alias = reserve_match.group("currency").lower()
-                reserve_amount = self.engine.money_value(
-                    reserve_match.group("amount").replace(",", "")
-                )
+                reserve_amount = self._parse_human_amount(reserve_match.group("amount"))
                 reserve_code = {
                     "sgd": "SGD", "s$": "SGD",
                     "myr": "MYR", "rm": "MYR",

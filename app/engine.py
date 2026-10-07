@@ -1715,27 +1715,22 @@ class FinanceEngine:
 
                 if shortfall_sgd > 0:
                     answer = (
-                        f"No. Your stated wallet is worth about SGD {total_sgd:,.2f} across "
-                        f"{', '.join(valuation)}. After keeping SGD {reserve_sgd:,.2f} "
-                        f"equivalent as emergency savings, you would have about SGD {usable_sgd:,.2f} "
-                        f"available for the SGD {tuition_sgd:,.2f} tuition, leaving a shortfall "
-                        f"of about SGD {shortfall_sgd:,.2f}. This is an affordability simulation only; "
-                        "no transaction was created."
+                        f"No — you're short about SGD {shortfall_sgd:,.2f}. "
+                        f"After protecting SGD {reserve_sgd:,.2f} in emergency savings, "
+                        f"you have SGD {usable_sgd:,.2f} available for SGD {tuition_sgd:,.2f} tuition."
                     )
                 else:
                     answer = (
-                        f"Yes. Your stated wallet is worth about SGD {total_sgd:,.2f} across "
-                        f"{', '.join(valuation)}. After keeping SGD {reserve_sgd:,.2f} "
-                        f"equivalent as emergency savings, you would have about SGD {usable_sgd:,.2f} "
-                        f"available for the SGD {tuition_sgd:,.2f} tuition, leaving about SGD {remaining_sgd:,.2f} "
-                        "after tuition. This is an affordability simulation only; no transaction was created."
+                        f"Yes — after protecting SGD {reserve_sgd:,.2f} in emergency savings, "
+                        f"you have SGD {usable_sgd:,.2f} available for SGD {tuition_sgd:,.2f} tuition, "
+                        f"leaving about SGD {remaining_sgd:,.2f}."
                     )
                 reserve_label = f"{reserve_currency} {reserve_amount:,.2f} ≈ SGD {reserve_sgd:,.2f}"
                 tuition_label = f"{tuition_currency} {tuition_amount:,.2f} ≈ SGD {tuition_sgd:,.2f}"
                 answer += (
-                    f" Using only the balances and obligations stated in this message; "
-                    "your saved wallet was not used. "
-                    "Reference FX is indicative and not a bank settlement quote."
+                    " Read-only affordability simulation — no transaction or proposal was created. "
+                    "Only the balances stated in this message were used; your saved wallet was not used. "
+                    "Reference FX is indicative, not a bank settlement quote."
                 )
                 return self._result(
                     "agentic_local",

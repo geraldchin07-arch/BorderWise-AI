@@ -2283,28 +2283,6 @@ class FinanceEngine:
                 },
             )
 
-        # Family support phrased as a future/conditional send is hypothetical income,
-        # not an immediate FX quote. Keep it outside the FX fast path so the planner
-        # can reason about confirmed vs conditional funds.
-        family_future_income = (
-            any(k in normalized for k in ["family", "parent", "parents"])
-            and any(k in normalized for k in ["will send", "sends", "send me", "might send", "may send", "could send"])
-            and any(k in normalized for k in ["next month", "later", "tomorrow", "next week", "in a month"])
-            and any(k in normalized for k in ["should i", "what if", "can i", "convert", "tuition"])
-        )
-        if family_future_income:
-            return self._result(
-                "agentic_local",
-                "Treat the RM10,000 family support as conditional until it is actually received. "
-                "I can model its possible impact, but I will not count it as confirmed cash or create a conversion transaction from it.",
-                [
-                    {"step": "UNDERSTAND", "status": "completed", "detail": "Detected future/conditional family support."},
-                    {"step": "REASON", "status": "completed", "detail": "Separated hypothetical incoming funds from confirmed wallet balances."},
-                    {"step": "SECURITY", "status": "completed", "detail": "No account state changed and no transaction was created."},
-                ],
-                {"conditional_income": True, "state_changed": False, "agent_mode": "deterministic_family_income_safety_gate"},
-            )
-
         # Typo-tolerant FX fast path: simple exchange-rate questions should never depend
         # on the LLM understanding every word perfectly. Repair small typos, resolve the pair
         # deterministically, and return a safe reference quote before invoking any planner.
@@ -2313,7 +2291,12 @@ class FinanceEngine:
             "make a transfer", "create a transfer", "set up a transfer",
         ])
         fx_all_funds_request = bool(re.search(r"\b(?:all|everything)\b", normalized))
-        if self.detect_intent(text) == "fx" and not (fx_action_request or fx_all_funds_request):
+        family_future_income = (
+            any(k in normalized for k in ["family", "parent", "parents"])
+            and any(k in normalized for k in ["will send", "sends", "send me", "might send", "may send", "could send"])
+            and any(k in normalized for k in ["next month", "later", "tomorrow", "next week", "in a month", "in two weeks"])
+        )
+        if self.detect_intent(text) == "fx" and not (fx_action_request or fx_all_funds_request or family_future_income):
             try:
                 repaired = self.repair_user_text(text)
                 pair = self.extract_conversion_pair(repaired)

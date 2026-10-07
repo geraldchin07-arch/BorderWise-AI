@@ -118,7 +118,7 @@ class LocalAgentPlanner:
         # First parse every explicit possession list. The lookahead stops before a
         # new obligation/action clause, but deliberately allows commas inside the list.
         possession_pattern = re.compile(
-            r"\b(?:have|has|hold|holding|own|keep)\b"
+            r"\b(?:have|has|hold|holding|own|keep|got|gotten)\b"
             r"(?P<segment>.*?)"
             r"(?=(?:\b(?:need|needs|want to|would like to|send|sending|remit|remittance|transfer|pay|paying|require|required|tuition|school fees)\b)|[.!?]|$)",
             re.I,
@@ -155,7 +155,7 @@ class LocalAgentPlanner:
                 # If the amount is already part of a parsed possession list, keep it.
                 # Otherwise accept it only when there is no immediate outgoing wording.
                 if code not in balances:
-                    balances[code] = self.engine.money_value(raw_amount.replace(",", ""))
+                    balances[code] = self._parse_human_amount(raw_amount)
                 break
 
         return balances

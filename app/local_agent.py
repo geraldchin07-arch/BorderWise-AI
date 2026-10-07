@@ -827,7 +827,7 @@ class LocalAgentPlanner:
                 # response when the user explicitly asks about protecting a reserve.
                 # A standalone affordability question must not inherit unrelated
                 # profile assumptions from the demo wallet.
-                reserve_requested = any(marker in normalized for marker in (
+                reserve_requested = any(marker in t for marker in (
                     "emergency reserve",
                     "emergency fund",
                     "keep aside",

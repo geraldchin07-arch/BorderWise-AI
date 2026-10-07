@@ -921,10 +921,11 @@ class LocalAgentPlanner:
                         )
                     else:
                         answer = (
-                            f"Yes. You have enough to cover the {tuition_amount:,.2f} {tuition_currency} tuition "
-                            f"due in about {tuition_due} days, with approximately "
-                            f"{tuition_available - tuition_amount:,.2f} {tuition_currency} left before other expenses. "
-                            "This is an affordability simulation only; no transaction was created."
+                            f"Priority 1: fund the tuition of {tuition_currency} {tuition_amount:,.2f} first "
+                            f"(about {tuition_due} days away). "
+                            f"Priority 2: review the {remittance_currency} {remittance_amount:,.2f} family remittance after tuition is secured. "
+                            f"You would have approximately {tuition_available - tuition_amount:,.2f} {tuition_currency} remaining before other expenses. "
+                            "This is a prioritization simulation; no transaction was created."
                         )
                 trace.append({
                     "step": "RECOMMEND",

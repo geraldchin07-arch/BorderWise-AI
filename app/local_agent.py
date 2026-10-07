@@ -622,6 +622,25 @@ class LocalAgentPlanner:
                     answer = "I can't execute that transaction. There is no pending authorized proposal. No new transaction was created."
             return self._result("agentic_local", answer, trace, {"blocked_reason": "no_pending_authorized_proposal"})
 
+        # Contradictory/combined commands must not be interpreted as authorization.
+        # If a single message asks to authorize while also attempting to alter the
+        # amount or destination, require a fresh explicit proposal instead.
+        authorization_conflict = (
+            any(k in t for k in ["i authorize", "authorize the", "authorize this", "i approve", "confirm the", "confirm this"])
+            and any(k in t for k in ["change it to", "instead", "actually", "make it", "transfer the rest", "whatever is left"])
+        )
+        if authorization_conflict:
+            trace = [
+                {"step": "UNDERSTAND", "status": "completed", "detail": "Detected authorization combined with a conflicting transaction instruction."},
+                {"step": "SECURITY", "status": "blocked", "detail": "Authorization cannot modify an existing proposal or authorize an unstated amount."},
+            ]
+            return self._result(
+                "agentic_local",
+                "I did not authorize anything. Authorization must match the existing proposal exactly; a changed amount or destination requires a new proposal.",
+                trace,
+                {"blocked_reason": "conflicting_authorization_request"},
+            )
+
         # Explicit authorization of an existing proposal takes priority over
         # informational FX questions. Authorization is a state-changing command:
         # it must match a pending proposal, and only then may the sandbox execute.

@@ -1715,7 +1715,7 @@ class FinanceEngine:
 
                 if shortfall_sgd > 0:
                     answer = (
-                        f"No — you're short about SGD {shortfall_sgd:,.2f}. "
+                        f"No — there's a shortfall of about SGD {shortfall_sgd:,.2f}. "
                         f"After protecting SGD {reserve_sgd:,.2f} in emergency savings, "
                         f"you have SGD {usable_sgd:,.2f} available for SGD {tuition_sgd:,.2f} tuition."
                     )

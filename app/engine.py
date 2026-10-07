@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 import copy
 import re
+import difflib
 import uuid
 import json
 import time
@@ -1402,13 +1403,46 @@ class FinanceEngine:
         return list(reversed(self.state["audit"]))
 
     # ---------- agent ----------
+    @staticmethod
+    def repair_user_text(text: str) -> str:
+        """Make intent extraction tolerant of small typos without changing meaning."""
+        t = re.sub(r"\\s+", " ", str(text or "").strip())
+        common_typos = {
+            "curency": "currency", "curreny": "currency", "currncy": "currency",
+            "exhange": "exchange", "exchnge": "exchange", "exchnage": "exchange",
+            "convertion": "conversion", "conver": "convert", "converrt": "convert",
+            "curent": "current", "currnt": "current", "amout": "amount", "ratee": "rate",
+        }
+        words = re.findall(r"[A-Za-z]+|[^A-Za-z]+", t)
+        for i, word in enumerate(words):
+            if word.lower() in common_typos:
+                words[i] = common_typos[word.lower()]
+        t = "".join(words)
+        currency_codes = ["SGD", "MYR", "USD", "CNY", "JPY", "KRW", "THB", "EUR", "GBP", "AUD", "CAD", "HKD", "TWD", "INR"]
+        def repair_code(match: re.Match[str]) -> str:
+            token = match.group(0).upper()
+            if token in currency_codes:
+                return token
+            score, best = max(
+                ((difflib.SequenceMatcher(None, token, code).ratio(), code) for code in currency_codes),
+                key=lambda item: item[0],
+            )
+            return best if score >= 0.66 else token
+        return re.sub(r"\\b[A-Za-z]{3}\\b", repair_code, t)
+
     def detect_intent(self, text: str) -> str:
-        t = text.lower().strip()
+        t = self.repair_user_text(text).lower()
         if any(k in t for k in ["help", "what can you do", "capabilities"]):
             return "help"
         if any(k in t for k in ["biggest expense", "spending", "spend", "expenses", "where did i spend"]):
             return "spending"
-        if any(k in t for k in ["exchange rate", "fx", "convert", "conversion", "exchange myr", "exchange sgd", "how much myr do i need", "myr do i need", "sgd to myr"]):
+        currency_mentions = re.findall(r"\\b(?:sgd|myr|usd|cny|jpy|krw|thb|eur|gbp|aud|cad|hkd|twd|inr)\\b", t)
+        if (
+            any(k in t for k in ["exchange rate", "current rate", "exchange", "fx", "convert", "conversion",
+                                 "exchange myr", "exchange sgd", "how much myr do i need", "myr do i need", "sgd to myr",
+                                 "current currency", "currency of", "rate of"])
+            or (len(set(currency_mentions)) >= 2 and any(k in t for k in ["to", "into", "rate", "currency", "current"]))
+        ):
             return "fx"
         if any(k in t for k in ["transfer", "send money", "remit", "remittance", "send myr", "send sgd", "pay"]):
             return "transfer"
@@ -1453,7 +1487,7 @@ class FinanceEngine:
         return money(value.replace(',', '')), code
 
     def extract_conversion_pair(self, text: str) -> tuple[str, str] | None:
-        t = text.upper()
+        t = self.repair_user_text(text).upper()
         patterns = [
             r"\b([A-Z]{3})\s*(?:TO|→|->)\s*([A-Z]{3})\b",
             r"\b([A-Z]{3})\s+(?:INTO|IN)\s+([A-Z]{3})\b",
@@ -1475,7 +1509,7 @@ class FinanceEngine:
         # Safety-critical deterministic gate: uncertain family support must never
         # reach an LLM planner as if it were confirmed cash. Keep this path
         # self-contained so a local-agent exception cannot silently fall through.
-        normalized = str(text).lower().strip()
+        normalized = self.repair_user_text(text).lower()
         conditional_income_question = (
             any(k in normalized for k in [
                 "can i assume", "assume that money", "assume the money", "count that money",

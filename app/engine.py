@@ -1448,7 +1448,7 @@ class FinanceEngine:
             any(k in t for k in ["exchange rate", "current rate", "exchange", "fx", "convert", "conversion",
                                  "exchange myr", "exchange sgd", "how much myr do i need", "myr do i need", "sgd to myr",
                                  "current currency", "currency of", "rate of"])
-            or (len(set(currency_mentions)) >= 2 and any(k in t for k in ["to", "into", "rate", "currency", "current"]))
+            or (len(set(currency_mentions)) >= 2 and any(k in t for k in ["to", "into", "in", "rate", "currency", "current"]))
         ):
             return "fx"
         if any(k in t for k in ["afford", "tuition", "fees", "enough money", "enough for"]):
@@ -1515,6 +1515,32 @@ class FinanceEngine:
         # reach an LLM planner as if it were confirmed cash. Keep this path
         # self-contained so a local-agent exception cannot silently fall through.
         normalized = self.repair_user_text(text).lower()
+        # Safety-critical all-funds gate: never reinterpret "all/everything" as
+        # a harmless FX quote or allow a planner to derive an amount from the wallet.
+        # State-changing money movement requires an exact amount.
+        all_funds_money_action = (
+            bool(re.search(r"\b(?:all|everything)\b", normalized))
+            and any(k in normalized for k in [
+                "transfer", "send", "remit", "remittance", "convert", "conversion",
+                "exchange", "pay", "move", "move my",
+            ])
+        )
+        if all_funds_money_action:
+            return self._result(
+                "agentic_local",
+                "I blocked that request because 'all/everything' does not define a safe transaction amount. "
+                "Please specify the exact amount and currency. No proposal or transaction was created.",
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an all-funds money-moving request."},
+                    {"step": "SECURITY", "status": "blocked", "detail": "Blocked ambiguous amount before FX, planning, or execution logic."},
+                ],
+                {
+                    "blocked_reason": "ambiguous_all_funds_request",
+                    "state_changed": False,
+                    "agent_mode": "deterministic_all_funds_safety_gate",
+                },
+            )
+
         conditional_income_question = (
             any(k in normalized for k in [
                 "can i assume", "assume that money", "assume the money", "count that money",

@@ -1419,9 +1419,10 @@ class FinanceEngine:
                 words[i] = common_typos[word.lower()]
         t = "".join(words)
         currency_codes = ["SGD", "MYR", "USD", "CNY", "JPY", "KRW", "THB", "EUR", "GBP", "AUD", "CAD", "HKD", "TWD", "INR"]
+        common_words = {"the", "and", "for", "you", "what", "how", "are", "can", "from", "into", "this", "that", "with", "not", "now", "get", "one", "two", "all", "any", "per", "via", "use", "new"}
         def repair_code(match: re.Match[str]) -> str:
             token = match.group(0).upper()
-            if token in currency_codes:
+            if token in currency_codes or token.lower() in common_words:
                 return token
             score, best = max(
                 ((difflib.SequenceMatcher(None, token, code).ratio(), code) for code in currency_codes),

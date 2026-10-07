@@ -1009,6 +1009,15 @@ class LocalAgentPlanner:
                 "safest plan", "what is the safest", "safest option", "safest approach",
                 "what should i do", "should i", "prioritize", "priority", "before",
             ])
+            # When the same message also contains quantified/possible family support,
+            # it is a multi-goal plan (tuition + incoming + remittance), not the
+            # dedicated two-goal prioritization shortcut.
+            and not any(k in t for k in [
+                "parents can send", "parents will send", "parents may send",
+                "parents might send", "parents could send", "family can send",
+                "family will send", "family may send", "family might send",
+                "family could send", "incoming next", "receive next",
+            ])
         )
         goal_plan_ready = (
             len(detected_goals) >= 3
@@ -2828,6 +2837,63 @@ class LocalAgentPlanner:
         # General multi-intent "what should I do" / student-finance planning.
         planning = any(k in t for k in ["what should i do", "help me plan", "plan my", "should i", "what do you recommend"])
         if planning and (tuition_context or "sgd" in t or "myr" in t or "money" in t):
+            # Last-resort structured fallback for uncertain incoming support. The
+            # full goal planner normally handles this earlier; if a future planner
+            # branch fails, do not fall through to an unstructured affordability
+            # response or lose the required "not counted" evidence.
+            fallback_incoming_mentioned = any(k in t for k in [
+                "parents can send", "parents will send", "parents may send",
+                "parents might send", "parents could send", "family can send",
+                "family will send", "family may send", "family might send",
+                "family could send", "incoming next", "receive next",
+            ])
+            fallback_incoming_amount = self._extract_labeled_amount(
+                t,
+                [
+                    "receive", "received", "got", "allowance", "incoming",
+                    "family sent", "parents send", "parents can send",
+                    "parents will send", "parents may send", "parents might send",
+                    "parents could send", "family can send", "family will send",
+                    "family may send", "family might send", "family could send",
+                ],
+            )
+            if tuition_context and fallback_incoming_mentioned and fallback_incoming_amount is None:
+                fallback_horizon = message_horizon_days or 30
+                fallback_trace = [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Detected tuition planning with unquantified incoming family support."},
+                    {"step": "REASON", "status": "completed", "detail": "Kept the expected family support outside the base-case forecast because no amount was supplied."},
+                    {"step": "SECURITY", "status": "completed", "detail": "No balances, proposals or transactions were changed."},
+                    {"step": "RECOMMEND", "status": "completed", "detail": "Built a conservative tuition plan using confirmed funds only."},
+                ]
+                return self._result(
+                    "financial_plan",
+                    "Prioritize the confirmed tuition obligation using only funds you can verify. "
+                    "Your parents' possible support was mentioned without an amount, so it is not counted in the forecast. "
+                    "Treat that support as a separate what-if until the amount is confirmed.",
+                    fallback_trace,
+                    {
+                        "goal": "financial_plan",
+                        "planning_horizon_days": fallback_horizon,
+                        "detected_goals": ["tuition", "incoming"],
+                        "decision": {
+                            "priority_order": ["tuition"],
+                            "priorities": [
+                                {
+                                    "rank": 1,
+                                    "goal": "tuition",
+                                    "reason": "Tuition is the documented near-term obligation.",
+                                }
+                            ],
+                            "actions": [],
+                            "constraints": [],
+                            "uncertainties": [
+                                "Expected incoming support was mentioned without an amount; it is not counted in the forecast."
+                            ],
+                            "state_changed": False,
+                        },
+                        "state_changed": False,
+                    },
+                )
             trace = [
                 {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a financial planning request."},
                 {"step": "OBSERVE", "status": "completed", "detail": "Read balances and upcoming obligations."},

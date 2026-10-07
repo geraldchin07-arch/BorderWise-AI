@@ -1696,6 +1696,58 @@ class FinanceEngine:
                     },
                 )
 
+        # Deterministic cross-currency transfer safety gate.
+        # A request such as "I have SGD 2,000. Send RM10,000 home while
+        # protecting my emergency reserve" must be evaluated against the stated
+        # SGD wallet before any proposal is created. The legacy risk_check()
+        # operates on MYR balances, so it cannot safely assess an SGD-funded
+        # remittance by itself.
+        risk_aware_transfer = (
+            any(k in normalized for k in ["send", "transfer", "remit", "remittance"])
+            and any(k in normalized for k in ["emergency reserve", "emergency fund", "protecting my reserve", "protect the reserve"])
+        )
+        explicit_myr = self.extract_myr_amount(text)
+        explicit_sgd = self.extract_sgd_amount(text)
+        if risk_aware_transfer and explicit_myr is not None and explicit_sgd is not None:
+            try:
+                myr_to_sgd, _ = self._currency_rate_to_sgd("MYR")
+                required_sgd = money(explicit_myr * myr_to_sgd)
+                if required_sgd > explicit_sgd:
+                    shortfall_sgd = money(required_sgd - explicit_sgd)
+                    return self._result(
+                        "agentic_local",
+                        f"Blocked. RM{explicit_myr:,.2f} would require approximately SGD {required_sgd:,.2f} "
+                        f"at the current reference rate, but you stated only SGD {explicit_sgd:,.2f}. "
+                        f"That leaves a funding shortfall of about SGD {shortfall_sgd:,.2f}, so XKF5 will not prepare the transfer. "
+                        "No transaction or proposal was created.",
+                        [
+                            {"step": "UNDERSTAND", "status": "completed", "detail": "Detected a remittance request with an explicit SGD funding wallet and emergency-reserve protection constraint."},
+                            {"step": "CALCULATE", "status": "completed", "detail": f"Compared the SGD cost of RM{explicit_myr:,.2f} against the stated SGD {explicit_sgd:,.2f} wallet."},
+                            {"step": "SECURITY", "status": "blocked", "detail": "Transfer was blocked before proposal creation because the stated wallet cannot fund the requested amount."},
+                        ],
+                        {
+                            "risk": {
+                                "status": "BLOCKED",
+                                "requested_myr": float(explicit_myr),
+                                "required_sgd": float(required_sgd),
+                                "stated_sgd": float(explicit_sgd),
+                                "shortfall_sgd": float(shortfall_sgd),
+                            },
+                            "state_changed": False,
+                            "agent_mode": "deterministic_cross_currency_transfer_gate",
+                        },
+                    )
+            except (ValueError, HTTPError, URLError, TimeoutError, OSError):
+                return self._result(
+                    "agentic_local",
+                    "I cannot safely prepare that transfer because the required MYR→SGD reference quote is unavailable. No transaction or proposal was created.",
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Detected a cross-currency remittance with a reserve-protection constraint."},
+                        {"step": "SECURITY", "status": "blocked", "detail": "Blocked proposal creation because the funding conversion could not be verified safely."},
+                    ],
+                    {"state_changed": False, "agent_mode": "deterministic_cross_currency_transfer_gate"},
+                )
+
         # v5: optional LLM tool-calling planner. The deterministic engine remains the
         # fallback and the authority for calculations, policy and execution.
         try:

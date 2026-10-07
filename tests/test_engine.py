@@ -1598,6 +1598,24 @@ def test_local_agent_does_not_prepare_transfer_for_affordability_question():
 
 
 
+
+def test_local_agent_multi_currency_affordability_protects_stated_reserve():
+    e = FinanceEngine()
+    before = e.get_balance()
+    r = e.agent(
+        "I've got 5k MYR, 2k SGD and about 1k USD. "
+        "I need to pay 3k SGD tuition next month and keep 2k SGD emergency savings. Can I do it?"
+    )
+    data = r["data"]["affordability"]
+    assert r["data"]["state_changed"] is False
+    assert data["wallet_total_sgd"] > 4000
+    assert data["reserve_sgd"] == 2000.0
+    assert data["usable_sgd"] < 3000.0
+    assert data["shortfall_sgd"] > 0
+    assert e.get_balance() == before
+    assert e.state["proposals"] == {}
+    assert "shortfall" in r["answer"].lower()
+
 def test_local_agent_simulates_hypothetical_incoming_income_without_state_change():
     e = FinanceEngine()
     e.update_profile_general({

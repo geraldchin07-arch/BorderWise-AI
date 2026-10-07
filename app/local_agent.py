@@ -979,6 +979,27 @@ class LocalAgentPlanner:
                 t,
                 re.I,
             )
+            # Also support the natural reverse form "3k SGD tuition",
+            # where the amount/currency appears before the obligation label.
+            if not tuition_labeled:
+                reverse_tuition = re.search(
+                    r"([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*"
+                    r"(sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)\s+tuition\b",
+                    t,
+                    re.I,
+                )
+                if reverse_tuition:
+                    tuition_amount = self.engine.money_value(
+                        reverse_tuition.group(1).replace(",", "")
+                    )
+                    tuition_currency = {
+                        "sgd": "SGD", "s$": "SGD",
+                        "myr": "MYR", "rm": "MYR",
+                        "usd": "USD", "us$": "USD",
+                        "cny": "CNY", "rmb": "CNY", "yuan": "CNY",
+                    }[reverse_tuition.group(2).lower()]
+                    tuition_labeled = (tuition_amount, tuition_currency)
+
             if tuition_labeled and reserve_match:
                 tuition_amount, tuition_currency = tuition_labeled
                 reserve_alias = reserve_match.group("currency").lower()

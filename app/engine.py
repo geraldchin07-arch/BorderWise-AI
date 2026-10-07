@@ -1657,9 +1657,11 @@ class FinanceEngine:
 
                 total_sgd = money(0)
                 valuation = []
+                fx_quotes = {}
                 for code, amount in wallet.items():
                     if code == "SGD":
                         rate = Decimal("1")
+                        fx_meta = {"source": "Base currency", "date": None, "live": False}
                     else:
                         # Scenario balances are hypothetical inputs, so use the direct
                         # reference pair rather than any saved profile balance/config.
@@ -1679,6 +1681,18 @@ class FinanceEngine:
                             or (code == "MYR" and rate > Decimal("1.0"))
                         ):
                             rate = scenario_fallbacks[code]
+                            fx_meta = {
+                                **fx_meta,
+                                "rate": float(rate),
+                                "source": "bundled indicative fallback",
+                                "live": False,
+                            }
+                    fx_quotes[code] = {
+                        "rate_to_sgd": float(rate),
+                        "source": fx_meta.get("source"),
+                        "rate_date": fx_meta.get("date"),
+                        "live": bool(fx_meta.get("live", False)),
+                    }
                     value = money(amount * rate)
                     total_sgd = money(total_sgd + value)
                     valuation.append(f"{code} {amount:,.2f} ≈ SGD {value:,.2f}")
@@ -1716,16 +1730,28 @@ class FinanceEngine:
                         f"available for the SGD {tuition_sgd:,.2f} tuition, leaving about SGD {remaining_sgd:,.2f} "
                         "after tuition. This is an affordability simulation only; no transaction was created."
                     )
+                reserve_label = f"{reserve_currency} {reserve_amount:,.2f} ≈ SGD {reserve_sgd:,.2f}"
+                tuition_label = f"{tuition_currency} {tuition_amount:,.2f} ≈ SGD {tuition_sgd:,.2f}"
+                answer += (
+                    f" Using only the balances and obligations stated in this message; "
+                    "your saved wallet was not used. "
+                    "Reference FX is indicative and not a bank settlement quote."
+                )
                 return self._result(
                     "agentic_local",
                     answer,
                     [
                         {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an explicit multi-currency tuition affordability scenario."},
-                        {"step": "FX", "status": "completed", "detail": "Converted all explicitly stated wallet currencies into SGD."},
-                        {"step": "CALCULATE", "status": "completed", "detail": "Protected the stated emergency-savings floor before assessing tuition affordability."},
+                        {"step": "OBSERVE", "status": "completed", "detail": "Used only the balances explicitly stated in the user's message; saved profile balances were not used."},
+                        {"step": "FX", "status": "completed", "detail": f"Normalized {len(wallet)} stated currencies into SGD using reference FX."},
+                        {"step": "CALCULATE", "status": "completed", "detail": f"Protected the stated emergency-savings floor ({reserve_label}) before assessing tuition ({tuition_label})."},
                         {"step": "SECURITY", "status": "completed", "detail": "Read-only simulation; no proposal or transaction was created."},
                     ],
                     {
+                        "goal": "financial_plan",
+                        "wallet_source": "message",
+                        "wallet_balances_used": {code: float(amount) for code, amount in wallet.items()},
+                        "fx_quotes": fx_quotes,
                         "affordability": {
                             "wallet_total_sgd": float(total_sgd),
                             "reserve_sgd": float(reserve_sgd),
@@ -1733,6 +1759,16 @@ class FinanceEngine:
                             "tuition_sgd": float(tuition_sgd),
                             "shortfall_sgd": float(shortfall_sgd),
                             "remaining_sgd": float(remaining_sgd),
+                            "reserve": {
+                                "currency": reserve_currency,
+                                "amount": float(reserve_amount),
+                                "sgd_equivalent": float(reserve_sgd),
+                            },
+                            "tuition": {
+                                "currency": tuition_currency,
+                                "amount": float(tuition_amount),
+                                "sgd_equivalent": float(tuition_sgd),
+                            },
                         },
                         "state_changed": False,
                         "agent_mode": "deterministic_multi_currency_affordability_gate",

@@ -1677,6 +1677,30 @@ class FinanceEngine:
                 casual_sgd_values.append(
                     money(Decimal(amount_text.replace(",", "")) * multiplier)
                 )
+            # Casual tuition wording often omits the currency on the
+            # second amount, e.g. "I got 2k SGD and tuition is around 6k".
+            # Since the first amount explicitly establishes SGD, interpret the
+            # nearby tuition shorthand as SGD rather than falling through to
+            # the saved profile.
+            if len(casual_sgd_values) < 2:
+                tuition_amount_match = re.search(
+                    r"tuition\\b.*?(?:around|about|is|of|=)?\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)([km]?)",
+                    normalized,
+                    re.IGNORECASE,
+                )
+                if tuition_amount_match:
+                    amount_text, suffix = tuition_amount_match.groups()
+                    multiplier = (
+                        Decimal("1000") if suffix.lower() == "k"
+                        else Decimal("1000000") if suffix.lower() == "m"
+                        else Decimal("1")
+                    )
+                    tuition_value = money(
+                        Decimal(amount_text.replace(",", "")) * multiplier
+                    )
+                    if casual_sgd_values:
+                        casual_sgd_values.append(tuition_value)
+
             if len(casual_sgd_values) >= 2:
                 starting_balance, tuition_amount = casual_sgd_values[:2]
                 shortfall = money(max(Decimal("0"), tuition_amount - starting_balance))

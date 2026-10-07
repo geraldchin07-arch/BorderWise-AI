@@ -1684,7 +1684,7 @@ class FinanceEngine:
             # the saved profile.
             if len(casual_sgd_values) < 2:
                 tuition_amount_match = re.search(
-                    r"tuition\\b.*?(?:around|about|is|of|=)?\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)([km]?)",
+                    r"tuition\b.*?(?:around|about|is|of|=)?\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)([km]?)",
                     normalized,
                     re.IGNORECASE,
                 )

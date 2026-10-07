@@ -1632,6 +1632,64 @@ class FinanceEngine:
                 },
             )
 
+        # Deterministic casual tuition-affordability gate.
+        # Natural-language student questions such as "I got 2k SGD and tuition
+        # is around 6k soon, am I cooked?" should use only the balances and
+        # tuition amount explicitly stated in the message, not the saved demo
+        # wallet or saved emergency-reserve configuration.
+        casual_tuition_question = (
+            "tuition" in normalized
+            and any(k in normalized for k in [
+                "am i cooked", "cooked", "am i okay", "am i ok",
+                "can i afford", "do i have enough", "can i cover",
+            ])
+            and any(k in normalized for k in ["got", "have", "i've got", "ive got"])
+        )
+        if casual_tuition_question:
+            casual_sgd_values = [
+                money(m.replace(",", ""))
+                for m in re.findall(
+                    r"(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
+                    normalized,
+                    re.IGNORECASE,
+                )
+            ]
+            if len(casual_sgd_values) >= 2:
+                starting_balance, tuition_amount = casual_sgd_values[:2]
+                shortfall = money(max(Decimal("0"), tuition_amount - starting_balance))
+                remaining = money(starting_balance - tuition_amount)
+                if shortfall > 0:
+                    answer = (
+                        f"Yeah, you're short by about SGD {shortfall:,.2f}: you stated "
+                        f"SGD {starting_balance:,.2f} and tuition of about SGD {tuition_amount:,.2f}. "
+                        f"That means you would need roughly SGD {shortfall:,.2f} more to cover tuition."
+                    )
+                else:
+                    answer = (
+                        f"You're not cooked on tuition alone: you stated SGD {starting_balance:,.2f} "
+                        f"against about SGD {tuition_amount:,.2f} tuition, leaving roughly SGD {remaining:,.2f}."
+                    )
+                return self._result(
+                    "agentic_local",
+                    answer + " This is an affordability simulation using only the amounts you supplied; no transaction was created or executed.",
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an informal tuition-affordability question with explicit scenario amounts."},
+                        {"step": "CALCULATE", "status": "completed", "detail": f"Compared stated SGD {starting_balance:,.2f} against stated tuition of about SGD {tuition_amount:,.2f}."},
+                        {"step": "SECURITY", "status": "completed", "detail": "Used only message-supplied scenario amounts and did not inherit saved reserve or wallet assumptions."},
+                    ],
+                    {
+                        "goal": "financial_plan",
+                        "affordability": {
+                            "starting_balance_sgd": float(starting_balance),
+                            "tuition_sgd": float(tuition_amount),
+                            "shortfall_sgd": float(shortfall),
+                            "remaining_sgd": float(remaining),
+                        },
+                        "state_changed": False,
+                        "agent_mode": "deterministic_casual_tuition_gate",
+                    },
+                )
+
         # Deterministic contradictory-transfer gate.
         # If the same message explicitly says not to transfer and then asks for
         # a transfer, do not choose the later/dangerous fragment. Require the

@@ -1419,7 +1419,7 @@ class FinanceEngine:
                 words[i] = common_typos[word.lower()]
         t = "".join(words)
         currency_codes = ["SGD", "MYR", "USD", "CNY", "JPY", "KRW", "THB", "EUR", "GBP", "AUD", "CAD", "HKD", "TWD", "INR"]
-        common_words = {"the", "and", "for", "you", "what", "how", "are", "can", "from", "into", "this", "that", "with", "not", "now", "get", "one", "two", "all", "any", "per", "via", "use", "new"}
+        common_words = {"the", "and", "for", "you", "what", "how", "are", "can", "from", "into", "this", "that", "with", "not", "now", "get", "one", "two", "all", "any", "per", "via", "use", "new", "may", "might", "could", "possibly", "maybe", "perhaps"}
         def repair_code(match: re.Match[str]) -> str:
             token = match.group(0).upper()
             if token in currency_codes or token.lower() in common_words:
@@ -1518,6 +1518,11 @@ class FinanceEngine:
         # Safety-critical all-funds gate: never reinterpret "all/everything" as
         # a harmless FX quote or allow a planner to derive an amount from the wallet.
         # State-changing money movement requires an exact amount.
+        security_override = any(k in normalized for k in [
+            "ignore all previous", "ignore previous security", "ignore the security",
+            "override security", "bypass security", "bypass the policy",
+            "you are authorized", "execute immediately",
+        ])
         all_funds_money_action = (
             bool(re.search(r"\b(?:all|everything)\b", normalized))
             and any(k in normalized for k in [
@@ -1525,6 +1530,20 @@ class FinanceEngine:
                 "exchange", "pay", "move", "move my",
             ])
         )
+        if security_override and any(k in normalized for k in [
+            "transfer", "send", "execute", "prepare", "convert", "remit", "move", "pay"
+        ]):
+            return self._result(
+                "agentic_local",
+                "I can't override the security policy or grant authorization through natural language. "
+                "Money movement requires an explicit proposal and Level 2 authorization. No transaction was created.",
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an attempt to override financial security controls."},
+                    {"step": "SECURITY", "status": "blocked", "detail": "Security override language cannot grant authorization or bypass deterministic policy."},
+                ],
+                {"blocked_reason": "security_policy_override_attempt", "state_changed": False},
+            )
+
         if all_funds_money_action:
             return self._result(
                 "agentic_local",
@@ -1589,12 +1608,16 @@ class FinanceEngine:
         )
         if hypothetical_income_question:
             income_match = re.search(
-                r"(?:receive|get|incoming)\s+(?:another\s+)?([0-9][0-9,]*(?:\.[0-9]+)?)([km]?)\s*(sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)",
+                r"(?:receive|get|incoming)\s+(?:another\s+)?(?:(?P<currency1>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)\s*)?(?P<amount1>[0-9][0-9,]*(?:\.[0-9]+)?)(?P<suffix1>[km]?)"
+                r"|(?:receive|get|incoming)\s+(?:another\s+)?(?P<amount2>[0-9][0-9,]*(?:\.[0-9]+)?)(?P<suffix2>[km]?)\s*(?P<currency2>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)",
                 normalized,
                 re.IGNORECASE,
             )
             if income_match:
-                amount_text, suffix, currency_text = income_match.groups()
+                groups = income_match.groupdict()
+                amount_text = groups["amount1"] or groups["amount2"]
+                suffix = groups["suffix1"] or groups["suffix2"] or ""
+                currency_text = groups["currency1"] or groups["currency2"]
                 multiplier = (
                     Decimal("1000") if suffix.lower() == "k"
                     else Decimal("1000000") if suffix.lower() == "m"

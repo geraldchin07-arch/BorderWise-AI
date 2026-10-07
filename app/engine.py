@@ -1677,6 +1677,11 @@ class FinanceEngine:
                 casual_sgd_values.append(
                     money(Decimal(amount_text.replace(",", "")) * multiplier)
                 )
+            # The two explicit-SGD regexes intentionally cover both word orders,
+            # but the same amount can match both. Deduplicate before deciding whether
+            # a second (implicit-SGD) tuition amount still needs to be parsed.
+            casual_sgd_values = list(dict.fromkeys(casual_sgd_values))
+
             # Casual tuition wording often omits the currency on the
             # second amount, e.g. "I got 2k SGD and tuition is around 6k".
             # Since the first amount explicitly establishes SGD, interpret the

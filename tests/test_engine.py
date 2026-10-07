@@ -1599,6 +1599,16 @@ def test_local_agent_does_not_prepare_transfer_for_affordability_question():
 
 
 
+
+def test_local_agent_parses_multi_currency_got_wallet_shorthand():
+    e = FinanceEngine()
+    planner = __import__("app.local_agent", fromlist=["LocalAgentPlanner"]).LocalAgentPlanner(e)
+    wallet = planner._extract_wallet_balances_from_text(
+        "I've got 5k MYR, 2k SGD and about 1k USD. "
+        "I need to pay 3k SGD tuition next month and keep 2k SGD emergency savings."
+    )
+    assert wallet == {"MYR": 5000.0, "SGD": 2000.0, "USD": 1000.0}
+
 def test_local_agent_multi_currency_affordability_protects_stated_reserve():
     e = FinanceEngine()
     before = e.get_balance()

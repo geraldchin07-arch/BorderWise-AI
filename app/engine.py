@@ -1411,7 +1411,7 @@ class FinanceEngine:
             "curency": "currency", "curreny": "currency", "currncy": "currency",
             "exhange": "exchange", "exchnge": "exchange", "exchnage": "exchange",
             "convertion": "conversion", "conver": "convert", "converrt": "convert",
-            "curent": "current", "currnt": "current", "amout": "amount", "ratee": "rate",
+            "curent": "current", "currnt": "current", "amout": "amount", "ratee": "rate", "trnsfer": "transfer", "ususal": "usual", "pleaze": "please",
         }
         words = re.findall(r"[A-Za-z]+|[^A-Za-z]+", t)
         for i, word in enumerate(words):

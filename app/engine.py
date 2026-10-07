@@ -1406,7 +1406,7 @@ class FinanceEngine:
     @staticmethod
     def repair_user_text(text: str) -> str:
         """Make intent extraction tolerant of small typos without changing meaning."""
-        t = re.sub(r"\\s+", " ", str(text or "").strip())
+        t = re.sub(r"\s+", " ", str(text or "").strip())
         common_typos = {
             "curency": "currency", "curreny": "currency", "currncy": "currency",
             "exhange": "exchange", "exchnge": "exchange", "exchnage": "exchange",
@@ -1428,7 +1428,7 @@ class FinanceEngine:
                 key=lambda item: item[0],
             )
             return best if score >= 0.66 else token
-        return re.sub(r"\\b[A-Za-z]{3}\\b", repair_code, t)
+        return re.sub(r"\b[A-Za-z]{3}\b", repair_code, t)
 
     def detect_intent(self, text: str) -> str:
         t = self.repair_user_text(text).lower()
@@ -1436,7 +1436,7 @@ class FinanceEngine:
             return "help"
         if any(k in t for k in ["biggest expense", "spending", "spend", "expenses", "where did i spend"]):
             return "spending"
-        currency_mentions = re.findall(r"\\b(?:sgd|myr|usd|cny|jpy|krw|thb|eur|gbp|aud|cad|hkd|twd|inr)\\b", t)
+        currency_mentions = re.findall(r"\b(?:sgd|myr|usd|cny|jpy|krw|thb|eur|gbp|aud|cad|hkd|twd|inr)\b", t)
         if (
             any(k in t for k in ["exchange rate", "current rate", "exchange", "fx", "convert", "conversion",
                                  "exchange myr", "exchange sgd", "how much myr do i need", "myr do i need", "sgd to myr",

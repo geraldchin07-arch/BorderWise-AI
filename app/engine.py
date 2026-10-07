@@ -1527,7 +1527,8 @@ class FinanceEngine:
             bool(re.search(
                 r"\b(?:all|everything)\s+(?:my|of my)\s+(?:funds|money|balance|wallet)\b|"
                 r"\b(?:all|everything)\s+(?:in|from)\s+my\s+(?:wallet|account|balance)\b|"
-                r"\b(?:all|everything)\s+(?:in|from)\s+my\s+[a-z]{3}\s+(?:wallet|account|balance)\b",
+                r"\b(?:all|everything)\s+(?:in|from)\s+my\s+[a-z]{3}\s+(?:wallet|account|balance)\b|"
+                r"\b(?:all|everything)\s+my\s+[a-z]{3}\b",
                 normalized,
             ))
             and any(k in normalized for k in [

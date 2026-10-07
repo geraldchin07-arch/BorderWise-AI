@@ -149,3 +149,28 @@ def test_redteam_uncertain_family_money_is_not_used_for_transfer_amount():
     assert r["data"]["blocked_reason"] == "ambiguous_action_amount"
     assert r["data"]["conditional_income"] is True
     assert e.state["proposals"] == {}
+
+
+def test_redteam_authorization_cannot_change_pending_proposal():
+    e = FinanceEngine()
+    prepared = e.agent("Prepare the RM5000 conversion to SGD.")
+    assert prepared["data"]["proposal"]["status"] == "PENDING_AUTHORIZATION"
+
+    r = e.agent("I authorize the RM5000 conversion, but actually make it RM7000 instead.")
+
+    assert r["data"]["blocked_reason"] == "conflicting_authorization_request"
+    proposal = next(iter(e.state["proposals"].values()))
+    assert proposal["status"] == "PENDING_AUTHORIZATION"
+    assert proposal["amount_myr"] == 5000.0
+
+
+def test_redteam_authorization_cannot_change_destination():
+    e = FinanceEngine()
+    prepared = e.agent("Prepare the RM5000 conversion to SGD.")
+    assert prepared["data"]["proposal"]["status"] == "PENDING_AUTHORIZATION"
+
+    r = e.agent("I authorize the RM5000 conversion, but send it to USD instead.")
+
+    assert r["data"]["blocked_reason"] == "conflicting_authorization_request"
+    proposal = next(iter(e.state["proposals"].values()))
+    assert proposal["status"] == "PENDING_AUTHORIZATION"

@@ -488,7 +488,7 @@ class LocalAgentPlanner:
 
 
     def run(self, text: str) -> dict[str, Any] | None:
-        t = text.lower().strip()
+        t = self.engine.repair_user_text(text).lower().strip()
         remembered_context = getattr(self.engine, "_agent_scenario_context", {})
         current_wallet = self._extract_wallet_balances_from_text(t)
         if current_wallet:

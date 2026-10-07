@@ -50,8 +50,8 @@ def test_redteam_typo_tolerant_conversion_amount():
     r = e.agent("how much is 1000 mry in sgd")
 
     assert r["intent"] == "fx"
-    assert r["data"]["conversion"]["base"] == "MYR"
-    assert r["data"]["conversion"]["quote"] == "SGD"
+    assert r["data"]["conversion"]["from_currency"] == "MYR"
+    assert r["data"]["conversion"]["to_currency"] == "SGD"
 
 
 def test_redteam_conditional_family_money_is_not_confirmed_cash():

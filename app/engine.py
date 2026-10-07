@@ -1650,7 +1650,7 @@ class FinanceEngine:
             sgd_values = [
                 money(m.replace(",", ""))
                 for m in re.findall(
-                    r"(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)",
+                    r"(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
                     normalized,
                     re.IGNORECASE,
                 )

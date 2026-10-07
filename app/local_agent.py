@@ -1905,6 +1905,18 @@ class LocalAgentPlanner:
             "can i", "could i", "should i", "would it", "is it safe", "is it okay",
             "am i", "afford", "okay", "while protecting", "while keeping",
         ])
+        # A sentence that describes paying tuition is not itself a transfer command.
+        # In particular, "I need to pay tuition ... Am I okay?" must remain an
+        # affordability/reserve-planning question even though "pay" is present.
+        tuition_affordability_question = (
+            tuition_context
+            and any(k in t for k in [
+                "am i okay", "am i ok", "will i be okay", "will i be ok",
+                "can i afford", "is it affordable", "do i have enough",
+                "can i cover", "can i manage",
+            ])
+        )
+        advisory_action_question = advisory_action_question or tuition_affordability_question
         explicit_action = (not advisory_action_question) and any(k in t for k in [
             "prepare", "transfer", "send", "remit", "remittance", "pay",
             "make the transfer", "make a transfer", "create a transfer",

@@ -89,7 +89,7 @@ class LocalAgentPlanner:
         possession clauses separately so obligation amounts are never promoted to wallet
         balances.
         """
-        t = text.lower().strip()
+        t = self.engine.repair_user_text(text).lower().strip()
         aliases = {
             "MYR": ["myr", "rm", "ringgit"],
             "SGD": ["sgd", "s$"],

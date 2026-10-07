@@ -1567,11 +1567,21 @@ class FinanceEngine:
             )
 
         conditional_income_question = (
-            any(k in normalized for k in [
-                "can i assume", "assume that money", "assume the money", "count that money",
-                "treat that money", "can i count it", "can i count that",
+            (
+                any(k in normalized for k in [
+                    "can i assume", "assume that money", "assume the money", "count that money",
+                    "treat that money", "can i count it", "can i count that",
+                ])
+                or (
+                    "what if" in normalized
+                    and any(k in normalized for k in [
+                        "next month", "next week", "in two weeks", "later", "in a month"
+                    ])
+                )
+            )
+            and any(k in normalized for k in [
+                "might", "may", "could", "possibly", "maybe", "will", "sends", "send me"
             ])
-            and any(k in normalized for k in ["might", "may", "could", "possibly", "maybe"])
             and any(k in normalized for k in ["parent", "parents", "family"])
         )
         if conditional_income_question:

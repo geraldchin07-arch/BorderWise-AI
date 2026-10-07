@@ -1437,6 +1437,12 @@ class FinanceEngine:
             return "help"
         if any(k in t for k in ["biggest expense", "spending", "spend", "expenses", "where did i spend"]):
             return "spending"
+        # Explicit money-moving actions must take priority over FX wording.
+        # Otherwise a request such as "transfer all my MYR to SGD" can be
+        # misclassified as a harmless conversion lookup and bypass the local
+        # agent's all-funds safety gate.
+        if any(k in t for k in ["transfer", "send money", "remit", "remittance", "send myr", "send sgd", "pay"]):
+            return "transfer"
         currency_mentions = re.findall(r"\b(?:sgd|myr|usd|cny|jpy|krw|thb|eur|gbp|aud|cad|hkd|twd|inr)\b", t)
         if (
             any(k in t for k in ["exchange rate", "current rate", "exchange", "fx", "convert", "conversion",
@@ -1445,8 +1451,6 @@ class FinanceEngine:
             or (len(set(currency_mentions)) >= 2 and any(k in t for k in ["to", "into", "rate", "currency", "current"]))
         ):
             return "fx"
-        if any(k in t for k in ["transfer", "send money", "remit", "remittance", "send myr", "send sgd", "pay"]):
-            return "transfer"
         if any(k in t for k in ["afford", "tuition", "fees", "enough money", "enough for"]):
             return "affordability"
         if any(k in t for k in ["forecast", "run out", "cash flow", "cashflow", "next month", "future balance"]):

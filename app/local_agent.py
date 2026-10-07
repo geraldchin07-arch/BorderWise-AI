@@ -985,8 +985,10 @@ class LocalAgentPlanner:
                 t, ["tuition", "tuition fee", "tuition fees"]
             )
             reserve_match = re.search(
-                r"\bkeep\s+(?:an?\s+)?(?P<currency>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)\s*"
-                r"(?P<amount>[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?[km]?)\b[^.]*?\bemergency\s+"
+                r"\bkeep\s+(?:an?\s+)?(?:(?P<currency>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)\s*"
+                r"(?P<amount>[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?[km]?)|"
+                r"(?P<amount_rev>[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?[km]?)\s*"
+                r"(?P<currency_rev>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan))\b[^.]*?\bemergency\s+"
                 r"(?:savings|reserve|fund)\b",
                 t,
                 re.I,
@@ -995,7 +997,7 @@ class LocalAgentPlanner:
             # where the amount/currency appears before the obligation label.
             if not tuition_labeled:
                 reverse_tuition = re.search(
-                    r"([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*"
+                    r"([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?[km]?)\s*"
                     r"(sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)\s+tuition\b",
                     t,
                     re.I,
@@ -1012,8 +1014,15 @@ class LocalAgentPlanner:
 
             if tuition_labeled and reserve_match:
                 tuition_amount, tuition_currency = tuition_labeled
-                reserve_alias = reserve_match.group("currency").lower()
-                reserve_amount = self._parse_human_amount(reserve_match.group("amount"))
+                reserve_alias = (
+                    reserve_match.group("currency")
+                    or reserve_match.group("currency_rev")
+                ).lower()
+                reserve_raw_amount = (
+                    reserve_match.group("amount")
+                    or reserve_match.group("amount_rev")
+                )
+                reserve_amount = self._parse_human_amount(reserve_raw_amount)
                 reserve_code = {
                     "sgd": "SGD", "s$": "SGD",
                     "myr": "MYR", "rm": "MYR",

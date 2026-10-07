@@ -981,6 +981,14 @@ class LocalAgentPlanner:
             "will i have enough", "can i still afford", "while protecting",
             "while keeping",
         ])
+        competing_obligation_question = (
+            "tuition" in detected_goals
+            and "remittance" in detected_goals
+            and any(k in t for k in [
+                "safest plan", "what is the safest", "safest option", "safest approach",
+                "what should i do", "should i", "prioritize", "priority", "before",
+            ])
+        )
         goal_plan_ready = (
             len(detected_goals) >= 3
             or (
@@ -1006,7 +1014,7 @@ class LocalAgentPlanner:
         # Dedicated conditional-income handling below must always win over the
         # generic multi-goal planner, even though the message contains both
         # "tuition" and "parents" and therefore looks like a two-goal plan.
-        if conditional_income_question:
+        if conditional_income_question or competing_obligation_question:
             goal_plan_ready = False
         if goal_planning_question and goal_plan_ready:
             wallet_balances = self._extract_wallet_balances_from_text(t)

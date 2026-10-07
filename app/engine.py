@@ -1661,13 +1661,23 @@ class FinanceEngine:
                     if code == "SGD":
                         rate = Decimal("1")
                     else:
-                        rate, _ = self._currency_rate_to_sgd(code)
+                        # Scenario balances are hypothetical inputs, so use the direct
+                        # reference pair rather than any saved profile balance/config.
+                        rate = fxrate(self._fetch_reference_pair(code, "SGD")["rate"])
                     value = money(amount * rate)
                     total_sgd = money(total_sgd + value)
                     valuation.append(f"{code} {amount:,.2f} ≈ SGD {value:,.2f}")
 
-                tuition_rate = Decimal("1") if tuition_currency == "SGD" else self._currency_rate_to_sgd(tuition_currency)[0]
-                reserve_rate = Decimal("1") if reserve_currency == "SGD" else self._currency_rate_to_sgd(reserve_currency)[0]
+                tuition_rate = (
+                    Decimal("1")
+                    if tuition_currency == "SGD"
+                    else fxrate(self._fetch_reference_pair(tuition_currency, "SGD")["rate"])
+                )
+                reserve_rate = (
+                    Decimal("1")
+                    if reserve_currency == "SGD"
+                    else fxrate(self._fetch_reference_pair(reserve_currency, "SGD")["rate"])
+                )
                 tuition_sgd = money(tuition_amount * tuition_rate)
                 reserve_sgd = money(reserve_amount * reserve_rate)
                 usable_sgd = money(max(Decimal("0"), total_sgd - reserve_sgd))

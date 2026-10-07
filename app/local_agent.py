@@ -681,6 +681,22 @@ class LocalAgentPlanner:
             else:
                 matches = pending if len(pending) == 1 else []
 
+            # Never pick the first proposal when more than one proposal matches.
+            # Ambiguous authorization must stop rather than silently authorizing
+            # an arbitrary transaction.
+            if len(matches) > 1:
+                trace = [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Multiple pending proposals matched the authorization request."},
+                    {"step": "SECURITY", "status": "blocked", "detail": "Authorization requires one unambiguous proposal; no proposal was selected automatically."},
+                ]
+                return self._result(
+                    "agentic_local",
+                    "I did not authorize anything because multiple pending proposals match that amount. "
+                    "Please identify the exact proposal before authorizing.",
+                    trace,
+                    {"blocked_reason": "multiple_matching_pending_proposals", "state_changed": False},
+                )
+
             trace = [{
                 "step": "UNDERSTAND",
                 "status": "completed",

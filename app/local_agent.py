@@ -958,6 +958,113 @@ class LocalAgentPlanner:
                     },
                 )
 
+        # Deterministic multi-currency affordability gate.
+        # When the user explicitly supplies several wallet currencies, tuition, and
+        # an emergency-savings floor, evaluate the whole stated wallet in SGD.
+        # Do not inherit the saved demo wallet/reserve or create a transfer proposal.
+        multi_currency_affordability = (
+            "tuition" in t
+            and any(k in t for k in ["can i do", "can i afford", "will i have enough", "can i cover"])
+            and any(k in t for k in ["emergency savings", "emergency reserve", "emergency fund"])
+            and len(current_wallet) >= 2
+        )
+        if multi_currency_affordability:
+            tuition_labeled = self._extract_labeled_amount(
+                t, ["tuition", "tuition fee", "tuition fees"]
+            )
+            reserve_match = re.search(
+                r"\bkeep\s+(?:an?\s+)?(?P<currency>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)\s*"
+                r"(?P<amount>[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\b[^.]*?\bemergency\s+"
+                r"(?:savings|reserve|fund)\b",
+                t,
+                re.I,
+            )
+            if tuition_labeled and reserve_match:
+                tuition_amount, tuition_currency = tuition_labeled
+                reserve_alias = reserve_match.group("currency").lower()
+                reserve_amount = self.engine.money_value(
+                    reserve_match.group("amount").replace(",", "")
+                )
+                reserve_code = {
+                    "sgd": "SGD", "s$": "SGD",
+                    "myr": "MYR", "rm": "MYR",
+                    "usd": "USD", "us$": "USD",
+                    "cny": "CNY", "rmb": "CNY", "yuan": "CNY",
+                }[reserve_alias]
+                try:
+                    total_sgd = self.engine.money_value(0)
+                    valuation_lines = []
+                    for code, amount in current_wallet.items():
+                        if code == "SGD":
+                            rate = Decimal("1")
+                        else:
+                            rate, _ = self.engine._currency_rate_to_sgd(code)
+                        value_sgd = self.engine.money_value(amount * rate)
+                        total_sgd = self.engine.money_value(total_sgd + value_sgd)
+                        valuation_lines.append(
+                            f"{code} {amount:,.2f} ≈ SGD {value_sgd:,.2f}"
+                        )
+
+                    tuition_rate = Decimal("1") if tuition_currency == "SGD" else self.engine._currency_rate_to_sgd(tuition_currency)[0]
+                    tuition_sgd = self.engine.money_value(tuition_amount * tuition_rate)
+                    reserve_rate = Decimal("1") if reserve_code == "SGD" else self.engine._currency_rate_to_sgd(reserve_code)[0]
+                    reserve_sgd = self.engine.money_value(reserve_amount * reserve_rate)
+                    usable_sgd = self.engine.money_value(max(Decimal("0"), total_sgd - reserve_sgd))
+                    shortfall_sgd = self.engine.money_value(max(Decimal("0"), tuition_sgd - usable_sgd))
+                    remaining_sgd = self.engine.money_value(usable_sgd - tuition_sgd)
+
+                    if shortfall_sgd > 0:
+                        answer = (
+                            f"No. Your stated wallet is worth about SGD {total_sgd:,.2f} across "
+                            f"{', '.join(valuation_lines)}. After keeping SGD {reserve_sgd:,.2f} "
+                            f"equivalent as your emergency savings, you would have about SGD "
+                            f"{usable_sgd:,.2f} available for the SGD {tuition_sgd:,.2f} tuition, "
+                            f"leaving a shortfall of about SGD {shortfall_sgd:,.2f}. "
+                            "This is an affordability simulation only; no transaction was created."
+                        )
+                    else:
+                        answer = (
+                            f"Yes. Your stated wallet is worth about SGD {total_sgd:,.2f} across "
+                            f"{', '.join(valuation_lines)}. After keeping SGD {reserve_sgd:,.2f} "
+                            f"equivalent as emergency savings, you would have about SGD "
+                            f"{usable_sgd:,.2f} available for the SGD {tuition_sgd:,.2f} tuition, "
+                            f"leaving about SGD {remaining_sgd:,.2f} after tuition. "
+                            "This is an affordability simulation only; no transaction was created."
+                        )
+                    return self._result(
+                        "agentic_local",
+                        answer,
+                        [
+                            {"step": "UNDERSTAND", "status": "completed", "detail": "Detected a multi-currency tuition affordability question with an explicit emergency-savings constraint."},
+                            {"step": "FX", "status": "completed", "detail": "Converted every explicitly stated wallet currency into SGD using deterministic reference rates."},
+                            {"step": "CALCULATE", "status": "completed", "detail": f"Compared SGD {usable_sgd:,.2f} usable funds against SGD {tuition_sgd:,.2f} tuition while protecting the stated reserve."},
+                            {"step": "SECURITY", "status": "completed", "detail": "Used only message-supplied balances and constraints; no proposal or transaction was created."},
+                        ],
+                        {
+                            "goal": "financial_plan",
+                            "affordability": {
+                                "wallet_total_sgd": float(total_sgd),
+                                "reserve_sgd": float(reserve_sgd),
+                                "usable_sgd": float(usable_sgd),
+                                "tuition_sgd": float(tuition_sgd),
+                                "shortfall_sgd": float(shortfall_sgd),
+                                "remaining_sgd": float(remaining_sgd),
+                            },
+                            "state_changed": False,
+                        },
+                    )
+                except (ValueError, HTTPError, URLError, TimeoutError, OSError) as exc:
+                    return self._result(
+                        "agentic_local",
+                        f"I can parse the scenario, but I cannot safely value one of the stated currencies right now ({type(exc).__name__}). No transaction was created.",
+                        [
+                            {"step": "UNDERSTAND", "status": "completed", "detail": "Detected a multi-currency affordability scenario."},
+                            {"step": "FX", "status": "blocked", "detail": f"Reference FX was unavailable: {type(exc).__name__}."},
+                            {"step": "SECURITY", "status": "completed", "detail": "No proposal or transaction was created."},
+                        ],
+                        {"goal": "financial_plan", "state_changed": False, "blocked_reason": "reference_fx_unavailable"},
+                    )
+
         # Goal-driven planning: reason across multiple financial goals in one request.
         # This is the main offline "agentic" path: it turns a situation into prioritized,
         # constraint-aware actions while leaving execution behind authorization controls.

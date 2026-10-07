@@ -1597,6 +1597,38 @@ def test_local_agent_does_not_prepare_transfer_for_affordability_question():
     assert "not recommend" in r["answer"].lower() or "cannot" in r["answer"].lower() or "shortfall" in r["answer"].lower()
 
 
+
+def test_local_agent_simulates_hypothetical_incoming_income_without_state_change():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"SGD": 5000},
+        "monthly_income_amount": 0,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 0,
+        "emergency_reserve_currency": "SGD",
+        "tuition_amount": 9000,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 30,
+        "accommodation_amount": 0,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Living": 0},
+        "spending_classifications": {"Living": "Core"},
+    })
+    before = e.get_balance()
+    r = e.agent("What if I receive another 2000 SGD next month?")
+    assert r["data"]["hypothetical_income"] is True
+    assert r["data"]["state_changed"] is False
+    assert r["data"]["simulation"]["projected_added_sgd"] == 2000.0
+    assert r["data"]["simulation"]["projected_balance_after_hypothetical_income_sgd"] == -2000.0
+    assert e.get_balance() == before
+    assert "hypothetical simulation" in r["answer"].lower()
+
 def test_local_agent_keeps_uncertain_parent_money_conditional():
     e = FinanceEngine()
     r = e.agent("My parents might send me SGD 3000 next month. Can I assume that money will be available for my tuition?")

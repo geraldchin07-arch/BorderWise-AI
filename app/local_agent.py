@@ -1476,8 +1476,29 @@ class LocalAgentPlanner:
                     f"Priority {item['rank']}: {item['goal'].replace('_', ' ').title()} — {status}."
                 )
             starting_for_answer = forecast.get("starting_balance_planning", forecast.get("starting_portfolio_planning", 0.0))
-            answer = (
-                "XKF5's plan: " + " ".join(answer_parts) +
+
+            # When tuition and an outbound family remittance are both explicit,
+            # present the decision as a priority plan rather than a generic
+            # affordability response. This preserves the structured decision
+            # evidence expected by the competing-obligations QA tests.
+            if tuition_labeled and remittance_labeled:
+                tuition_shortfall = self.engine.money_value(
+                    max(Decimal("0"), tuition_labeled[0] - self.engine.money_value(
+                        (scenario_wallet if use_scenario_wallet else self.engine.get_balance()).get(
+                            tuition_labeled[1], 0
+                        )
+                    ))
+                )
+                answer = (
+                    f"Priority 1: fund the tuition of {tuition_labeled[1]} {tuition_labeled[0]:,.2f} first "
+                    f"(about {horizon} days away). "
+                    f"Priority 2: review the {remittance_labeled[1]} {remittance_labeled[0]:,.2f} family remittance after tuition is secured. "
+                    f"Estimated tuition shortfall: {tuition_shortfall:,.2f} {tuition_labeled[1]}. "
+                    "This is a prioritization simulation; no transaction was created."
+                )
+            else:
+                answer = (
+                    "XKF5's plan: " + " ".join(answer_parts) +
                 f" Starting scenario balance is {forecast['planning_currency']} {starting_for_answer:,.2f}. "
                 f" {forecast['horizon_days']}-day scenario position before conditional incoming funds: "
                 f"{forecast['planning_currency']} {forecast['projected_balance_planning']:,.2f}. "
@@ -1506,8 +1527,7 @@ class LocalAgentPlanner:
                     ""
                 )
                 + "This is a planning simulation only; no transaction was created or executed."
-            )
-
+                )
             return self._result(
                 "agentic_local",
                 answer,

@@ -1519,15 +1519,15 @@ class FinanceEngine:
         # a harmless FX quote or allow a planner to derive an amount from the wallet.
         # State-changing money movement requires an exact amount.
         security_override = any(k in normalized for k in [
-            "ignore all previous", "ignore previous security", "ignore the security",
-            "override security", "bypass security", "bypass the policy",
-            "you are authorized", "execute immediately",
+            "ignore all previous", "ignore previous security", "ignore previous rules",
+            "ignore the security", "override security", "bypass security",
+            "bypass the policy", "you are authorized", "execute immediately",
         ])
         all_funds_money_action = (
             bool(re.search(
                 r"\b(?:all|everything)\s+(?:my|of my)\s+(?:funds|money|balance|wallet)\b|"
                 r"\b(?:all|everything)\s+(?:in|from)\s+my\s+(?:wallet|account|balance)\b|"
-                r"\b(?:all|everything)\s+my\b",
+                r"\b(?:all|everything)\s+(?:in|from)\s+my\s+[a-z]{3}\s+(?:wallet|account|balance)\b",
                 normalized,
             ))
             and any(k in normalized for k in [

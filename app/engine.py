@@ -1632,6 +1632,70 @@ class FinanceEngine:
                 },
             )
 
+        # Deterministic tuition + emergency-reserve affordability gate.
+        # This must run before any action/transfer planner because wording such as
+        # "I need to pay tuition" describes an obligation, not an instruction to
+        # execute a transfer. If the user asks whether they are okay while naming
+        # an explicit reserve target, answer the planning question directly.
+        tuition_reserve_question = (
+            "tuition" in normalized
+            and "emergency reserve" in normalized
+            and any(k in normalized for k in [
+                "am i okay", "am i ok", "will i be okay", "will i be ok",
+                "can i afford", "is it affordable", "do i have enough",
+                "can i cover", "can i manage",
+            ])
+        )
+        if tuition_reserve_question:
+            sgd_values = [
+                money(m.replace(",", ""))
+                for m in re.findall(
+                    r"(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)",
+                    normalized,
+                    re.IGNORECASE,
+                )
+            ]
+            if len(sgd_values) >= 3:
+                # In this phrasing the first amount is the wallet, the second is
+                # tuition, and the third is the requested emergency reserve.
+                starting_balance, tuition_amount, reserve_target = sgd_values[:3]
+                remaining = money(starting_balance - tuition_amount)
+                reserve_gap = money(max(Decimal("0"), reserve_target - remaining))
+                reserve_met = reserve_gap == 0
+                if reserve_met:
+                    answer = (
+                        f"Yes. You can cover the SGD {tuition_amount:,.2f} tuition and "
+                        f"still have SGD {remaining:,.2f} left, meeting your SGD {reserve_target:,.2f} emergency-reserve target."
+                    )
+                else:
+                    answer = (
+                        f"Not fully. You can cover the SGD {tuition_amount:,.2f} tuition, "
+                        f"but you would have SGD {remaining:,.2f} left, which is "
+                        f"SGD {reserve_gap:,.2f} below your SGD {reserve_target:,.2f} emergency-reserve target."
+                    )
+                return self._result(
+                    "agentic_local",
+                    answer + " This is an affordability simulation only; no transaction was created or executed.",
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Detected a tuition affordability question with an explicit emergency-reserve target."},
+                        {"step": "CALCULATE", "status": "completed", "detail": f"Compared SGD {remaining:,.2f} remaining after tuition against the SGD {reserve_target:,.2f} reserve target."},
+                        {"step": "SECURITY", "status": "completed", "detail": "No transfer, proposal, authorization or account-state change was performed."},
+                    ],
+                    {
+                        "goal": "financial_plan",
+                        "affordability": {
+                            "starting_balance_sgd": float(starting_balance),
+                            "tuition_sgd": float(tuition_amount),
+                            "remaining_sgd": float(remaining),
+                            "reserve_target_sgd": float(reserve_target),
+                            "reserve_gap_sgd": float(reserve_gap),
+                            "reserve_met": reserve_met,
+                        },
+                        "state_changed": False,
+                        "agent_mode": "deterministic_tuition_reserve_gate",
+                    },
+                )
+
         # v5: optional LLM tool-calling planner. The deterministic engine remains the
         # fallback and the authority for calculations, policy and execution.
         try:

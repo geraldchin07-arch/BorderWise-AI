@@ -1,175 +1,405 @@
+# BorderWise AI
+### Agentic Cross-Border Student Finance Assistant
+BorderWise AI is a competition-ready prototype for cross-border student finance.
+Instead of acting like a chatbot that simply reads information and gives advice, BorderWise separates:
+**Understand → Observe → Reason → Recommend → Protect → Authorize → Execute → Verify → Audit**
+The system combines natural-language interaction with deterministic financial calculations, explicit risk controls, multi-currency valuation, and sandbox-only transaction execution.
+> **Important:** BorderWise is a simulated finance environment. It does not connect to a real bank and does not move real money.
+---
+## Why BorderWise?
+Cross-border students often manage:
+- Multiple currencies
+- Tuition and accommodation obligations
+- Scholarships and loans
+- Monthly spending
+- Emergency reserves
+- Exchange-rate uncertainty
+- International transfer decisions
+A normal chatbot can explain these problems, but explanation alone is not enough.
+BorderWise is designed as an **agentic financial assistant** that connects natural-language requests to trusted financial tools and policy checks while keeping money movement outside the language model.
+### Chatbot vs BorderWise
+| Typical chatbot | BorderWise AI |
+|---|---|
+| Analyze → Advice | Understand → Observe → Reason → Recommend |
+| Mostly conversational | Tool-assisted financial workflow |
+| Model produces calculations | Deterministic financial engine performs calculations |
+| Advice may be ambiguous | Policy and risk checks are explicit |
+| Model may appear action-oriented | Model never directly moves money |
+| No transaction boundary | Proposal → authorization → sandbox execution |
+| Limited traceability | Verification + audit trail |
+---
+# Core Features
+## 1. Currency-first financial profile
+BorderWise does not assume that MYR and SGD are the only relevant currencies.
+Users can configure:
+- A primary planning/reporting currency
+- One or more wallet balances
+- Monthly income
+- Emergency reserve
+- Tuition
+- Scholarships
+- Loans
+- Accommodation
+- Other obligations
+- Monthly spending categories
+Financial inputs can be entered in their relevant currencies and normalized internally for calculation.
+---
+## 2. Multi-currency wallet
+The wallet supports multiple user-configured currencies.
+Examples include:
+- MYR
+- SGD
+- USD
+- CNY
+- THB
+- Other 3-letter ISO-style currency codes
+Each additional currency can use either:
+- Automatic reference FX
+- User-entered custom FX
+Wallet valuation uses **SGD as the internal normalization base** for portfolio comparison.
 
-## v7.3.0 — Currency-first profile
+### Example
 
-BorderWise now starts with currency setup rather than assuming MYR + SGD. The user chooses a primary planning/reporting currency and can enter any number of currency balances with automatic reference FX or a user-entered quoted rate. Income, reserve, tuition, accommodation and monthly spending can be entered in the relevant selected currency; trusted arithmetic is normalized internally and displayed back in the planning currency. Any-currency conversion remains user-directed (for example CNY → MYR, USD → SGD, or MYR → SGD). The sandbox transaction module still requires explicit Level-2 authorization and does not grant the planner unrestricted execution authority.
+| Currency | Balance | FX Rate → SGD | Indicative Value |
+|---|---:|---:|---:|
+| CNY | 10,000 | 0.18 | SGD 1,800 |
+| USD | 500 | 1.28 | SGD 640 |
+| MYR | 5,000 | 0.305 | SGD 1,525 |
+| SGD | 500 | 1.00 | SGD 500 |
+| **Total** | | | **SGD 4,465** |
 
-## v5.5 update
-- Natural-language authorization now matches an existing pending proposal by exact MYR amount.
-- Explicit authorization triggers sandbox execution, verification, and audit; it never bypasses policy.
-- Ambiguous authorization without a matching proposal is blocked.
-# BorderWise AI v5.1 — Agentic Cross-Border Student Finance
+> User-entered FX rates are scenario inputs and are not guaranteed bank settlement quotes.
 
-A competition-ready prototype for Topic C: Cross-border & Student Finance Assistant.
 
-## What changed from the first prototype
-
-This version is a genuine multi-intent financial agent prototype rather than a single tuition workflow.
-
-It supports:
-
-- Balance analysis
-- Transaction history
-- Spending analysis
-- 30-day cash-flow forecasting
-- Tuition/obligation affordability
-- MYR/SGD FX analysis
-- Natural-language transfer preparation
-- Risk and reserve enforcement
-- Level-2 authorization
-- Sandbox execution
-- Post-execution verification
-- Audit trail
-- One-click judge-demo reset
-- Python 3.14 compatibility
-- Optional LLM integration point can be added without moving financial calculations into the model
-
-## Security principle
-
+## 3. Automatic FX
+BorderWise can obtain reference FX data automatically.
+The system records:
+- Rate
+- Source
+- Rate date
+- Live/fallback state
+Automatic reference data is used for indicative calculations rather than guaranteed remittance settlement.
+When the external FX source is unavailable, the engine can fall back to a previously cached reference rate when one exists.
+## 4. Custom FX scenarios
+Users can override automatic FX with their own quoted rate.
+Example:
+USD 500
+Custom USD/SGD rate = 1.30
+500 × 1.30 = SGD 650
+This allows users to model:
+- Bank quotes
+- Remittance quotes
+- Scenario assumptions
+- Manual planning rates
+5. Any-currency conversion
+The conversion studio supports arbitrary 3-letter currency pairs.
+Examples:
+CNY → SGD
+USD → SGD
+MYR → SGD
+CNY → MYR
+Conversion can use either:
+- Automatic reference quotation
+- User-provided custom rate
+A conversion quote is informational and does not create or execute a transaction.
+6. Cash-flow and affordability analysis
+BorderWise can analyze:
+- Current balances
+- Spending
+- Tuition obligations
+- Scholarships
+- Loans
+- Accommodation
+- Other monthly obligations
+- 30-day cash-flow projections
+- Tuition affordability
+- Potential shortfalls
+The financial engine performs the arithmetic deterministically rather than relying on the language model to calculate financial values.
+7. Spending and financial-health analysis
+Monthly spending categories can be classified as:
+- Core
+- Adjustable
+This supports a transparent financial-health analysis and helps distinguish essential costs from areas where spending may be reduced.
+The financial-health indicator is explicitly not a credit score.
+8. Agentic natural-language interaction
+Users can ask questions such as:
+Can I afford my tuition?
+How much money do I have?
+What are my biggest expenses?
+Will I run out of SGD?
+What is the current MYR to SGD rate?
+Prepare a RM5,000 transfer to Singapore.
+I just received RM10,000 from my family. I have tuition coming up.
+Should I convert some of it to SGD?
+With OPENAI_API_KEY configured, BorderWise can use an LLM planner with tool calling.
+Without an API key, the system still provides a deterministic offline/local agent planner for supported multi-step finance requests.
+In both modes, the financial tools remain authoritative.
+Safety Architecture
+The core security principle is:
 The language model must never directly move money.
-
-The safe architecture is:
-
-User → agent planning → deterministic financial tools → policy engine → proposal → explicit authorization → sandbox execution → verification → audit.
-
-Financial arithmetic and policy checks live in `app/engine.py`, not in the language model.
-
-## Run on Windows / Python 3.14
-
-```bat
+The architecture is:
+User
+  │
+  ▼
+Agent / Planner
+  │
+  ▼
+Deterministic Financial Tools
+  │
+  ├── Balances
+  ├── Spending
+  ├── Forecast
+  ├── FX
+  └── Conversion
+  │
+  ▼
+Policy / Risk Engine
+  │
+  ▼
+Transaction Proposal
+  │
+  ▼
+Explicit Level-2 Authorization
+  │
+  ▼
+Sandbox Execution
+  │
+  ▼
+Verification
+  │
+  ▼
+Audit Trail
+Financial arithmetic and policy checks live in the application engine rather than inside the language model. GitHub
+Permission Model
+Level   Capability  Authorization
+Level 0 Read balances, transactions, forecasts  None
+Level 1 Prepare a transaction proposal  None
+Level 2 Execute a transaction   Explicit user approval
+A model-generated recommendation is therefore not equivalent to an executed financial action.
+Security Guardrails
+BorderWise implements multiple safeguards:
+1. Financial calculations are deterministic.
+2. The model cannot directly mutate balances.
+3. Transactions pass through risk checks before execution.
+4. Emergency reserves are protected.
+5. High-value actions can be flagged for review.
+6. A proposal cannot execute without explicit authorization.
+7. Rejected proposals do not change balances.
+8. Proposals, authorizations, blocks, executions and related events are auditable.
+9. Sandbox mode is clearly separated from real banking.
+10. The demo can be reset for reproducible testing.
+Example blocked scenarios include:
+Transfer without authorization
+Transfer exceeding emergency-reserve policy
+Negative or zero transfer amount
+Repeated execution of an already executed proposal
+Request to transfer everything
+Rejected transaction proposal
+See:
+[`SECURITY_SELF_ASSESSMENT.md`](SECURITY_SELF_ASSESSMENT.md)
+for the detailed security self-assessment. GitHub
+Architecture
+The main application is a FastAPI service backed by a deterministic FinanceEngine.
+Application layers
+Frontend
+  │
+  ▼
+FastAPI API
+  │
+  ▼
+FinanceEngine
+  │
+  ├── Profile & Wallet
+  ├── FX & Conversion
+  ├── Forecasting
+  ├── Spending Analysis
+  ├── Health Analysis
+  ├── Agent Planner
+  ├── Risk Policy
+  ├── Proposal Handling
+  └── Audit
+Important API endpoints
+Endpoint    Purpose
+GET /   Web interface
+GET /api/health Service health/version
+GET /api/state  Current application state
+POST /api/chat  Natural-language agent interaction
+POST /api/profile   Create/update financial profile
+POST /api/proposals Prepare a transfer proposal
+POST /api/authorize Explicit authorization
+POST /api/execute   Sandbox execution
+POST /api/reset Reset demo state
+GET /api/audit  Audit events
+GET /api/fx/quote   FX quotation
+POST /api/fx/convert    Currency conversion
+POST /api/fx/refresh    Refresh FX data
+POST /api/fx/refresh-all    Refresh automatic FX pairs
+GET /api/capabilities   Supported capabilities
+Technology Stack
+- Python 3.14+
+- FastAPI
+- Uvicorn
+- Pydantic
+- Python dotenv
+- OpenAI API (optional)
+- Pytest
+Dependencies are pinned in:
+requirements.txt
+The FastAPI application currently exposes a v7.3.0 currency-first service. GitHub
+Getting Started
+1. Clone the repository
+git clone https://github.com/geraldchin07-arch/BorderWise-AI.git
+cd BorderWise-AI
+2. Create a virtual environment
+macOS / Linux
+python3 -m venv .venv
+source .venv/bin/activate
+Windows
 python -m venv .venv
 .venv\Scripts\activate
+3. Install dependencies
 pip install -r requirements.txt
+4. Optional: configure the LLM
+Create a .env file:
+OPENAI_API_KEY=your_api_key_here
+The OpenAI integration is optional. Without the key, the offline/local planner remains available for supported workflows.
+5. Start the application
 uvicorn app.main:app --reload
-```
-
 Open:
-
 http://127.0.0.1:8000
-
-## Demo
-
-1. Click `Reset judge demo`.
-2. Ask: `Can I afford my tuition?`
+Testing
+Run the complete test suite:
+python -m pytest -q
+The repository includes coverage for:
+- Profile creation
+- Planning currencies
+- Multi-currency balances
+- Currency conversion
+- Same-currency conversion
+- Custom FX
+- Automatic FX
+- FX fallback behavior
+- Wallet valuation
+- Forecasting
+- Tuition affordability
+- Spending analysis
+- Financial health
+- Agent behavior
+- Transaction authorization
+- Risk controls
+- Sandbox execution
+- Audit behavior
+The QA branch used for this documentation work was validated with:
+41 passed
+Demo
+For a reproducible judge/demo flow:
+1. Click Reset judge demo.
+2. Ask:Can I afford my tuition?
 3. Review the agent trace.
-4. Review the recommended conversion.
-5. Authorize the Level-2 proposal.
-6. Observe sandbox execution.
-7. Observe verification and audit.
-8. Then test:
-   - `How much money do I have?`
-   - `What are my biggest expenses?`
-   - `Will I run out of SGD?`
-   - `What is the MYR SGD exchange rate?`
-   - `Prepare a RM5,000 transfer to Singapore.`
-   - `What are my recent transactions?`
-
-## Tests
-
-```bat
-pytest -q
-```
-
-## Competition positioning
-
-Normal chatbot:
-Analyze → Advice
-
-BorderWise:
-Understand → Observe → Reason → Recommend → Protect → Authorize → Execute → Verify → Audit
-
-The demo uses simulated accounts only. No real money is moved.
-
-## Submission evidence to prepare
-
+4. Review the affordability result and recommendation.
+5. Review the Level-2 transaction proposal.
+6. Explicitly authorize the proposal.
+7. Observe sandbox execution.
+8. Observe verification.
+9. Inspect the audit trail.
+Additional demo prompts:
+How much money do I have?
+What are my biggest expenses?
+Will I run out of SGD?
+What is the current MYR to SGD exchange rate?
+Prepare a RM5,000 transfer to Singapore.
+Show my recent transactions.
+A security demonstration can use:
+Prepare a RM26,000 transfer.
+which should be blocked by the emergency-reserve policy in the standard demo scenario. GitHub
+See:
+[`DEMO_SCRIPT.md`](DEMO_SCRIPT.md)
+for the exact demonstration sequence.
+Project Structure
+BorderWise-AI/
+├── app/
+│   ├── engine.py
+│   └── main.py
+├── static/
+│   └── ...
+├── tests/
+│   └── test_engine.py
+├── .github/
+│   └── workflows/
+├── DEMO_SCRIPT.md
+├── SECURITY_SELF_ASSESSMENT.md
+├── PRESENTATION_OUTLINE.md
+├── requirements.txt
+└── README.md
+QA Highlights
+The QA suite specifically verifies important multi-currency scenarios such as:
+CNY → SGD
+CNY 10,000 × 0.18 = SGD 1,800
+USD → SGD
+USD 500 × 1.28 = SGD 640
+Four-currency wallet valuation
+CNY 10,000 → SGD 1,800
+USD    500 → SGD   640
+MYR  5,000 → SGD 1,525
+SGD    500 → SGD   500
+-------------------------
+Total       = SGD 4,465
+Additional QA coverage verifies:
+- Same-currency conversion
+- Automatic FX failure and cached-rate fallback
+- Custom FX override
+- USD planning currency
+- CNY planning currency
+- Multi-currency wallet valuation
+Current Behavioral Note
+The multi-currency wallet can display an indicative combined valuation across currencies.
+For forecasting, the current engine uses the balance held in the selected planning currency as the starting planning balance. A non-planning-currency holding should therefore be interpreted as available portfolio value rather than assumed converted liquidity unless the user actually performs or models the conversion.
+This distinction is intentional in the current prototype and should be considered during financial planning demos.
+Limitations
+BorderWise is a prototype and should not be treated as a production banking system.
+A production deployment would require, at minimum:
+- Bank-grade authentication
+- Secure secrets management
+- KYC / AML controls
+- Transaction signing
+- Stronger rate limiting
+- Immutable external audit storage
+- Production-grade real-time FX data
+- Model monitoring
+- Human escalation
+- Formal security review
+- Real bank integration and settlement controls
+Reference FX values are indicative and are not guaranteed execution or remittance quotes. GitHub
+Competition Positioning
+BorderWise is designed around a clear separation of concerns:
+LLM
+= understand, plan, reason, explain
+Deterministic engine
+= calculate, validate, forecast, convert
+Policy engine
+= protect, block, approve
+Transaction layer
+= execute only after explicit authorization
+Audit layer
+= record what happened
+The result is an agentic finance assistant that is useful without giving the language model unrestricted financial authority.
+Evidence for Evaluation
+Recommended evaluation evidence includes:
 - Architecture diagram
+- Multi-currency calculations
+- Successful sandbox execution
+- Blocked high-risk transaction
+- Explicit authorization flow
+- Verification output
+- Audit trail
+- Automated test results
+- Demo recording
 - Security self-assessment
-- Test cases including blocked high-risk transfers
-- Sandbox execution logs
-- 5–10 minute presentation
-- Short demo video
-- Source code + README
-
-## v5 dynamic FX
-
-BorderWise now refreshes the MYR/SGD reference rate from the Frankfurter API. The engine caches a successful quote for 15 minutes, shows the provider/source and rate date, and falls back to the last known/demo rate if the network is unavailable. Transfer proposals and tuition-affordability calculations use the refreshed rate rather than a hard-coded FX value.
-
-The displayed rate is a reference/mid-market rate, not a guaranteed bank/remittance execution quote. Frankfurter documents the public v2 rate endpoint and notes that latest rates are published on a daily/working-day basis rather than being a tick-by-tick market feed.
-
-
-## v5 agentic architecture
-With `OPENAI_API_KEY` configured, BorderWise uses the OpenAI Responses API with custom function tools. The LLM chooses read/analysis tools, receives deterministic results, and synthesizes the response. The LLM is never given a direct execution tool; sandbox execution remains behind explicit Level-2 authorization. Without an API key, the deterministic engine remains available as a safe offline fallback.
-
-
-## Offline agent mode (v5.1)
-If no OPENAI_API_KEY is configured, BorderWise uses an offline local agent planner for multi-step student-finance requests. It can chain trusted tools for balances, obligations, 30-day forecasts, dynamic FX, conversion calculations and risk checks. The planner never receives direct execution authority.
-
-Try: `I just received RM10,000 from my family. I have tuition coming up. Should I convert some of it to SGD?`
-
-
-## v6.5 updates
-
-Users can classify each monthly spending category as Core or Adjustable. The financial-health indicator is deterministic, transparent, and explicitly not a credit score.
-
-
-## v7 multi-currency management
-BorderWise supports a user-configured multi-currency wallet. MYR can use a live reference rate or a user-entered scenario rate. Additional currencies (for example USD, CNY, THB, or another 3-letter ISO-style code) can be entered with a rate normalized as 1 unit = S$X. Cross-currency conversions use SGD as the normalization currency, and wallet valuation displays the source/date of each rate. User-entered rates are scenario inputs, not guaranteed bank settlement quotes.
-
-
-## v7.1.2.1
-
-The dashboard state request is timeout-protected and FX refresh is deferred until after the UI renders, so a slow external FX service cannot leave the dashboard stuck on Loading.
-
-## Automatic multi-currency FX
-Additional currencies can use automatic reference FX. BorderWise fetches rates with SGD as the base, normalizes them as 1 unit = S$X, shows source/date metadata, and refreshes them as needed. Users can override a currency with a custom quoted rate for a scenario. Reference data is indicative and not a guaranteed settlement quote.
-
-
-## v7.2 multi-currency conversion
-
-The dashboard includes a currency conversion studio that lets the user choose any 3-letter currency pair (for example CNY → MYR, USD → SGD, or MYR → SGD). Auto mode fetches the current reference pair directly from Frankfurter; custom mode accepts a user-provided quoted rate. This quote/calculation does not create or execute a transaction. The wallet still uses SGD only as a common valuation base for portfolio comparison.
-
-
----
-
-# Team Branch Roles
-
-BorderWise AI is developed by a 5-person team. Each branch has a clear ownership area so work can happen in parallel with minimal conflicts.
-
-| Branch | Owner | Responsibility |
-|---|---|---|
-| `main` | Team | Stable, review-approved integration branch. Do not develop directly here. |
-| `agent` | AI Agent Lead | AI reasoning, natural-language understanding, recommendations, agent orchestration, and integration. |
-| `backend` | Backend Lead | Financial engine, multi-currency calculations, FX, forecasting, tuition/funding logic, and backend tests. |
-| `frontend` | Frontend Lead | Student onboarding, dashboard, multi-currency UI, visualizations, loading/error states, and user experience. |
-| `security` | Security Lead | Authorization, policy enforcement, anti-replay, prompt-injection resistance, transaction safety, and red-team testing. |
-| `docs-qa` | QA & Submission Lead | Regression testing, CI, README/documentation, architecture evidence, demo materials, and submission readiness. |
-
-## Git Workflow
-
-- Work only on your assigned branch.
-- Pull the latest `main` before starting major work.
-- Do not push directly to `main`.
-- Push your branch when your work is ready.
-- Open a Pull Request into `main` for review.
-- Keep changes focused on your branch's responsibility.
-
-## Shared Architecture
-
-The product follows this high-level flow:
-
-`User → AI reasoning → deterministic financial engine → policy/security checks → proposal → explicit authorization → sandbox execution → verification → audit`
-
-The AI layer must not bypass deterministic financial calculations or security controls.
-
-## Collaboration Rule
-
-Before changing a file primarily owned by another branch, coordinate with that branch owner first to reduce merge conflicts.
+See:
+- [`DEMO_SCRIPT.md`](DEMO_SCRIPT.md)
+- [`SECURITY_SELF_ASSESSMENT.md`](SECURITY_SELF_ASSESSMENT.md)
+- [`PRESENTATION_OUTLINE.md`](PRESENTATION_OUTLINE.md)
+Disclaimer
+BorderWise AI is a competition/demo prototype using simulated financial accounts.
+It is not a banking product, financial institution, remittance service, investment adviser, or source of guaranteed FX settlement rates.
+No real money is moved by the sandbox transaction flow.

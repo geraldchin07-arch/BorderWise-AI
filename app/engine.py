@@ -2187,7 +2187,12 @@ class FinanceEngine:
         # Typo-tolerant FX fast path: simple exchange-rate questions should never depend
         # on the LLM understanding every word perfectly. Repair small typos, resolve the pair
         # deterministically, and return a safe reference quote before invoking any planner.
-        if self.detect_intent(text) == "fx":
+        fx_action_request = any(k in normalized for k in [
+            "transfer", "send money", "remit", "remittance", "prepare a transfer",
+            "make a transfer", "create a transfer", "set up a transfer",
+        ])
+        fx_all_funds_request = bool(re.search(r"\b(?:all|everything)\b", normalized))
+        if self.detect_intent(text) == "fx" and not (fx_action_request or fx_all_funds_request):
             try:
                 repaired = self.repair_user_text(text)
                 pair = self.extract_conversion_pair(repaired)

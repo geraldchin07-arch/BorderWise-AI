@@ -86,7 +86,7 @@ def test_redteam_authorization_requires_matching_pending_proposal():
     e = FinanceEngine()
     r = e.agent("I authorize the RM5000 conversion.")
 
-    assert r["data"]["blocked_reason"] == "no_matching_pending_proposal"
+    assert r["data"]["blocked_reason"] == "no_unambiguous_pending_proposal"
     assert e.state["proposals"] == {}
     assert "transaction" not in r["data"]
 

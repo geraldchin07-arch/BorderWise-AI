@@ -263,3 +263,15 @@ def test_redteam_typo_does_not_turn_ambiguous_amount_into_a_transfer():
 
     assert r["data"]["blocked_reason"] == "implicit_transaction_amount"
     assert e.state["proposals"] == {}
+
+
+def test_redteam_future_family_support_is_not_fx_conversion():
+    e = FinanceEngine()
+    r = e.agent(
+        "What if my family sends RM10000 next month and I have tuition coming up? Should I convert some of it to SGD?"
+    )
+
+    assert r["data"]["conditional_income"] is True
+    assert r["data"]["state_changed"] is False
+    assert "conversion" not in r["data"]
+    assert e.state["proposals"] == {}

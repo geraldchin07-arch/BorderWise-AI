@@ -1613,16 +1613,16 @@ class FinanceEngine:
         )
         if hypothetical_income_question:
             income_match = re.search(
-                r"(?:receive|get|incoming)\s+(?:another\s+)?(?:(?P<currency1>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)\s*)?(?P<amount1>[0-9][0-9,]*(?:\.[0-9]+)?)(?P<suffix1>[km]?)"
-                r"|(?:receive|get|incoming)\s+(?:another\s+)?(?P<amount2>[0-9][0-9,]*(?:\.[0-9]+)?)(?P<suffix2>[km]?)\s*(?P<currency2>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)",
+                r"(?:receive|get|incoming)\s+(?:another\s+)?(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?)(?P<suffix>[km]?)\s*(?P<currency>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)"
+                r"|(?:receive|get|incoming)\s+(?:another\s+)?(?P<currency_prefix>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)\s*(?P<amount_prefix>[0-9][0-9,]*(?:\.[0-9]+)?)(?P<suffix_prefix>[km]?)",
                 normalized,
                 re.IGNORECASE,
             )
             if income_match:
                 groups = income_match.groupdict()
-                amount_text = groups["amount1"] or groups["amount2"]
-                suffix = groups["suffix1"] or groups["suffix2"] or ""
-                currency_text = groups["currency1"] or groups["currency2"]
+                amount_text = groups["amount"] or groups["amount_prefix"]
+                suffix = groups["suffix"] or groups["suffix_prefix"] or ""
+                currency_text = groups["currency"] or groups["currency_prefix"]
                 multiplier = (
                     Decimal("1000") if suffix.lower() == "k"
                     else Decimal("1000000") if suffix.lower() == "m"

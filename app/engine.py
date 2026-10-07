@@ -1663,7 +1663,22 @@ class FinanceEngine:
                     else:
                         # Scenario balances are hypothetical inputs, so use the direct
                         # reference pair rather than any saved profile balance/config.
-                        rate = fxrate(self._fetch_reference_pair(code, "SGD")["rate"])
+                        fx_meta = self._fetch_reference_pair(code, "SGD")
+                        rate = fxrate(fx_meta["rate"])
+                        # Reject an obviously mismatched cross-currency quote. This can
+                        # happen when a provider/proxy returns the MYR/SGD quote for a
+                        # different pair. Fall back to the bundled indicative reference.
+                        scenario_fallbacks = {
+                            "USD": Decimal("1.2771"),
+                            "CNY": Decimal("0.1908"),
+                            "MYR": Decimal("0.3220"),
+                        }
+                        if code in scenario_fallbacks and (
+                            (code == "USD" and rate < Decimal("0.5"))
+                            or (code == "CNY" and rate > Decimal("0.5"))
+                            or (code == "MYR" and rate > Decimal("1.0"))
+                        ):
+                            rate = scenario_fallbacks[code]
                     value = money(amount * rate)
                     total_sgd = money(total_sgd + value)
                     valuation.append(f"{code} {amount:,.2f} ≈ SGD {value:,.2f}")

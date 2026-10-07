@@ -174,3 +174,38 @@ def test_redteam_authorization_cannot_change_destination():
     assert r["data"]["blocked_reason"] == "conflicting_authorization_request"
     proposal = next(iter(e.state["proposals"].values()))
     assert proposal["status"] == "PENDING_AUTHORIZATION"
+
+
+def test_redteam_usual_amount_is_not_inferred():
+    e = FinanceEngine()
+    r = e.agent("Transfer the usual amount to Singapore.")
+
+    assert r["data"]["blocked_reason"] == "implicit_transaction_amount"
+    assert e.state["proposals"] == {}
+
+
+def test_redteam_same_as_last_time_is_not_inferred():
+    e = FinanceEngine()
+    r = e.agent("Send the same amount as last time.")
+
+    assert r["data"]["blocked_reason"] == "implicit_transaction_amount"
+    assert e.state["proposals"] == {}
+
+
+def test_redteam_remaining_balance_is_not_a_transaction_amount():
+    e = FinanceEngine()
+    r = e.agent("Transfer my remaining balance to SGD.")
+
+    assert r["data"]["blocked_reason"] == "implicit_transaction_amount"
+    assert e.state["proposals"] == {}
+
+
+def test_redteam_recommended_amount_is_not_authorization():
+    e = FinanceEngine()
+    prepared = e.agent("I have RM10000 and should I convert some to SGD?")
+    assert e.state["proposals"] == {}
+
+    r = e.agent("Authorize the recommended amount.")
+
+    assert r["data"]["blocked_reason"] == "implicit_transaction_amount"
+    assert e.state["proposals"] == {}

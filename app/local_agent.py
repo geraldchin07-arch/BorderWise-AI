@@ -510,11 +510,17 @@ class LocalAgentPlanner:
         # A conditional family-income question must stay advisory and must not be
         # swallowed by the generic multi-goal planner before its dedicated handler.
         conditional_income_question = (
-            any(k in t for k in [
-                "can i assume", "assume that money", "assume the money", "count that money",
-                "treat that money", "can i count it", "can i count that",
-            ])
-            and any(k in t for k in ["might", "may", "could", "possibly", "maybe"])
+            (
+                any(k in t for k in [
+                    "can i assume", "assume that money", "assume the money", "count that money",
+                    "treat that money", "can i count it", "can i count that",
+                ])
+                or (
+                    "what if" in t
+                    and any(k in t for k in ["next month", "next week", "in two weeks", "later", "in a month"])
+                )
+            )
+            and any(k in t for k in ["might", "may", "could", "possibly", "maybe", "will", "sends", "send me"])
             and any(k in t for k in ["parent", "parents", "family"])
         )
         scenario_context_available = bool(

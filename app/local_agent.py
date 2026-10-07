@@ -780,6 +780,12 @@ class LocalAgentPlanner:
                 "prioritize", "priority", "first", "before", "what should i do",
                 "should i", "safest plan", "what is the safest", "safest option",
             ])
+            and not any(k in t for k in [
+                "parents can send", "parents will send", "parents may send",
+                "parents might send", "parents could send", "family can send",
+                "family will send", "family may send", "family could send",
+                "incoming",
+            ])
         )
         incoming_support_mentioned = any(k in t for k in [
             "parents can send", "parents will send", "family can send",
@@ -791,6 +797,20 @@ class LocalAgentPlanner:
             remittance_labeled = self._extract_labeled_amount(
                 t, ["send", "sending", "remit", "remittance", "send to my family", "send home"]
             )
+            # Fallback for compact forms such as "send SGD 1,000 home" where
+            # the generic labeled extractor may not associate the currency with
+            # the outbound amount.
+            if remittance_labeled is None:
+                match = re.search(
+                    r"\b(?:send|sending|remit|remittance|transfer)\s+(SGD|MYR|USD|CNY|JPY|KRW|THB|EUR|GBP|AUD|CAD|HKD|TWD|INR)\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)",
+                    t,
+                    re.I,
+                )
+                if match:
+                    remittance_labeled = (
+                        self.engine.money_value(match.group(2).replace(",", "")),
+                        match.group(1).upper(),
+                    )
             tuition_days = self._extract_horizon_days(t)
             if competing_question and tuition_labeled and remittance_labeled:
                 tuition_amount, tuition_currency = tuition_labeled

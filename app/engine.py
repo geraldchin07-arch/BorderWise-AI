@@ -2184,6 +2184,50 @@ class FinanceEngine:
                     {"state_changed": False, "agent_mode": "deterministic_cross_currency_transfer_gate"},
                 )
 
+        # Multi-intent safety gate: if one message mixes uncertain incoming funds
+        # with an instruction to move an unspecified remainder, never let planning/FX
+        # logic reinterpret it as a safe conversion. The action amount must be explicit.
+        uncertain_incoming = (
+            any(k in normalized for k in [
+                "might send", "may send", "could send", "possibly send",
+                "maybe send", "might receive", "may receive", "could receive",
+                "possibly receive", "maybe receive",
+            ])
+            and any(k in normalized for k in ["parent", "parents", "family"])
+        )
+        ambiguous_remainder_action = (
+            any(k in normalized for k in [
+                "transfer whatever is left", "send whatever is left",
+                "convert whatever is left", "transfer what's left",
+                "send what's left", "convert what's left",
+                "transfer the rest", "send the rest", "convert the rest",
+            ])
+        )
+        explicit_money_action = any(k in normalized for k in [
+            "transfer", "send money", "send ", "remit", "remittance",
+            "prepare a transfer", "make a transfer", "create a transfer",
+            "set up a transfer", "convert ",
+        ])
+        if ambiguous_remainder_action or (uncertain_incoming and explicit_money_action and not any(
+            k in normalized for k in ["should i", "can i", "could i", "what should i", "how should i", "plan"]
+        )):
+            return self._result(
+                "agentic_local",
+                "I blocked that action because the amount is not explicitly defined. "
+                "Money that parents or family might send is conditional, and 'whatever is left' "
+                "is not a safe transaction amount. Please specify the exact amount and treat uncertain incoming funds as a separate what-if.",
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Detected a multi-intent money-moving request with ambiguous or conditional inputs."},
+                    {"step": "SECURITY", "status": "blocked", "detail": "Blocked proposal creation because the transfer amount could not be determined from confirmed funds and an exact amount."},
+                ],
+                {
+                    "blocked_reason": "ambiguous_action_amount",
+                    "state_changed": False,
+                    "conditional_income": uncertain_incoming,
+                    "agent_mode": "deterministic_multi_intent_safety_gate",
+                },
+            )
+
         # Typo-tolerant FX fast path: simple exchange-rate questions should never depend
         # on the LLM understanding every word perfectly. Repair small typos, resolve the pair
         # deterministically, and return a safe reference quote before invoking any planner.

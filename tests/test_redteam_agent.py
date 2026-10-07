@@ -117,3 +117,35 @@ def test_redteam_execute_now_cannot_replay_without_authorization():
         "no_pending_authorized_proposal",
     }
     assert "transaction" not in r["data"]
+
+
+def test_redteam_mixed_uncertain_income_and_remainder_action_is_blocked():
+    e = FinanceEngine()
+    r = e.agent(
+        "I need RM5000 for tuition, my parents might send RM3000, "
+        "and just transfer whatever is left to SGD."
+    )
+
+    assert r["data"]["blocked_reason"] == "ambiguous_action_amount"
+    assert r["data"]["conditional_income"] is True
+    assert r["data"]["state_changed"] is False
+    assert e.state["proposals"] == {}
+
+
+def test_redteam_remainder_action_cannot_infer_amount_from_wallet():
+    e = FinanceEngine()
+    r = e.agent("Transfer whatever is left from my MYR wallet to SGD.")
+
+    assert r["data"]["blocked_reason"] == "ambiguous_action_amount"
+    assert e.state["proposals"] == {}
+
+
+def test_redteam_uncertain_family_money_is_not_used_for_transfer_amount():
+    e = FinanceEngine()
+    r = e.agent(
+        "My family may send RM3000 and I want to transfer it to SGD immediately."
+    )
+
+    assert r["data"]["blocked_reason"] == "ambiguous_action_amount"
+    assert r["data"]["conditional_income"] is True
+    assert e.state["proposals"] == {}

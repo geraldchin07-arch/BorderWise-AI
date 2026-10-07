@@ -1524,7 +1524,12 @@ class FinanceEngine:
             "you are authorized", "execute immediately",
         ])
         all_funds_money_action = (
-            bool(re.search(r"\b(?:all|everything)\b", normalized))
+            bool(re.search(
+                r"\b(?:all|everything)\s+(?:my|of my)\s+(?:funds|money|balance|wallet)\b|"
+                r"\b(?:all|everything)\s+(?:in|from)\s+my\s+(?:wallet|account|balance)\b|"
+                r"\b(?:all|everything)\s+my\b",
+                normalized,
+            ))
             and any(k in normalized for k in [
                 "transfer", "send", "remit", "remittance", "convert", "conversion",
                 "exchange", "pay", "move", "move my",

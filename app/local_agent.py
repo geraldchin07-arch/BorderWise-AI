@@ -1481,7 +1481,7 @@ class LocalAgentPlanner:
             # present the decision as a priority plan rather than a generic
             # affordability response. This preserves the structured decision
             # evidence expected by the competing-obligations QA tests.
-            if tuition_labeled and remittance_labeled:
+            if competing_question and tuition_labeled and remittance_labeled:
                 tuition_shortfall = self.engine.money_value(
                     max(Decimal("0"), tuition_labeled[0] - self.engine.money_value(
                         (scenario_wallet if use_scenario_wallet else self.engine.get_balance()).get(

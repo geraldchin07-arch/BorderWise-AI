@@ -1903,7 +1903,7 @@ class LocalAgentPlanner:
         # an exact amount. Never infer an action amount from a forecast.
         advisory_action_question = any(k in t for k in [
             "can i", "could i", "should i", "would it", "is it safe", "is it okay",
-            "while protecting", "while keeping",
+            "am i", "afford", "okay", "while protecting", "while keeping",
         ])
         explicit_action = (not advisory_action_question) and any(k in t for k in [
             "prepare", "transfer", "send", "remit", "remittance", "pay",

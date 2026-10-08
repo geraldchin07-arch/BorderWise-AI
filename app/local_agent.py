@@ -106,7 +106,7 @@ class LocalAgentPlanner:
             if requested_amount is not None:
                 matches = [p for p in pending if abs(float(p["amount_myr"]) - float(requested_amount)) < 0.005]
             else:
-                matches = pending if len(pending) == 1 else []
+                matches = []
 
             trace = [{
                 "step": "UNDERSTAND",

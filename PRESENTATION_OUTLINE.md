@@ -13,8 +13,8 @@ Tagline:
 1. Reset demo.
 2. Ask: "Can I afford my tuition?"
 3. Agent observes balances, income and obligations.
-4. Forecast identifies S$4,074 shortfall.
-5. Agent recommends RM12,652.17 conversion while preserving RM5,000 reserve.
+4. Forecast identifies the current 30-day shortfall.
+5. Agent recommends a MYR → SGD conversion based on the displayed reference FX rate while preserving the RM5,000 emergency reserve.
 6. Agent prepares Level-2 proposal.
 7. User authorizes.
 8. Sandbox transaction executes.

@@ -7,12 +7,13 @@ Click Reset judge demo.
 "Can I afford my tuition?"
 
 Expected:
-- SGD 5,000 balance
-- 30-day obligations and monthly spending plan
-- S$4,074 shortfall
-- approximately RM12,652.17 conversion recommendation
-- RM5,000 emergency reserve
-- Level 2 authorization
+
+  * SGD 5,000 balance
+  * 30-day obligations and monthly spending plan
+  * The current 30-day projected shortfall
+  * A MYR → SGD conversion recommendation calculated from the displayed reference FX rate
+  * RM5,000 emergency reserve remains protected
+  * Level 2 authorization is required before execution
 
 Authorize it.
 

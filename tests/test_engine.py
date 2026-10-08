@@ -581,3 +581,16 @@ def test_concurrent_execute_only_once():
         t.join()
     assert results.count("ok") == 1
     assert e.get_balance()["MYR"] == 25000.0
+
+def test_expired_proposal_cannot_be_authorized_or_executed():
+    e = FinanceEngine()
+    p = e.create_proposal(Decimal("5000"), "test")
+    e.state["proposals"][p["id"]]["expires_at"] = "2000-01-01T00:00:00+00:00"
+    for call in (lambda: e.authorize(p["id"], True), lambda: e.execute(p["id"])):
+        try:
+            call()
+            assert False, "expired proposal should be rejected"
+        except ValueError:
+            pass
+    assert e.state["proposals"][p["id"]]["status"] == "EXPIRED"
+    assert any(ev["event"] == "PROPOSAL_EXPIRED" for ev in e.state["audit"])

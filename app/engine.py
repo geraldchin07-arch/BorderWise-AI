@@ -13,6 +13,10 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 import logging
 logger = logging.getLogger("borderwise")
+import threading
+from functools import wraps
+from datetime import datetime, timezone, timedelta 
+
 
 
 Q = Decimal("0.01")
@@ -33,6 +37,17 @@ def fmt_money(x: Decimal | float | int | str, currency: str = "") -> str:
     sign = "-" if v < 0 else ""
     n = f"{abs(v):,.2f}"
     return f"{sign}{currency}{n}"
+
+
+def _locked(fn):
+    @wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return fn(self, *args, **kwargs)
+    return wrapper
+
+
+
 
 
 @dataclass
@@ -63,9 +78,12 @@ class FinanceEngine:
     FX_TTL_SECONDS = 900  # refresh at most every 15 minutes
     FX_FAILURE_COOLDOWN_SECONDS = 30  # avoid hammering a provider when offline
     FX_PAIR_TTL_SECONDS = 900
+    PROPOSAL_TTL_MINUTES = 30
+    
 
     def __init__(self) -> None:
         self.reset()
+        self._lock = threading.RLock()
 
     def reset(self) -> None:
         self.state = {
@@ -1027,7 +1045,16 @@ class FinanceEngine:
             "reasons": reasons,
             "requires_level": 2,
         }
-
+    #determine expired proposal after some time
+    def _expire_if_needed(self, proposal: dict[str, Any]) -> bool:
+        """Mark a stale proposal EXPIRED. Returns True if it is expired."""
+        if proposal["status"] in {"PENDING_AUTHORIZATION", "AUTHORIZED"}:
+            if datetime.fromisoformat(proposal["expires_at"]) <= datetime.now(timezone.utc):
+                proposal["status"] = "EXPIRED"
+                self.audit("PROPOSAL_EXPIRED", {"proposal_id": proposal["id"]})
+        return proposal["status"] == "EXPIRED"
+        
+    @_locked
     def create_proposal(self, amount_myr: Decimal, purpose: str = "student finance transfer") -> dict[str, Any]:
         amount_myr = money(amount_myr)
         risk = self.risk_check(amount_myr, purpose)
@@ -1038,9 +1065,11 @@ class FinanceEngine:
             if (existing["status"] == "PENDING_AUTHORIZATION"
                     and money(existing["amount_myr"]) == amount_myr):
                 return existing
-        self.refresh_fx()
-        rate = self.state["fx"]["MYRSGD"]
+        if self.state.get("fx_preferences", {}).get("myr_mode") != "custom":
+            self.refresh_fx()
+        rate = self._selected_myrsgd_rate()
         amount_sgd = money(amount_myr * rate)
+      
         pid = "P-" + uuid.uuid4().hex[:8].upper()
         proposal = {
             "id": pid,
@@ -1054,15 +1083,20 @@ class FinanceEngine:
             "risk": risk,
             "permission_level": 2,
             "status": "PENDING_AUTHORIZATION",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=self.PROPOSAL_TTL_MINUTES)).isoformat(),
         }
         self.state["proposals"][pid] = proposal
         self.audit("PROPOSAL_CREATED", proposal)
         return proposal
-
+    
+    @_locked
     def authorize(self, proposal_id: str, approved: bool) -> dict[str, Any]:
         proposal = self.state["proposals"].get(proposal_id)
         if not proposal:
             raise ValueError("Proposal not found.")
+        if self._expire_if_needed(proposal):
+            raise ValueError("Proposal has expired; please request a new one.")
         if proposal["status"] != "PENDING_AUTHORIZATION":
             raise ValueError("Proposal is no longer awaiting authorization.")
         proposal["status"] = "AUTHORIZED" if approved else "REJECTED"
@@ -1070,11 +1104,13 @@ class FinanceEngine:
         if not approved:
             return proposal
         return proposal
-
+    @_locked
     def execute(self, proposal_id: str) -> dict[str, Any]:
         proposal = self.state["proposals"].get(proposal_id)
         if not proposal:
             raise ValueError("Proposal not found.")
+        if self._expire_if_needed(proposal):
+            raise ValueError("Proposal has expired; please request a new one.")
         if proposal["status"] != "AUTHORIZED":
             raise ValueError("Execution requires explicit Level 2 authorization.")
 
@@ -1388,37 +1424,3 @@ class FinanceEngine:
             "proposals": self.list_proposals(), # NEW
             "audit": self.audit_log()
         }
-from decimal import Decimal
-from app.engine import FinanceEngine
-
-
-def test_duplicate_proposal_is_reused():
-    e = FinanceEngine()
-    a = e.create_proposal(Decimal("5000"), "test")
-    b = e.create_proposal(Decimal("5000"), "test")
-    assert a["id"] == b["id"]
-    assert len(e.state["proposals"]) == 1
-
-
-def test_execute_is_verified_and_not_replayable():
-    e = FinanceEngine()
-    p = e.create_proposal(Decimal("5000"), "test")
-    e.authorize(p["id"], True)
-    result = e.execute(p["id"])
-    assert result["verified"] is True
-    assert any(ev["event"] == "VERIFIED" for ev in e.state["audit"])
-    try:
-        e.execute(p["id"])
-        assert False, "replay should have been blocked"
-    except ValueError:
-        pass
-
-
-def test_execute_without_authorization_is_denied():
-    e = FinanceEngine()
-    p = e.create_proposal(Decimal("5000"), "test")
-    try:
-        e.execute(p["id"])
-        assert False, "unauthorized execution should be blocked"
-    except ValueError:
-        pass

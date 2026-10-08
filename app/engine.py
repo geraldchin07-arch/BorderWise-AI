@@ -11,6 +11,8 @@ import json
 import time
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+import logging
+logger = logging.getLogger("borderwise")
 
 
 Q = Decimal("0.01")
@@ -1031,6 +1033,11 @@ class FinanceEngine:
         risk = self.risk_check(amount_myr, purpose)
         if risk["status"] == "BLOCKED":
             raise ValueError("; ".join(risk["reasons"]))
+        # NEW: reuse an identical pending proposal instead of creating a duplicate
+        for existing in self.state["proposals"].values():
+            if (existing["status"] == "PENDING_AUTHORIZATION"
+                    and money(existing["amount_myr"]) == amount_myr):
+                return existing
         self.refresh_fx()
         rate = self.state["fx"]["MYRSGD"]
         amount_sgd = money(amount_myr * rate)
@@ -1078,6 +1085,8 @@ class FinanceEngine:
             proposal["status"] = "BLOCKED"
             self.audit("EXECUTION_BLOCKED", {"proposal_id": proposal_id, "risk": risk})
             raise ValueError("; ".join(risk["reasons"]))
+        before_myr = money(self.state["balances"]["MYR"])
+        before_sgd = money(self.state["balances"]["SGD"])
 
         self.state["balances"]["MYR"] = money(self.state["balances"]["MYR"] - amount_myr)
         self.state["balances"]["SGD"] = money(self.state["balances"]["SGD"] + amount_sgd)
@@ -1092,11 +1101,32 @@ class FinanceEngine:
             proposal["purpose"],
             "completed",
         )
+
         self.state["transactions"].append(tx)
+                # NEW: verify the result and roll back if the numbers don't match
+        after_myr = money(self.state["balances"]["MYR"])
+        after_sgd = money(self.state["balances"]["SGD"])
+        verified = (
+            after_myr == before_myr - amount_myr
+            and after_sgd == before_sgd + amount_sgd
+            and self.state["transactions"][-1].id == tx.id
+        )
+        if not verified:
+            self.state["balances"]["MYR"] = before_myr
+            self.state["balances"]["SGD"] = before_sgd
+            self.state["transactions"].pop()
+            proposal["status"] = "BLOCKED"
+            self.audit("VERIFICATION_FAILED", {"proposal_id": proposal_id})
+            raise ValueError("Post-execution verification failed; the transaction was rolled back.")
+
         proposal["status"] = "EXECUTED"
         proposal["transaction_id"] = tx.id
+        proposal["verified"] = True
+        self.audit("VERIFIED", {"proposal_id": proposal_id, "transaction_id": tx.id,
+                                "myr_after": float(after_myr), "sgd_after": float(after_sgd)})
         self.audit("EXECUTED", {"proposal_id": proposal_id, "transaction_id": tx.id})
-        return {"proposal": proposal, "transaction": asdict(tx), "balances": self.get_balance()}
+        return {"proposal": proposal, "transaction": asdict(tx),
+                "balances": self.get_balance(), "verified": True}
 
     def audit(self, event: str, details: dict[str, Any]) -> None:
         self.state["audit"].append({
@@ -1187,7 +1217,7 @@ class FinanceEngine:
             if llm_result is not None:
                 return llm_result
         except Exception:
-            pass
+             logger.exception("LLM agent failed")
 
         # Offline local planner: enables genuine multi-step tool selection without an external API.
         try:
@@ -1196,7 +1226,8 @@ class FinanceEngine:
             if local_result is not None:
                 return local_result
         except Exception:
-            pass
+              logger.exception("Local planner failed")
+          
 
         intent = self.detect_intent(text)
         trace = []
@@ -1337,7 +1368,11 @@ class FinanceEngine:
 
     def _result(self, intent: str, answer: str, trace: list[dict[str, Any]], data: dict[str, Any] | None = None) -> dict[str, Any]:
         return {"intent": intent, "answer": answer, "trace": trace, "data": data or {}, "state": self.snapshot()}
-
+    
+    def list_proposals(self) -> list[dict[str, Any]]:
+        return sorted(self.state["proposals"].values(),
+                      key=lambda p: p["created_at"], reverse=True)
+    
     def snapshot(self, refresh_fx: bool = False) -> dict[str, Any]:
         f = self.forecast()
         q = self.refresh_fx() if refresh_fx else self.fx_quote()
@@ -1350,5 +1385,40 @@ class FinanceEngine:
             "health": self.health_analysis(),
             "fx": q,
             "obligations": self.get_obligations(),
-            "audit": self.audit_log(),
+            "proposals": self.list_proposals(), # NEW
+            "audit": self.audit_log()
         }
+from decimal import Decimal
+from app.engine import FinanceEngine
+
+
+def test_duplicate_proposal_is_reused():
+    e = FinanceEngine()
+    a = e.create_proposal(Decimal("5000"), "test")
+    b = e.create_proposal(Decimal("5000"), "test")
+    assert a["id"] == b["id"]
+    assert len(e.state["proposals"]) == 1
+
+
+def test_execute_is_verified_and_not_replayable():
+    e = FinanceEngine()
+    p = e.create_proposal(Decimal("5000"), "test")
+    e.authorize(p["id"], True)
+    result = e.execute(p["id"])
+    assert result["verified"] is True
+    assert any(ev["event"] == "VERIFIED" for ev in e.state["audit"])
+    try:
+        e.execute(p["id"])
+        assert False, "replay should have been blocked"
+    except ValueError:
+        pass
+
+
+def test_execute_without_authorization_is_denied():
+    e = FinanceEngine()
+    p = e.create_proposal(Decimal("5000"), "test")
+    try:
+        e.execute(p["id"])
+        assert False, "unauthorized execution should be blocked"
+    except ValueError:
+        pass

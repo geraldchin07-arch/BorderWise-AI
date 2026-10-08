@@ -133,7 +133,8 @@ class LocalAgentPlanner:
 
             tx = executed["transaction"]
             trace.append({"step": "EXECUTE", "status": "completed", "detail": f"Sandbox transaction {tx['id']} executed; no real money moved."})
-            trace.append({"step": "VERIFY", "status": "completed", "detail": "Verified the resulting sandbox balances and completed transaction."})
+            trace.append({"step": "VERIFY", "status": "completed" if executed.get("verified") else "blocked",
+                          "detail": "Verified the resulting sandbox balances and completed transaction."})
             trace.append({"step": "AUDIT", "status": "completed", "detail": "Authorization and execution were written to the audit trail."})
             answer = (
                 f"Authorization confirmed for RM{proposal['amount_myr']:,.2f}. "

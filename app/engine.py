@@ -855,7 +855,18 @@ class FinanceEngine:
         meta = self.state.get("profile_meta", {})
         planning = str(meta.get("planning_currency", "SGD")).upper()
         planning_rate = self._profile_rate_to_sgd(planning)
-        start = money(self.state["balances"].get(planning, money(0)) * planning_rate)
+
+        # Forecast liquidity must include the full multi-currency wallet.
+        # Each configured balance is normalized to SGD using its configured
+        # reference/custom rate, then displayed in the planning currency.
+        start = money(0)
+        for code, balance in self.state["balances"].items():
+            balance_d = money(balance)
+            if balance_d <= 0:
+                continue
+            rate, _ = self._currency_rate_to_sgd(code)
+            start += money(balance_d * rate)
+
         income = money(self.state["income_monthly_sgd"])
         variable_spending = sum(self.state["monthly_spending_sgd"].values(), money(0))
         accommodation = money(self.state["accommodation_monthly_sgd"])
@@ -871,7 +882,10 @@ class FinanceEngine:
         return {
             "horizon_days": 30,
             "planning_currency": planning,
-            "starting_sgd": float(start), "starting_planning": float(display(start)),
+            "starting_sgd": float(start),
+            "starting_portfolio_sgd": float(start),
+            "starting_planning": float(display(start)),
+            "starting_portfolio_planning": float(display(start)),
             "expected_income_sgd": float(income), "expected_income_planning": float(display(income)),
             "variable_spending_sgd": float(variable_spending), "variable_spending_planning": float(display(variable_spending)),
             "accommodation_sgd": float(accommodation), "accommodation_planning": float(display(accommodation)),

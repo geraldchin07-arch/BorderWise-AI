@@ -89,3 +89,59 @@ This prevents the manual UI flow from displaying a conversion result even though
 Implement the missing frontend handlers and connect the conversion form to the existing FX conversion API.
 
 No financial-engine logic was changed as part of this QA finding.
+
+---
+
+## 16. Manual QA Finding — Multi-Currency Forecast Limitation
+
+### Test Scenario
+
+The multi-currency wallet was tested with:
+
+- Planning currency: `SGD`
+- CNY balance: `10,000`
+- SGD balance: `500`
+- CNY → SGD rate: `0.18`
+- SGD → SGD rate: `1.00`
+- Required amount: `SGD 3,000`
+
+### Expected Result
+
+The starting planning liquidity should include all wallet balances after FX normalization:
+
+- CNY 10,000 → SGD 1,800
+- SGD 500 → SGD 500
+- Total indicative value → SGD 2,300
+- Expected shortfall against SGD 3,000 → SGD 700
+
+### Actual Result
+
+The multi-currency wallet valuation correctly reports the combined indicative value as `SGD 2,300`.
+
+However, the 30-day forecast currently uses only the balance held in the selected planning currency as its starting planning balance.
+
+For this scenario, the forecast therefore starts from `SGD 500` instead of the combined indicative value of `SGD 2,300`.
+
+### QA Assessment
+
+**FAIL — Multi-currency forecast integration limitation**
+
+The underlying multi-currency valuation is working, but non-planning-currency balances are not currently aggregated into forecast starting liquidity.
+
+### Impact
+
+Users holding funds in non-planning currencies may see an inaccurate starting liquidity position and an overstated projected shortfall.
+
+### Tracking
+
+Tracked as GitHub Issue **#27**:
+
+**Multi-currency forecast ignores non-planning-currency wallet balances**
+
+### Regression Status
+
+The full automated test suite remains green:
+
+`45 passed`
+
+No backend logic was changed as part of this QA finding.

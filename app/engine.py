@@ -1066,6 +1066,10 @@ class FinanceEngine:
             if (existing["status"] == "PENDING_AUTHORIZATION"
                     and money(existing["amount_myr"]) == amount_myr):
                 return existing
+        for old in self.state["proposals"].values():
+            if old["status"] == "PENDING_AUTHORIZATION":
+                old["status"] = "SUPERSEDED"
+                self.audit("PROPOSAL_SUPERSEDED", {"proposal_id": old["id"]})
         if self.state.get("fx_preferences", {}).get("myr_mode") != "custom":
             self.refresh_fx()
         rate = self._selected_myrsgd_rate()

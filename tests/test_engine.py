@@ -612,3 +612,15 @@ def test_review_transfer_requires_acknowledgement():
         pass
     e.authorize(p["id"], True, acknowledge_review=True)
     assert e.state["proposals"][p["id"]]["status"] == "AUTHORIZED"
+
+def test_new_proposal_supersedes_old_pending():
+    e = FinanceEngine()
+    a = e.create_proposal(Decimal("5000"), "test")
+    b = e.create_proposal(Decimal("6000"), "test")
+    assert e.state["proposals"][a["id"]]["status"] == "SUPERSEDED"
+    assert e.state["proposals"][b["id"]]["status"] == "PENDING_AUTHORIZATION"
+    try:
+        e.authorize(a["id"], True)
+        assert False, "superseded proposal must not be authorizable"
+    except ValueError:
+        pass

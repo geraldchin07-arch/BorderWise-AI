@@ -594,3 +594,21 @@ def test_expired_proposal_cannot_be_authorized_or_executed():
             pass
     assert e.state["proposals"][p["id"]]["status"] == "EXPIRED"
     assert any(ev["event"] == "PROPOSAL_EXPIRED" for ev in e.state["audit"])
+
+def test_risk_check_reports_max_allowed():
+    e = FinanceEngine()
+    r = e.risk_check(Decimal("26000"), "test")
+    assert r["status"] == "BLOCKED"
+    assert r["max_allowed_myr"] == 25000.0
+    
+def test_review_transfer_requires_acknowledgement():
+    e = FinanceEngine()
+    p = e.create_proposal(Decimal("16000"), "test")
+    assert p["risk"]["status"] == "REVIEW"
+    try:
+        e.authorize(p["id"], True)
+        assert False, "should require acknowledgement"
+    except ValueError:
+        pass
+    e.authorize(p["id"], True, acknowledge_review=True)
+    assert e.state["proposals"][p["id"]]["status"] == "AUTHORIZED"

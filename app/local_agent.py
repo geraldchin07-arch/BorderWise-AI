@@ -123,7 +123,11 @@ class LocalAgentPlanner:
                 return self._result("agentic_local", answer, trace, {"blocked_reason": "no_unambiguous_pending_proposal"})
 
             proposal = matches[0]
-            self.engine.authorize(proposal["id"], True)
+            try:
+                self.engine.authorize(proposal["id"], True)
+            except ValueError as exc:
+                trace.append({"step": "SECURITY", "status": "blocked", "detail": str(exc)})
+                return self._result("agentic_local", f"I did not authorize that. {exc} Please confirm high-value transfers on the dashboard.", trace, {"proposal": proposal, "blocked_reason": "review_requires_acknowledgement"})
             trace.append({"step": "AUTHORIZE", "status": "completed", "detail": f"Level 2 authorization recorded for proposal {proposal['id']}.",})
             try:
                 executed = self.engine.execute(proposal["id"])

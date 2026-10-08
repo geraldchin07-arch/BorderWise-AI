@@ -35,6 +35,8 @@ class ChatRequest(BaseModel):
 class AuthRequest(BaseModel):
     proposal_id: str
     approved: bool
+    acknowledge_review: bool = False
+    
 
 
 class ExecuteRequest(BaseModel):
@@ -126,7 +128,7 @@ def proposal(req: TransferRequest):
 @app.post("/api/authorize")
 def authorize(req: AuthRequest):
     try:
-        return engine.authorize(req.proposal_id, req.approved)
+        return engine.authorize(req.proposal_id, req.approved,req.acknowledge_review)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -201,3 +203,6 @@ def capabilities():
             "hypothetical income-impact simulation without state mutation",
         ]
     }
+@app.get("/api/proposals")
+def list_proposals():
+    return {"proposals": engine.list_proposals()}

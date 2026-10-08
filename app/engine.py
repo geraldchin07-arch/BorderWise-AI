@@ -1041,6 +1041,7 @@ class FinanceEngine:
             "status": risk,
             "amount_myr": float(amount_myr),
             "remaining_myr": float(balance - amount_myr),
+            "max_allowed_myr": float(max(money(0), balance - reserve)),
             "reserve_myr": float(reserve),
             "reasons": reasons,
             "requires_level": 2,
@@ -1091,7 +1092,7 @@ class FinanceEngine:
         return proposal
     
     @_locked
-    def authorize(self, proposal_id: str, approved: bool) -> dict[str, Any]:
+    def authorize(self, proposal_id: str, approved: bool,acknowledge_review: bool = False) -> dict[str, Any]:
         proposal = self.state["proposals"].get(proposal_id)
         if not proposal:
             raise ValueError("Proposal not found.")
@@ -1099,6 +1100,8 @@ class FinanceEngine:
             raise ValueError("Proposal has expired; please request a new one.")
         if proposal["status"] != "PENDING_AUTHORIZATION":
             raise ValueError("Proposal is no longer awaiting authorization.")
+        if approved and proposal["risk"]["status"] == "REVIEW" and not acknowledge_review:
+            raise ValueError("High-value transfer: explicit acknowledgement is required (acknowledge_review=true).")
         proposal["status"] = "AUTHORIZED" if approved else "REJECTED"
         self.audit("AUTHORIZATION", {"proposal_id": proposal_id, "approved": approved})
         if not approved:

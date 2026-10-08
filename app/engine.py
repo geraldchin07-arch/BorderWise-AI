@@ -11,6 +11,12 @@ import json
 import time
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+import logging
+logger = logging.getLogger("borderwise")
+import threading
+from functools import wraps
+from datetime import datetime, timezone, timedelta 
+
 
 
 Q = Decimal("0.01")
@@ -31,6 +37,17 @@ def fmt_money(x: Decimal | float | int | str, currency: str = "") -> str:
     sign = "-" if v < 0 else ""
     n = f"{abs(v):,.2f}"
     return f"{sign}{currency}{n}"
+
+
+def _locked(fn):
+    @wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return fn(self, *args, **kwargs)
+    return wrapper
+
+
+
 
 
 @dataclass
@@ -61,9 +78,12 @@ class FinanceEngine:
     FX_TTL_SECONDS = 900  # refresh at most every 15 minutes
     FX_FAILURE_COOLDOWN_SECONDS = 30  # avoid hammering a provider when offline
     FX_PAIR_TTL_SECONDS = 900
+    PROPOSAL_TTL_MINUTES = 30
+    
 
     def __init__(self) -> None:
         self.reset()
+        self._lock = threading.RLock()
 
     def reset(self) -> None:
         self.state = {
@@ -1021,19 +1041,40 @@ class FinanceEngine:
             "status": risk,
             "amount_myr": float(amount_myr),
             "remaining_myr": float(balance - amount_myr),
+            "max_allowed_myr": float(max(money(0), balance - reserve)),
             "reserve_myr": float(reserve),
             "reasons": reasons,
             "requires_level": 2,
         }
-
+    #determine expired proposal after some time
+    def _expire_if_needed(self, proposal: dict[str, Any]) -> bool:
+        """Mark a stale proposal EXPIRED. Returns True if it is expired."""
+        if proposal["status"] in {"PENDING_AUTHORIZATION", "AUTHORIZED"}:
+            if datetime.fromisoformat(proposal["expires_at"]) <= datetime.now(timezone.utc):
+                proposal["status"] = "EXPIRED"
+                self.audit("PROPOSAL_EXPIRED", {"proposal_id": proposal["id"]})
+        return proposal["status"] == "EXPIRED"
+        
+    @_locked
     def create_proposal(self, amount_myr: Decimal, purpose: str = "student finance transfer") -> dict[str, Any]:
         amount_myr = money(amount_myr)
         risk = self.risk_check(amount_myr, purpose)
         if risk["status"] == "BLOCKED":
             raise ValueError("; ".join(risk["reasons"]))
-        self.refresh_fx()
-        rate = self.state["fx"]["MYRSGD"]
+        # NEW: reuse an identical pending proposal instead of creating a duplicate
+        for existing in self.state["proposals"].values():
+            if (existing["status"] == "PENDING_AUTHORIZATION"
+                    and money(existing["amount_myr"]) == amount_myr):
+                return existing
+        for old in self.state["proposals"].values():
+            if old["status"] == "PENDING_AUTHORIZATION":
+                old["status"] = "SUPERSEDED"
+                self.audit("PROPOSAL_SUPERSEDED", {"proposal_id": old["id"]})
+        if self.state.get("fx_preferences", {}).get("myr_mode") != "custom":
+            self.refresh_fx()
+        rate = self._selected_myrsgd_rate()
         amount_sgd = money(amount_myr * rate)
+      
         pid = "P-" + uuid.uuid4().hex[:8].upper()
         proposal = {
             "id": pid,
@@ -1047,27 +1088,36 @@ class FinanceEngine:
             "risk": risk,
             "permission_level": 2,
             "status": "PENDING_AUTHORIZATION",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=self.PROPOSAL_TTL_MINUTES)).isoformat(),
         }
         self.state["proposals"][pid] = proposal
         self.audit("PROPOSAL_CREATED", proposal)
         return proposal
-
-    def authorize(self, proposal_id: str, approved: bool) -> dict[str, Any]:
+    
+    @_locked
+    def authorize(self, proposal_id: str, approved: bool,acknowledge_review: bool = False) -> dict[str, Any]:
         proposal = self.state["proposals"].get(proposal_id)
         if not proposal:
             raise ValueError("Proposal not found.")
+        if self._expire_if_needed(proposal):
+            raise ValueError("Proposal has expired; please request a new one.")
         if proposal["status"] != "PENDING_AUTHORIZATION":
             raise ValueError("Proposal is no longer awaiting authorization.")
+        if approved and proposal["risk"]["status"] == "REVIEW" and not acknowledge_review:
+            raise ValueError("High-value transfer: explicit acknowledgement is required (acknowledge_review=true).")
         proposal["status"] = "AUTHORIZED" if approved else "REJECTED"
         self.audit("AUTHORIZATION", {"proposal_id": proposal_id, "approved": approved})
         if not approved:
             return proposal
         return proposal
-
+    @_locked
     def execute(self, proposal_id: str) -> dict[str, Any]:
         proposal = self.state["proposals"].get(proposal_id)
         if not proposal:
             raise ValueError("Proposal not found.")
+        if self._expire_if_needed(proposal):
+            raise ValueError("Proposal has expired; please request a new one.")
         if proposal["status"] != "AUTHORIZED":
             raise ValueError("Execution requires explicit Level 2 authorization.")
 
@@ -1078,6 +1128,8 @@ class FinanceEngine:
             proposal["status"] = "BLOCKED"
             self.audit("EXECUTION_BLOCKED", {"proposal_id": proposal_id, "risk": risk})
             raise ValueError("; ".join(risk["reasons"]))
+        before_myr = money(self.state["balances"]["MYR"])
+        before_sgd = money(self.state["balances"]["SGD"])
 
         self.state["balances"]["MYR"] = money(self.state["balances"]["MYR"] - amount_myr)
         self.state["balances"]["SGD"] = money(self.state["balances"]["SGD"] + amount_sgd)
@@ -1092,11 +1144,32 @@ class FinanceEngine:
             proposal["purpose"],
             "completed",
         )
+
         self.state["transactions"].append(tx)
+                # NEW: verify the result and roll back if the numbers don't match
+        after_myr = money(self.state["balances"]["MYR"])
+        after_sgd = money(self.state["balances"]["SGD"])
+        verified = (
+            after_myr == before_myr - amount_myr
+            and after_sgd == before_sgd + amount_sgd
+            and self.state["transactions"][-1].id == tx.id
+        )
+        if not verified:
+            self.state["balances"]["MYR"] = before_myr
+            self.state["balances"]["SGD"] = before_sgd
+            self.state["transactions"].pop()
+            proposal["status"] = "BLOCKED"
+            self.audit("VERIFICATION_FAILED", {"proposal_id": proposal_id})
+            raise ValueError("Post-execution verification failed; the transaction was rolled back.")
+
         proposal["status"] = "EXECUTED"
         proposal["transaction_id"] = tx.id
+        proposal["verified"] = True
+        self.audit("VERIFIED", {"proposal_id": proposal_id, "transaction_id": tx.id,
+                                "myr_after": float(after_myr), "sgd_after": float(after_sgd)})
         self.audit("EXECUTED", {"proposal_id": proposal_id, "transaction_id": tx.id})
-        return {"proposal": proposal, "transaction": asdict(tx), "balances": self.get_balance()}
+        return {"proposal": proposal, "transaction": asdict(tx),
+                "balances": self.get_balance(), "verified": True}
 
     def audit(self, event: str, details: dict[str, Any]) -> None:
         self.state["audit"].append({
@@ -1187,7 +1260,7 @@ class FinanceEngine:
             if llm_result is not None:
                 return llm_result
         except Exception:
-            pass
+             logger.exception("LLM agent failed")
 
         # Offline local planner: enables genuine multi-step tool selection without an external API.
         try:
@@ -1196,7 +1269,8 @@ class FinanceEngine:
             if local_result is not None:
                 return local_result
         except Exception:
-            pass
+              logger.exception("Local planner failed")
+          
 
         intent = self.detect_intent(text)
         trace = []
@@ -1301,6 +1375,7 @@ class FinanceEngine:
                 {"step": "OBSERVE", "status": "completed", "detail": "Retrieved balances, income, living costs and obligations."},
                 {"step": "REASON", "status": "completed", "detail": "Forecasted 30-day liquidity."},
             ]
+            
             cur = f.get("planning_currency", "SGD")
             if f["shortfall_sgd"] <= 0:
                 answer = f"Yes. Your 30-day projected balance after obligations is {cur}{f['projected_balance_planning']:,.2f}; no conversion is currently required."
@@ -1317,6 +1392,14 @@ class FinanceEngine:
                 {"step": "RECOMMEND", "status": "completed", "detail": f"Calculated RM{amount:,.2f} MYR→SGD using the refreshed reference rate {q['rate']:.4f}."},
                 {"step": "SECURITY", "status": "completed" if risk["status"] != "BLOCKED" else "blocked", "detail": f"Risk status: {risk['status']}"},
             ]
+            if risk["status"] == "BLOCKED":
+                answer = (
+                    f"You have a projected S${f['shortfall_sgd']:,.2f} shortfall, but converting about "
+                    f"RM{amount:,.2f} would break a safety rule: " + " ".join(risk["reasons"]) +
+                    f" The most you can convert is RM{risk['max_allowed_myr']:,.2f}."
+                )
+                return self._result(intent, answer, trace, {"forecast": f, "risk": risk})
+            
             answer = (
                 f"You have a projected S${f['shortfall_sgd']:,.2f} shortfall over 30 days. "
                 f"I recommend converting approximately RM{amount:,.2f} to SGD at the current reference rate of {q['rate']:.4f}, "
@@ -1337,7 +1420,11 @@ class FinanceEngine:
 
     def _result(self, intent: str, answer: str, trace: list[dict[str, Any]], data: dict[str, Any] | None = None) -> dict[str, Any]:
         return {"intent": intent, "answer": answer, "trace": trace, "data": data or {}, "state": self.snapshot()}
-
+    
+    def list_proposals(self) -> list[dict[str, Any]]:
+        return sorted(self.state["proposals"].values(),
+                      key=lambda p: p["created_at"], reverse=True)
+    
     def snapshot(self, refresh_fx: bool = False) -> dict[str, Any]:
         f = self.forecast()
         q = self.refresh_fx() if refresh_fx else self.fx_quote()
@@ -1350,5 +1437,6 @@ class FinanceEngine:
             "health": self.health_analysis(),
             "fx": q,
             "obligations": self.get_obligations(),
-            "audit": self.audit_log(),
+            "proposals": self.list_proposals(), # NEW
+            "audit": self.audit_log()
         }

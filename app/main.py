@@ -35,6 +35,8 @@ class ChatRequest(BaseModel):
 class AuthRequest(BaseModel):
     proposal_id: str
     approved: bool
+    acknowledge_review: bool = False
+    
 
 
 class ExecuteRequest(BaseModel):
@@ -75,6 +77,20 @@ class ProfileRequest(BaseModel):
     custom_fx_dates: dict[str, str] = {}
     additional_fx_rate_modes: dict[str, str] = {}
 
+class TraceStep(BaseModel):
+    step: str
+    status: str
+    detail: str
+
+
+class ChatResponse(BaseModel):
+    intent: str
+    answer: str
+    trace: list[TraceStep]
+    data: dict[str, Any]
+    state: dict[str, Any]
+
+
 
 @app.get("/")
 def index():
@@ -112,7 +128,7 @@ def update_profile(req: ProfileRequest):
             req.additional_fx_rate_modes,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=f"Invalid profile data: {e}")
 
 
 @app.post("/api/proposals")
@@ -126,7 +142,7 @@ def proposal(req: TransferRequest):
 @app.post("/api/authorize")
 def authorize(req: AuthRequest):
     try:
-        return engine.authorize(req.proposal_id, req.approved)
+        return engine.authorize(req.proposal_id, req.approved,req.acknowledge_review)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -149,33 +165,6 @@ def reset():
 @app.get("/api/audit")
 def audit():
     return {"audit": engine.audit_log()}
-
-
-@app.post("/api/fx/refresh")
-def refresh_fx():
-    return engine.refresh_fx(force=True)
-
-
-@app.post("/api/fx/refresh-all")
-def refresh_all_fx():
-    return engine.refresh_auto_fx(force=True)
-
-
-@app.get("/api/fx/quote")
-def fx_quote_pair(from_currency: str, to_currency: str, amount: float = 1.0, custom_rate: float | None = None):
-    try:
-        return engine.quote_conversion(amount, from_currency, to_currency, custom_rate=custom_rate)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.post("/api/fx/convert")
-def fx_convert(req: FXConversionRequest):
-    try:
-        return engine.quote_conversion(req.amount, req.from_currency, req.to_currency, custom_rate=req.custom_rate)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
 
 @app.get("/api/capabilities")
 def capabilities():
@@ -201,3 +190,37 @@ def capabilities():
             "hypothetical income-impact simulation without state mutation",
         ]
     }
+
+@app.get("/api/fx/quote")
+def fx_quote_pair(from_currency: str, to_currency: str, amount: float = 1.0, custom_rate: float | None = None):
+    try:
+        return engine.quote_conversion(amount, from_currency, to_currency, custom_rate=custom_rate)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/proposals")
+def list_proposals():
+    return {"proposals": engine.list_proposals()}
+
+
+@app.post("/api/fx/refresh")
+def refresh_fx():
+    return engine.refresh_fx(force=True)
+
+
+@app.post("/api/fx/refresh-all")
+def refresh_all_fx():
+    return engine.refresh_auto_fx(force=True)
+
+@app.post("/api/fx/convert")
+def fx_convert(req: FXConversionRequest):
+    try:
+        return engine.quote_conversion(req.amount, req.from_currency, req.to_currency, custom_rate=req.custom_rate)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/chat", response_model=ChatResponse)
+def chat(req: ChatRequest):
+    return engine.agent(req.message)

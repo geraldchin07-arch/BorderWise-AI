@@ -106,7 +106,7 @@ class LocalAgentPlanner:
             if requested_amount is not None:
                 matches = [p for p in pending if abs(float(p["amount_myr"]) - float(requested_amount)) < 0.005]
             else:
-                matches = pending if len(pending) == 1 else []
+                matches = []
 
             trace = [{
                 "step": "UNDERSTAND",
@@ -123,7 +123,11 @@ class LocalAgentPlanner:
                 return self._result("agentic_local", answer, trace, {"blocked_reason": "no_unambiguous_pending_proposal"})
 
             proposal = matches[0]
-            self.engine.authorize(proposal["id"], True)
+            try:
+                self.engine.authorize(proposal["id"], True)
+            except ValueError as exc:
+                trace.append({"step": "SECURITY", "status": "blocked", "detail": str(exc)})
+                return self._result("agentic_local", f"I did not authorize that. {exc} Please confirm high-value transfers on the dashboard.", trace, {"proposal": proposal, "blocked_reason": "review_requires_acknowledgement"})
             trace.append({"step": "AUTHORIZE", "status": "completed", "detail": f"Level 2 authorization recorded for proposal {proposal['id']}.",})
             try:
                 executed = self.engine.execute(proposal["id"])
@@ -133,7 +137,8 @@ class LocalAgentPlanner:
 
             tx = executed["transaction"]
             trace.append({"step": "EXECUTE", "status": "completed", "detail": f"Sandbox transaction {tx['id']} executed; no real money moved."})
-            trace.append({"step": "VERIFY", "status": "completed", "detail": "Verified the resulting sandbox balances and completed transaction."})
+            trace.append({"step": "VERIFY", "status": "completed" if executed.get("verified") else "blocked",
+                          "detail": "Verified the resulting sandbox balances and completed transaction."})
             trace.append({"step": "AUDIT", "status": "completed", "detail": "Authorization and execution were written to the audit trail."})
             answer = (
                 f"Authorization confirmed for RM{proposal['amount_myr']:,.2f}. "

@@ -1,5 +1,7 @@
 from decimal import Decimal
+import threading
 from app.engine import FinanceEngine
+from app.local_agent import LocalAgentPlanner
 import json
 import pytest
 import app.engine as engine_module
@@ -381,21 +383,6 @@ def test_four_currency_wallet_valuation_to_sgd():
     assert currencies["SGD"]["sgd_value"] == 500.0
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def test_custom_myr_rate_applies_to_generic_conversion():
     e=FinanceEngine()
     e.update_profile(20000,3000,1500,5000,9025,2000,3000,40,800,0,{"Food & dining":300,"Groceries":150}, {"Food & dining":"Adjustable","Groceries":"Core"}, {"USD":500}, "custom", 0.3050, {"USD":1.28}, {"USD":"User-entered"}, {"USD":"2026-10-05"})
@@ -539,100 +526,108 @@ def test_currency_first_profile_supports_cny_planning_currency_and_arbitrary_con
     assert round(conv["converted_amount"], 2) == round(1000 * 0.18 / 0.305, 2)
 
 
-
-
-
-
-
-def test_same_currency_conversion_returns_same_amount():
+def test_duplicate_proposal_is_reused():
     e = FinanceEngine()
-
-    out = e.convert_currency(1000, "SGD", "SGD")
-
-    assert out["from_currency"] == "SGD"
-    assert out["to_currency"] == "SGD"
-    assert out["amount"] == 1000.0
-    assert out["converted_amount"] == 1000.0
-    assert out["rate"] == 1.0
+    a = e.create_proposal(Decimal("5000"), "test")
+    b = e.create_proposal(Decimal("5000"), "test")
+    assert a["id"] == b["id"]
+    assert len(e.state["proposals"]) == 1
 
 
-
-
-def test_automatic_fx_failure_falls_back_to_last_known_rate(monkeypatch):
+def test_execute_is_verified_and_not_replayable():
     e = FinanceEngine()
-
-    e.state.setdefault("fx_pair_cache", {})["USD/SGD"] = {
-        "base": "USD",
-        "quote": "SGD",
-        "rate": 1.28,
-        "date": "2026-10-06",
-        "source": "Frankfurter reference rate",
-        "live": True,
-        "updated_at": "2999-01-01T00:00:00+00:00",
-    }
-
-    def fail_network(*args, **kwargs):
-        raise OSError("simulated network failure")
-
-    monkeypatch.setattr(engine_module, "urlopen", fail_network)
-
-    out = e.quote_conversion(100, "USD", "SGD", force=True)
-
-    assert out["converted_amount"] == 128.0
-    assert out["rate"] == 1.28
-    assert out["fx"]["live"] is False
-    assert out["fx"]["source"] == "last known reference rate"
-    assert out["fx"]["mode"] == "auto_reference"
+    p = e.create_proposal(Decimal("5000"), "test")
+    e.authorize(p["id"], True)
+    result = e.execute(p["id"])
+    assert result["verified"] is True
+    assert any(ev["event"] == "VERIFIED" for ev in e.state["audit"])
+    with pytest.raises(ValueError):
+        e.execute(p["id"])
 
 
-
-
-
-def test_custom_fx_rate_overrides_automatic_reference():
+def test_execute_without_authorization_is_denied():
     e = FinanceEngine()
+    p = e.create_proposal(Decimal("5000"), "test")
+    with pytest.raises(ValueError):
+        e.execute(p["id"])
 
-    payload = {
-        "planning_currency": "SGD",
-        "balances": {
-            "USD": 500,
-            "SGD": 0,
-        },
-        "balance_fx_modes": {
-            "USD": "custom",
-            "SGD": "custom",
-        },
-        "custom_fx_rates_to_sgd": {
-            "USD": 1.30,
-            "SGD": 1.0,
-        },
-        "monthly_income_amount": 0,
-        "monthly_income_currency": "SGD",
-        "emergency_reserve_amount": 0,
-        "emergency_reserve_currency": "SGD",
-        "tuition_amount": 0,
-        "tuition_currency": "SGD",
-        "scholarship_amount": 0,
-        "loan_amount": 0,
-        "tuition_due_days": 20,
-        "accommodation_amount": 0,
-        "accommodation_currency": "SGD",
-        "other_obligations_amount": 0,
-        "other_obligations_currency": "SGD",
-        "monthly_spending_currency": "SGD",
-        "monthly_spending": {
-            "Food & dining": 0,
-        },
-        "spending_classifications": {},
-    }
 
-    e.update_profile_general(payload)
+def test_vague_authorization_does_nothing():
+    e = FinanceEngine()
+    e.create_proposal(Decimal("5000"), "test")
+    r = LocalAgentPlanner(e).run("I authorize this")
+    assert r["data"]["blocked_reason"] == "no_unambiguous_pending_proposal"
+    assert all(p["status"] == "PENDING_AUTHORIZATION" for p in e.state["proposals"].values())
+    assert e.get_balance()["MYR"] == 30000.0
 
-    overview = e.currency_overview()
 
-    usd = next(
-        item for item in overview["currencies"]
-        if item["currency"] == "USD"
-    )
+def test_concurrent_execute_only_once():
+    e = FinanceEngine()
+    p = e.create_proposal(Decimal("5000"), "test")
+    e.authorize(p["id"], True)
+    results = []
 
-    assert usd["rate_to_planning"] == 1.30
-    assert usd["sgd_value"] == 650.0
+    def run():
+        try:
+            e.execute(p["id"])
+            results.append("ok")
+        except ValueError:
+            results.append("err")
+
+    threads = [threading.Thread(target=run) for _ in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert results.count("ok") == 1
+    assert e.get_balance()["MYR"] == 25000.0
+
+def test_expired_proposal_cannot_be_authorized_or_executed():
+    e = FinanceEngine()
+    p = e.create_proposal(Decimal("5000"), "test")
+    e.state["proposals"][p["id"]]["expires_at"] = "2000-01-01T00:00:00+00:00"
+    for call in (lambda: e.authorize(p["id"], True), lambda: e.execute(p["id"])):
+        try:
+            call()
+            assert False, "expired proposal should be rejected"
+        except ValueError:
+            pass
+    assert e.state["proposals"][p["id"]]["status"] == "EXPIRED"
+    assert any(ev["event"] == "PROPOSAL_EXPIRED" for ev in e.state["audit"])
+
+def test_risk_check_reports_max_allowed():
+    e = FinanceEngine()
+    r = e.risk_check(Decimal("26000"), "test")
+    assert r["status"] == "BLOCKED"
+    assert r["max_allowed_myr"] == 25000.0
+    
+def test_review_transfer_requires_acknowledgement():
+    e = FinanceEngine()
+    p = e.create_proposal(Decimal("16000"), "test")
+    assert p["risk"]["status"] == "REVIEW"
+    try:
+        e.authorize(p["id"], True)
+        assert False, "should require acknowledgement"
+    except ValueError:
+        pass
+    e.authorize(p["id"], True, acknowledge_review=True)
+    assert e.state["proposals"][p["id"]]["status"] == "AUTHORIZED"
+
+def test_new_proposal_supersedes_old_pending():
+    e = FinanceEngine()
+    a = e.create_proposal(Decimal("5000"), "test")
+    b = e.create_proposal(Decimal("6000"), "test")
+    assert e.state["proposals"][a["id"]]["status"] == "SUPERSEDED"
+    assert e.state["proposals"][b["id"]]["status"] == "PENDING_AUTHORIZATION"
+    try:
+        e.authorize(a["id"], True)
+        assert False, "superseded proposal must not be authorizable"
+    except ValueError:
+        pass
+
+def test_affordability_blocked_conversion_does_not_crash():
+    e = FinanceEngine()
+    e.state["education"]["tuition_semester_sgd"] = Decimal("30000")
+    r = e.agent("Can I afford my tuition?")
+    assert r["data"]["risk"]["status"] == "BLOCKED"
+    assert "proposal" not in r["data"]

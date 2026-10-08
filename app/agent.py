@@ -63,7 +63,7 @@ Prefer tool use over guessing. For a multi-part question, use multiple tools and
                 "type": "object", "properties": {"force_refresh": {"type": "boolean"}},
                 "required": [], "additionalProperties": False,
             }),
-            self._tool("convert_currency", "Convert between MYR and SGD using the deterministic refreshed reference rate.", {
+            self._tool("convert_currency", "Convert an amount between any two currencies using deterministic reference or wallet rates.", {
                 "type": "object",
                 "properties": {
                     "amount": {"type": "number", "exclusiveMinimum": 0},
@@ -139,6 +139,7 @@ Prefer tool use over guessing. For a multi-part question, use multiple tools and
             {"step": "UNDERSTAND", "status": "completed", "detail": "LLM agent enabled; selecting deterministic finance tools."}
         ]
         input_items: list[Any] = [{"role": "user", "content": text}]
+        extra: dict[str, Any] = {}
 
         try:
             for _ in range(self.max_rounds):
@@ -147,7 +148,7 @@ Prefer tool use over guessing. For a multi-part question, use multiple tools and
                     instructions=self.SYSTEM,
                     input=input_items,
                     tools=self.tool_schemas(),
-                    max_output_tokens=700,
+                    max_output_tokens=2000,
                 )
 
                 # Preserve the model's response items, including reasoning items required
@@ -157,13 +158,17 @@ Prefer tool use over guessing. For a multi-part question, use multiple tools and
                 if not calls:
                     answer = response.output_text.strip() if response.output_text else "I could not produce a response."
                     trace.append({"step": "RESPOND", "status": "completed", "detail": f"LLM synthesized final answer using {len(trace)-1} tool/agent steps."})
-                    return {"intent": "agentic", "answer": answer, "trace": trace, "data": {"agent_mode": "llm_tool_calling", "model": self.model}, "state": self.engine.snapshot()}
+                    return {"intent": "agentic", "answer": answer, "trace": trace, "data": {"agent_mode": "llm_tool_calling", "model": self.model,**extra}, "state": self.engine.snapshot()}
 
                 for call in calls:
                     name = call.name
                     args = json.loads(call.arguments or "{}")
                     trace.append({"step": "TOOL", "status": "completed", "detail": f"Selected {name} with arguments {args}."})
                     result = self.call_tool(name, args)
+                    if result.get("ok") and name == "create_transfer_proposal":
+                        extra["proposal"] = result["result"]
+                    if result.get("ok") and name == "assess_transfer_risk":
+                        extra["risk"] = result["result"]
                     if result.get("ok"):
                         trace.append({"step": "TOOL_RESULT", "status": "completed", "detail": f"{name} returned deterministic financial data."})
                     else:

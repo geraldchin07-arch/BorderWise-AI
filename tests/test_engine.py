@@ -316,11 +316,45 @@ def test_manual_profile_updates_forecast_inputs():
     assert out["profile"]["tuition_semester_sgd"] == 9025.0
     assert out["profile"]["scholarship_semester_sgd"] == 1000.0
     f = e.forecast()
-    assert f["starting_sgd"] == 2000.0
+    assert f["starting_sgd"] == 5100.0
+    assert f["starting_portfolio_sgd"] == 5100.0
     assert f["expected_income_sgd"] == 2500.0
     assert f["monthly_spending_sgd"] == 2300.0
     assert f["tuition_net_sgd"] == 7525.0
 
+
+
+def test_forecast_includes_non_planning_currency_wallet_balances():
+    e = FinanceEngine()
+    e.update_profile_general({
+        "planning_currency": "SGD",
+        "balances": {"CNY": 10000, "SGD": 500},
+        "balance_fx_modes": {"CNY": "custom", "SGD": "custom"},
+        "custom_fx_rates_to_sgd": {"CNY": 0.18, "SGD": 1.0},
+        "monthly_income_amount": 0,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 0,
+        "emergency_reserve_currency": "SGD",
+        "tuition_amount": 3000,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "tuition_due_days": 20,
+        "accommodation_amount": 0,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Living": 0},
+        "spending_classifications": {"Living": "Core"},
+    })
+
+    f = e.forecast()
+
+    assert f["starting_sgd"] == 2300.0
+    assert f["starting_planning"] == 2300.0
+    assert f["projected_balance_sgd"] == -700.0
+    assert f["shortfall_sgd"] == 700.0
 
 def test_spending_percentages_use_full_recorded_total():
     e = FinanceEngine()
@@ -487,7 +521,8 @@ def test_currency_first_profile_supports_usd_planning_currency_without_myr_sgd_d
     assert p["monthly_spending"]["Food & dining"] == 300.0
     f = e.forecast()
     assert f["planning_currency"] == "USD"
-    assert round(f["starting_planning"], 2) == 5000.0
+    assert round(f["starting_planning"], 2) == 5140.63
+    assert round(f["starting_portfolio_planning"], 2) == 5140.63
     assert round(f["tuition_net_planning"], 2) == 3000.0
     o = e.currency_overview()
     assert o["base_currency"] == "USD"

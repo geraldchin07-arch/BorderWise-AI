@@ -1375,6 +1375,7 @@ class FinanceEngine:
                 {"step": "OBSERVE", "status": "completed", "detail": "Retrieved balances, income, living costs and obligations."},
                 {"step": "REASON", "status": "completed", "detail": "Forecasted 30-day liquidity."},
             ]
+            
             cur = f.get("planning_currency", "SGD")
             if f["shortfall_sgd"] <= 0:
                 answer = f"Yes. Your 30-day projected balance after obligations is {cur}{f['projected_balance_planning']:,.2f}; no conversion is currently required."
@@ -1391,6 +1392,14 @@ class FinanceEngine:
                 {"step": "RECOMMEND", "status": "completed", "detail": f"Calculated RM{amount:,.2f} MYR→SGD using the refreshed reference rate {q['rate']:.4f}."},
                 {"step": "SECURITY", "status": "completed" if risk["status"] != "BLOCKED" else "blocked", "detail": f"Risk status: {risk['status']}"},
             ]
+            if risk["status"] == "BLOCKED":
+                answer = (
+                    f"You have a projected S${f['shortfall_sgd']:,.2f} shortfall, but converting about "
+                    f"RM{amount:,.2f} would break a safety rule: " + " ".join(risk["reasons"]) +
+                    f" The most you can convert is RM{risk['max_allowed_myr']:,.2f}."
+                )
+                return self._result(intent, answer, trace, {"forecast": f, "risk": risk})
+            
             answer = (
                 f"You have a projected S${f['shortfall_sgd']:,.2f} shortfall over 30 days. "
                 f"I recommend converting approximately RM{amount:,.2f} to SGD at the current reference rate of {q['rate']:.4f}, "

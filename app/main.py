@@ -128,7 +128,7 @@ def update_profile(req: ProfileRequest):
             req.additional_fx_rate_modes,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=f"Invalid profile data: {e}")
 
 
 @app.post("/api/proposals")

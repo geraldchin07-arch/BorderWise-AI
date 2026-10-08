@@ -624,3 +624,10 @@ def test_new_proposal_supersedes_old_pending():
         assert False, "superseded proposal must not be authorizable"
     except ValueError:
         pass
+
+def test_affordability_blocked_conversion_does_not_crash():
+    e = FinanceEngine()
+    e.state["education"]["tuition_semester_sgd"] = Decimal("30000")
+    r = e.agent("Can I afford my tuition?")
+    assert r["data"]["risk"]["status"] == "BLOCKED"
+    assert "proposal" not in r["data"]

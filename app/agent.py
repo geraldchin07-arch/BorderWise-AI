@@ -63,7 +63,7 @@ Prefer tool use over guessing. For a multi-part question, use multiple tools and
                 "type": "object", "properties": {"force_refresh": {"type": "boolean"}},
                 "required": [], "additionalProperties": False,
             }),
-            self._tool("convert_currency", "Convert between MYR and SGD using the deterministic refreshed reference rate.", {
+            self._tool("convert_currency", "Convert an amount between any two currencies using deterministic reference or wallet rates.", {
                 "type": "object",
                 "properties": {
                     "amount": {"type": "number", "exclusiveMinimum": 0},

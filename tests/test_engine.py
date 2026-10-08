@@ -1,5 +1,7 @@
 from decimal import Decimal
+import threading
 from app.engine import FinanceEngine
+from app.local_agent import LocalAgentPlanner
 import json
 import pytest
 import app.engine as engine_module
@@ -522,3 +524,60 @@ def test_currency_first_profile_supports_cny_planning_currency_and_arbitrary_con
     assert f["tuition_due_within_horizon"] is False
     conv = e.convert_currency(1000, "CNY", "MYR")
     assert round(conv["converted_amount"], 2) == round(1000 * 0.18 / 0.305, 2)
+
+
+def test_duplicate_proposal_is_reused():
+    e = FinanceEngine()
+    a = e.create_proposal(Decimal("5000"), "test")
+    b = e.create_proposal(Decimal("5000"), "test")
+    assert a["id"] == b["id"]
+    assert len(e.state["proposals"]) == 1
+
+
+def test_execute_is_verified_and_not_replayable():
+    e = FinanceEngine()
+    p = e.create_proposal(Decimal("5000"), "test")
+    e.authorize(p["id"], True)
+    result = e.execute(p["id"])
+    assert result["verified"] is True
+    assert any(ev["event"] == "VERIFIED" for ev in e.state["audit"])
+    with pytest.raises(ValueError):
+        e.execute(p["id"])
+
+
+def test_execute_without_authorization_is_denied():
+    e = FinanceEngine()
+    p = e.create_proposal(Decimal("5000"), "test")
+    with pytest.raises(ValueError):
+        e.execute(p["id"])
+
+
+def test_vague_authorization_does_nothing():
+    e = FinanceEngine()
+    e.create_proposal(Decimal("5000"), "test")
+    r = LocalAgentPlanner(e).run("I authorize this")
+    assert r["data"]["blocked_reason"] == "no_unambiguous_pending_proposal"
+    assert all(p["status"] == "PENDING_AUTHORIZATION" for p in e.state["proposals"].values())
+    assert e.get_balance()["MYR"] == 30000.0
+
+
+def test_concurrent_execute_only_once():
+    e = FinanceEngine()
+    p = e.create_proposal(Decimal("5000"), "test")
+    e.authorize(p["id"], True)
+    results = []
+
+    def run():
+        try:
+            e.execute(p["id"])
+            results.append("ok")
+        except ValueError:
+            results.append("err")
+
+    threads = [threading.Thread(target=run) for _ in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert results.count("ok") == 1
+    assert e.get_balance()["MYR"] == 25000.0

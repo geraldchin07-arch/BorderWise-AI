@@ -636,3 +636,49 @@ def test_custom_fx_rate_overrides_automatic_reference():
 
     assert usd["rate_to_planning"] == 1.30
     assert usd["sgd_value"] == 650.0
+
+def test_invalid_transaction_amounts_are_blocked():
+    e = FinanceEngine()
+
+    with pytest.raises(ValueError, match="Amount must be positive"):
+        e.create_proposal(Decimal("0"), "test")
+
+    with pytest.raises(ValueError, match="Amount must be positive"):
+        e.create_proposal(Decimal("-1"), "test")
+
+
+def test_transaction_exceeding_balance_is_blocked():
+    e = FinanceEngine()
+
+    with pytest.raises(ValueError, match="Amount exceeds MYR balance"):
+        e.create_proposal(Decimal("40000"), "tuition")
+
+
+def test_rejected_proposal_does_not_change_balances():
+    e = FinanceEngine()
+
+    before_balance = e.get_balance()
+    before_transaction_count = len(e.state["transactions"])
+
+    proposal = e.create_proposal(Decimal("1000"), "tuition")
+    rejected = e.authorize(proposal["id"], False)
+
+    assert rejected["status"] == "REJECTED"
+    assert e.get_balance() == before_balance
+    assert len(e.state["transactions"]) == before_transaction_count
+
+
+def test_authorization_amount_mismatch_is_blocked():
+    e = FinanceEngine()
+
+    before_transaction_count = len(e.state["transactions"])
+
+    prepared = e.agent("Prepare the RM3,141.94 conversion to SGD.")
+
+    assert prepared["data"]["proposal"]["status"] == "PENDING_AUTHORIZATION"
+
+    r = e.agent("I authorize the RM3,000 conversion.")
+
+    assert r["data"]["blocked_reason"] == "no_unambiguous_pending_proposal"
+    assert prepared["data"]["proposal"]["status"] == "PENDING_AUTHORIZATION"
+    assert len(e.state["transactions"]) == before_transaction_count

@@ -98,7 +98,7 @@ class LocalAgentPlanner:
         Supports common currency codes/symbols/aliases without assuming
         MYR and SGD are the only currencies.
         """
-        t = text.lower().replace(",", "").strip()
+        t = text.lower().strip()
         code = currency.upper().strip()
 
         aliases = self._currency_aliases()
@@ -116,7 +116,7 @@ class LocalAgentPlanner:
         prefix_pattern = alias_token + r"\s*"
         suffix_pattern = r"\s*" + alias_token
 
-        amount_pattern = r"([0-9]+(?:\.[0-9]+)?[km]?)"
+        amount_pattern = r"(?<![\d,])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?![\d,])"
         patterns = [
             rf"{prefix_pattern}{amount_pattern}",
             rf"{amount_pattern}{suffix_pattern}",
@@ -145,7 +145,7 @@ class LocalAgentPlanner:
         for code, names in aliases.items():
             escaped = sorted((re.escape(x) for x in names), key=len, reverse=True)
             token = r"(?<![A-Za-z])(?:" + "|".join(escaped) + r")(?![A-Za-z])"
-            amount = r"[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?[km]?"
+            amount = r"(?<![\d,])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?(?![\d,])"
             patterns_by_code[code] = rf"(?:{token}\s*({amount})|({amount})\s*{token})"
 
         # First parse every explicit possession list. The lookahead stops before a
@@ -200,14 +200,14 @@ class LocalAgentPlanner:
         This is separate from _amount() because a currency may appear more than once
         in the same sentence (for example, SGD 500 held and SGD 3,000 needed).
         """
-        t = text.lower().replace(",", "").strip()
+        t = text.lower().strip()
         code = currency.upper().strip()
 
         aliases = self._currency_aliases()
         names = aliases.get(code, [code.lower()])
         escaped = sorted((re.escape(x) for x in names), key=len, reverse=True)
         currency_token = r"(?<![A-Za-z])(?:" + "|".join(escaped) + r")(?![A-Za-z])"
-        amount_pattern = r"([0-9]+(?:\.[0-9]+)?[km]?)"
+        amount_pattern = r"(?<![\d,])([0-9]{1,3}(?:,[0-9]{3})*|[0-9]+)(?:\.[0-9]+)?[km]?(?![\d,])"
         pattern = (
             rf"\b(?:need|needs|pay|paying|require|required|requirement|for)\b"
             rf"[^.;,]{{0,100}}?(?:{currency_token}\s*{amount_pattern}|{amount_pattern}\s*{currency_token})"
@@ -251,7 +251,7 @@ class LocalAgentPlanner:
         Search once across all currency aliases and take the first amount after
         the label instead.
         """
-        t = text.lower().replace(",", "")
+        t = text.lower()
         supported_aliases = self._currency_aliases()
         currency_pattern = []
         for code, aliases in supported_aliases.items():
@@ -271,8 +271,8 @@ class LocalAgentPlanner:
                 continue
             context = window.group("context")
             amount_match = re.search(
-                rf"(?P<currency>{token})\s*(?P<amount>[0-9]+(?:\.[0-9]+)?[km]?)"
-                rf"|(?P<amount_rev>[0-9]+(?:\.[0-9]+)?[km]?)\s*(?P<currency_rev>{token})\b",
+                rf"(?P<currency>{token})\s*(?P<amount>(?<![\d,])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?(?![\d,]))"
+                rf"|(?P<amount_rev>(?<![\d,])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?(?![\d,]))\s*(?P<currency_rev>{token})\b",
                 context,
                 re.I,
             )

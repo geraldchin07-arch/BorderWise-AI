@@ -290,6 +290,8 @@ def test_redteam_transfer_without_explicit_amount_never_infers_forecast_shortfal
 
 def test_redteam_explicit_sgd_remittance_is_not_misclassified_as_missing_amount():
     e = FinanceEngine()
+    before_transactions = list(e.state["transactions"])
+    before_balances = e.get_balance()
     r = e.agent("Transfer 5000 SGD to Singapore.")
 
     # The amount is explicit, but this is not an explicit MYR-to-SGD conversion.
@@ -298,5 +300,6 @@ def test_redteam_explicit_sgd_remittance_is_not_misclassified_as_missing_amount(
     assert r["data"].get("blocked_reason") != "implicit_transaction_amount"
     assert r["data"].get("proposal") is None
     assert e.state["proposals"] == {}
-    assert e.state["transactions"] == []
+    assert e.state["transactions"] == before_transactions
+    assert e.get_balance() == before_balances
 

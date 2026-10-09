@@ -391,6 +391,7 @@ def test_redteam_local_planner_does_not_guess_between_yen_currencies():
 def test_redteam_local_planner_disambiguates_word_shaped_currency_codes():
     planner = LocalAgentPlanner(FinanceEngine())
 
+    assert planner._amount("Convert ALL 100 to SGD", "ALL") == 100
     assert planner._amount("Convert MAD 500 to SGD", "MAD") == 500
     assert planner._amount("Convert mad 500 to SGD", "MAD") is None
     assert planner._amount("Convert TRY 500 to SGD", "TRY") == 500

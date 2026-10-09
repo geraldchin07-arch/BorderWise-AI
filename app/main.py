@@ -69,7 +69,7 @@ class ProfileRequest(BaseModel):
     spending_classifications: dict[str, str] = Field(default_factory=dict)
     additional_currencies: dict[str, float] = Field(default_factory=dict)
     myr_mode: str = "live"
-    custom_myrsgd: float | None = Field(default=None, gt=0)
+    custom_myrsgd: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     custom_fx_rates_to_sgd: dict[str, float] = Field(default_factory=dict)
     custom_fx_sources: dict[str, str] = Field(default_factory=dict)
     custom_fx_dates: dict[str, str] = Field(default_factory=dict)

@@ -243,14 +243,7 @@ class LocalAgentPlanner:
     def _extract_labeled_amount(
         self, text: str, labels: list[str]
     ) -> tuple[Decimal, str] | None:
-        """Extract the nearest currency amount associated with a label.
-
-        The old implementation searched one currency alias at a time. That could
-        match a later currency in the same sentence (for example, the RM3,000
-        remittance) instead of the SGD2,500 amount immediately following "tuition".
-        Search once across all currency aliases and take the first amount after
-        the label instead.
-        """
+        """Extract the amount nearest a financial label and its currency."""
         t = text.lower()
         supported_aliases = self._currency_aliases()
         currency_pattern = []
@@ -259,6 +252,7 @@ class LocalAgentPlanner:
                 currency_pattern.append((re.escape(alias), code))
         currency_pattern.sort(key=lambda item: len(item[0]), reverse=True)
         token = r"(?<![A-Za-z])(?:" + "|".join(alias for alias, _ in currency_pattern) + r")(?![A-Za-z])"
+        amount_token = r"(?<![\d,])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?!\d|,\d)"
 
         for label in labels:
             label_pattern = re.escape(label)
@@ -270,21 +264,28 @@ class LocalAgentPlanner:
             if not window:
                 continue
             context = window.group("context")
-            amount_match = re.search(
-                rf"(?P<currency>{token})\s*(?P<amount>(?<![\d,])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?(?!\d|,\d))"
-                rf"|(?P<amount_rev>(?<![\d,])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?(?!\d|,\d))\s*(?P<currency_rev>{token})",
-                context,
-                re.I,
-            )
-            if not amount_match:
-                continue
-            alias = amount_match.group("currency") or amount_match.group("currency_rev")
-            amount = amount_match.group("amount") or amount_match.group("amount_rev")
-            matched_code = next(
-                code for raw_alias, code in currency_pattern
-                if raw_alias.lower() == alias.lower()
-            )
-            return self._parse_human_amount(amount), matched_code
+            # Walk currency mentions in text order and bind each to the nearest
+            # immediately adjacent amount, so a later remittance cannot replace
+            # the tuition amount associated with the label.
+            for currency_match in re.finditer(token, context, re.I):
+                alias = currency_match.group(0)
+                after = re.match(rf"\s*{amount_token}", context[currency_match.end():], re.I)
+                if after:
+                    raw_amount = after.group(1)
+                else:
+                    before = re.search(
+                        rf"{amount_token}\s*$",
+                        context[:currency_match.start()],
+                        re.I,
+                    )
+                    if not before:
+                        continue
+                    raw_amount = before.group(1)
+                matched_code = next(
+                    code for raw_alias, code in currency_pattern
+                    if raw_alias.lower() == re.escape(alias).lower()
+                )
+                return self._parse_human_amount(raw_amount), matched_code
         return None
 
 

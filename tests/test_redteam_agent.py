@@ -395,6 +395,8 @@ def test_redteam_local_planner_disambiguates_word_shaped_currency_codes():
     assert planner._amount("Convert mad 500 to SGD", "MAD") is None
     assert planner._amount("Convert TRY 500 to SGD", "TRY") == 500
     assert planner._amount("Please try 500 examples", "TRY") is None
+    assert planner._amount("Convert 500 Turkish lira to SGD", "TRY") == 500
+    assert planner._amount("Convert 500 lira to SGD", "TRY") is None
     assert planner._extract_wallet_balances_from_text(
         "I have 500 MAD and 100 SGD."
     ) == {

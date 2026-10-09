@@ -322,6 +322,14 @@ def test_redteam_llm_proposal_requires_explicit_matching_transfer_request():
     assert not planner._proposal_request_is_explicit(
         "Prepare a transfer of RM7000 to SGD.", {"amount_myr": 5000}
     )
+    assert planner._proposal_request_is_explicit(
+        "I have RM10000 saved, but prepare a transfer of RM5000 to SGD.",
+        {"amount_myr": 5000},
+    )
+    assert not planner._proposal_request_is_explicit(
+        "I have RM10000 saved, but prepare a transfer of RM5000 to SGD.",
+        {"amount_myr": 10000},
+    )
 
 
 def test_redteam_llm_proposal_rejects_conditional_incoming_money():

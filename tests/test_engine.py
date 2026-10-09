@@ -2040,6 +2040,10 @@ def test_generic_currency_amount_rejects_unknown_three_letter_words():
     e = FinanceEngine()
     assert e.extract_generic_currency_amount("transfer the 500 to Singapore") is None
     assert e.extract_generic_currency_amount("send ABC 500") is None
+    assert e.extract_generic_currency_amount("send all 500 to Singapore") is None
+    assert e.extract_generic_currency_amount("try 500 to Singapore") is None
+    assert e.extract_generic_currency_amount("top 500 expenses") is None
+    assert e.extract_generic_currency_amount("ALL 500 to SGD") == (Decimal("500.00"), "ALL")
 
 
 @pytest.mark.parametrize(

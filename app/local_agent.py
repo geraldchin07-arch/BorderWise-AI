@@ -141,6 +141,8 @@ class LocalAgentPlanner:
         MYR and SGD are the only currencies.
         """
         raw_text = str(text or "")
+        if self.engine.has_scientific_amount(raw_text):
+            return None
         code = currency.upper().strip()
         explicit_code_amount = self._explicit_ambiguous_code_amount(raw_text, code)
         if explicit_code_amount is not None:
@@ -184,6 +186,8 @@ class LocalAgentPlanner:
         balances.
         """
         raw_text = str(text or "").strip()
+        if self.engine.has_scientific_amount(raw_text):
+            return {}
         t = self.engine.repair_user_text(raw_text).lower().strip()
         aliases = self._currency_aliases()
         balances: dict[str, Decimal] = {}
@@ -260,6 +264,8 @@ class LocalAgentPlanner:
         in the same sentence (for example, SGD 500 held and SGD 3,000 needed).
         """
         raw_text = str(text or "")
+        if self.engine.has_scientific_amount(raw_text):
+            return None
         code = currency.upper().strip()
         ambiguous = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
         if code in ambiguous and re.search(rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", raw_text):
@@ -318,6 +324,8 @@ class LocalAgentPlanner:
     ) -> tuple[Decimal, str] | None:
         """Extract the amount nearest a financial label and its currency."""
         raw_text = str(text or "")
+        if self.engine.has_scientific_amount(raw_text):
+            return None
         t = raw_text.lower()
         supported_aliases = self._currency_aliases()
         currency_pattern = []

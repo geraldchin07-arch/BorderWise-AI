@@ -2484,7 +2484,7 @@ class FinanceEngine:
                 trace.append({"step": "CALCULATE", "status": "completed", "detail": f"Converted RM{myr_amount:,.2f} to approximately S${converted_sgd:,.2f}."})
                 answer = f"At the {status} reference rate of 1 MYR = S${q['rate']:.4f} ({freshness}), RM{myr_amount:,.2f} is approximately S${converted_sgd:,.2f}. This excludes any bank/remittance spread or fees."
                 return self._result(intent, answer, trace, {"fx": q, "conversion": {"myr": float(myr_amount), "sgd": float(converted_sgd)}})
-            answer = f"The reference rate is 1 MYR = S${q['rate']:.4f} ({status}, {freshness}). RM1,000 would convert to approximately S${q['example_sgd']:,.2f}. This is a reference/mid-market rate, not a guaranteed bank quote."
+            answer = f"The reference rate for MYR to SGD is 1 MYR = S${q['rate']:.4f} ({status}, {freshness}). In the reverse direction, SGD to MYR uses the reciprocal reference rate. RM1,000 would convert to approximately SGD S${q['example_sgd']:,.2f}. This is a reference/mid-market rate, not a guaranteed bank quote."
             return self._result(intent, answer, trace, {"fx": q})
 
         if intent == "transfer":

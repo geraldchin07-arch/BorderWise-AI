@@ -363,6 +363,26 @@ def test_redteam_local_planner_does_not_read_from_as_ringgit():
     ) == {"SGD": planner.engine.money_value(500)}
 
 
+def test_redteam_web_currency_options_are_available_to_local_planner():
+    import re
+    from pathlib import Path
+
+    planner = LocalAgentPlanner(FinanceEngine())
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+    match = re.search(r"function currencyOptions\(\)\{return \[([^\]]+)\]", html)
+    assert match
+    codes = re.findall(r"'([A-Z]{3})'", match.group(1))
+    aliases = planner._currency_aliases()
+    for code in codes:
+        if code == "ALL":
+            # "all" is an ordinary English word; do not treat it as a currency
+            # unless the caller uses an unambiguous currency name.
+            continue
+        assert code in aliases, f"{code} is missing from the offline planner"
+        if code not in {"TRY", "MAD", "PEN", "TOP"}:
+            assert planner._amount(f"500 {code}", code) == 500, f"{code} amount parsing failed"
+
+
 def test_redteam_local_planner_parses_uncommon_wallet_currencies():
     planner = LocalAgentPlanner(FinanceEngine())
 

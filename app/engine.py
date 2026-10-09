@@ -2839,9 +2839,17 @@ class FinanceEngine:
             ambiguous_bucks = "buck" in fx_text and not any(
                 code in fx_text for code in ["usd", "us$", "sgd", "myr", "aud", "cad"]
             )
-            if not requested_pair and (vague_rate_request or ambiguous_bucks):
-                if ambiguous_bucks:
-                    question = "Which currency do you mean by 'bucks'—for example, US dollars (USD), Singapore dollars (SGD), or another currency?"
+            # A destination such as "Singapore dollars" does not disambiguate
+            # a source amount written only as "dollars".
+            ambiguous_dollars_source = bool(re.search(
+                r"\\b[0-9][0-9,]*(?:\\.[0-9]+)?\\s+dollars?\\s+(?:in|to|into)\\s+(?:singapore dollars?|sgd|s\\$)\\b",
+                fx_text,
+            )) and not any(code in fx_text for code in ["usd", "us$", "myr", "aud", "cad", "eur", "gbp"])
+            ambiguous_currency_word = ambiguous_bucks or ambiguous_dollars_source
+            if not requested_pair and (vague_rate_request or ambiguous_currency_word):
+                if ambiguous_currency_word:
+                    currency_word = "'bucks'" if ambiguous_bucks else "'dollars'"
+                    question = f"Which currency do you mean by {currency_word}—for example, US dollars (USD), Singapore dollars (SGD), or another currency?"
                 else:
                     question = "Which two currencies should I compare? I need the source and target currencies to retrieve the correct current reference rate."
                 return self._result("fx", question, [

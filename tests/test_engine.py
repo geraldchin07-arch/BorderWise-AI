@@ -2243,3 +2243,13 @@ def test_dashboard_escapes_user_controlled_profile_audit_and_trace_text():
     assert "escapeFXHtml(o.name)" in html
     assert "escapeFXHtml(JSON.stringify(x.details))" in html
     assert "escapeFXHtml(x.detail)" in html
+
+
+def test_profile_currency_rows_escape_codes_and_coerce_numeric_values():
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert 'value="${escapeFXHtml(code)}"' in html
+    assert 'value="${Number(balance)||0}"' in html
+    assert 'value="${Number(rate)||0}"' in html

@@ -28,7 +28,7 @@ class LocalAgentPlanner:
         NPR MMK MNT KZT UZS GEL AMD AZN ALL BAM MKD RSD BYN MDL ISK XOF XAF XPF
         XCD BWP BIF CDF DJF ERN ETB FJD GYD HTG JMD KHR KMF LAK LSL MGA MWK MUR
         MVR MZN NAD PAB PYG PEN BOB CLP COP CRC DOP GTQ HNL ARS UYU VES ZMW ZWL
-        TZS UGX RWF SOS SDG SSP SYP SRD TTD TOP VUV WST YER IQD MOP SBD SCR TJS TMT
+        TZS UGX RWF SOS SDG SSP SYP SRD TTD TOP VUV WST YER IQD MOP SBD SCR TJS TMT AFN AOA BBD BMD BSD BTN BZD CUP CVE FKP GIP GMD GNF IRR KGS KPW KYD LRD LYD MRU NIO PGK SHP SLE STN SZL ZWG
         """.split()
         aliases = {
             code: [code.lower()]
@@ -74,6 +74,33 @@ class LocalAgentPlanner:
             "ILS": ["ils", "israeli new shekel", "shekel", "shekels"],
             "PKR": ["pkr", "pakistani rupee", "pakistani rupees"],
             "LKR": ["lkr", "sri lankan rupee", "sri lankan rupees"],
+            "AFN": ["afn", "afghan afghani", "afghani"],
+            "AOA": ["aoa", "angolan kwanza"],
+            "BBD": ["bbd", "barbadian dollar"],
+            "BMD": ["bmd", "bermudian dollar"],
+            "BSD": ["bsd", "bahamian dollar"],
+            "BTN": ["btn", "bhutanese ngultrum"],
+            "BZD": ["bzd", "belize dollar"],
+            "CUP": ["cup", "cuban peso"],
+            "CVE": ["cve", "cape verde escudo"],
+            "FKP": ["fkp", "falkland islands pound"],
+            "GIP": ["gip", "gibraltar pound"],
+            "GMD": ["gmd", "gambian dalasi"],
+            "GNF": ["gnf", "guinean franc"],
+            "IRR": ["irr", "iranian rial"],
+            "KGS": ["kgs", "kyrgyzstani som"],
+            "KPW": ["kpw", "north korean won"],
+            "KYD": ["kyd", "cayman islands dollar"],
+            "LRD": ["lrd", "liberian dollar"],
+            "LYD": ["lyd", "libyan dinar"],
+            "MRU": ["mru", "mauritanian ouguiya"],
+            "NIO": ["nio", "nicaraguan cordoba"],
+            "PGK": ["pgk", "papua new guinean kina"],
+            "SHP": ["shp", "saint helena pound"],
+            "SLE": ["sle", "sierra leonean leone"],
+            "STN": ["stn", "sao tome dobra"],
+            "SZL": ["szl", "swazi lilangeni"],
+            "ZWG": ["zwg", "zimbabwe gold"],
             "GEL": ["georgian lari", "lari"],
             "COP": ["colombian peso", "colombian pesos"],
             "BOB": ["bolivian boliviano", "bolivian bolivianos"],

@@ -2182,3 +2182,25 @@ def test_agent_still_accepts_explicit_us_dollars():
     assert calls == [(200.0, "USD", "SGD")]
     assert r["data"]["state_changed"] is False
     assert r["data"]["proposal"] is None
+
+
+def test_agent_clarifies_ambiguous_dollars_for_non_sgd_destination():
+    e = FinanceEngine()
+    r = e.agent("Convert 200 dollars to Malaysian ringgit.")
+
+    assert r["intent"] == "fx"
+    assert r["data"]["needs_clarification"] is True
+    assert "Which currency do you mean by 'dollars'" in r["answer"]
+    assert r["data"]["state_changed"] is False
+    assert r["data"]["proposal"] is None
+
+
+def test_agent_clarifies_bucks_even_when_destination_currency_is_named():
+    e = FinanceEngine()
+    r = e.agent("Convert 200 bucks to SGD.")
+
+    assert r["intent"] == "fx"
+    assert r["data"]["needs_clarification"] is True
+    assert "Which currency do you mean by 'bucks'" in r["answer"]
+    assert r["data"]["state_changed"] is False
+    assert r["data"]["proposal"] is None

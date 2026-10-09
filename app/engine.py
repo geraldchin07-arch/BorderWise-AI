@@ -1554,10 +1554,10 @@ class FinanceEngine:
     def extract_generic_currency_amount(self, text: str) -> tuple[Decimal, str] | None:
         """Extract an explicit amount and canonical currency code from codes or common names."""
         t = self.repair_user_text(text).strip()
-        amount = r"([0-9][0-9,]*(?:\\.[0-9]+)?)"
+        amount = r"([0-9][0-9,]*(?:\.[0-9]+)?)"
         # ISO codes are the least ambiguous form and retain compatibility with existing inputs.
         code_match = re.search(
-            rf"(?:^|\\s)([A-Za-z]{{3}})\\s*{amount}\\b|(?:^|\\s){amount}\\s*([A-Za-z]{{3}})(?:\\s|$)",
+            rf"(?:^|\s)([A-Za-z]{{3}})\s*{amount}\b|(?:^|\s){amount}\s*([A-Za-z]{{3}})(?:\s|$)",
             t,
         )
         if code_match:
@@ -1587,8 +1587,8 @@ class FinanceEngine:
             else:
                 token = rf"(?<![A-Za-z]){escaped}(?![A-Za-z])"
             patterns = [
-                (rf"{token}\\s*{amount}", True),
-                (rf"{amount}\\s*{token}", False),
+                (rf"{token}\s*{amount}", True),
+                (rf"{amount}\s*{token}", False),
             ]
             for pattern, amount_follows in patterns:
                 match = re.search(pattern, t, re.IGNORECASE)

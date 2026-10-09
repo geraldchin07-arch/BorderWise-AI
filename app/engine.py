@@ -2524,6 +2524,29 @@ class FinanceEngine:
                     {"step": "OBSERVE", "status": "needs_input", "detail": "Source/target currency pair and amount were not specified."},
                     {"step": "SECURITY", "status": "completed", "detail": "Clarification only; no proposal or transaction was created."},
                 ], {"requested_currency": "CNY", "needs_clarification": True, "state_changed": False, "proposal": None})
+            # A rate-only cross-currency question (e.g. "rate of MYR to RMB")
+            # must quote the requested pair, never fall back to the default MYR/SGD rate.
+            if requested_pair:
+                pair_base, pair_quote = requested_pair
+                aliases = {"RMB": "CNY", "YUAN": "CNY", "RENMINBI": "CNY"}
+                pair_base = aliases.get(pair_base.upper(), pair_base.upper())
+                pair_quote = aliases.get(pair_quote.upper(), pair_quote.upper())
+                has_any_amount = bool(self.extract_generic_currency_amount(text) or self.extract_sgd_amount(text) or self.extract_myr_amount(text))
+                if not has_any_amount:
+                    try:
+                        pair_quote_result = self.quote_conversion(1, pair_base, pair_quote)
+                        rate_date = pair_quote_result["fx"].get("rate_date")
+                        rate_note = f"rate date {rate_date}" if rate_date else "rate date unavailable"
+                        answer = (
+                            f"The current reference rate is 1 {pair_base} = "
+                            f"{pair_quote_result['rate']:.6f} {pair_quote} ({pair_quote_result['fx'].get('source', 'reference source')}, {rate_note}). "
+                            "This is an indicative reference rate; your bank or exchange provider may use a different rate or charge fees."
+                        )
+                        trace.append({"step": "OBSERVE", "status": "completed", "detail": f"Retrieved the requested {pair_base}/{pair_quote} reference pair."})
+                        trace.append({"step": "CALCULATE", "status": "completed", "detail": f"Returned the unit rate for {pair_base} to {pair_quote}."})
+                        return self._result("fx", answer, trace, {"conversion": pair_quote_result, "state_changed": False, "proposal": None})
+                    except (ValueError, KeyError) as exc:
+                        return self._result("fx", f"I recognized {pair_base} to {pair_quote}, but couldn't retrieve a reliable reference rate for that pair: {exc}. I won't substitute a different currency pair.", trace, {"requested_pair": [pair_base, pair_quote], "needs_clarification": True, "state_changed": False, "proposal": None})
             q = self.refresh_fx()
             trace.append({"step": "OBSERVE", "status": "completed", "detail": f"Retrieved MYR/SGD reference rate from {q['source']}."})
             freshness = f"rate date {q['rate_date']}" if q.get('rate_date') else "rate date unavailable"

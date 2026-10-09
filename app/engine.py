@@ -1633,8 +1633,8 @@ class FinanceEngine:
         )
         if hypothetical_income_question:
             income_match = re.search(
-                r"(?:receive|get|incoming)\s+(?:another\s+)?(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?)(?P<suffix>[km]?)\s*(?P<currency>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)"
-                r"|(?:receive|get|incoming)\s+(?:another\s+)?(?P<currency_prefix>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)\s*(?P<amount_prefix>[0-9][0-9,]*(?:\.[0-9]+)?)(?P<suffix_prefix>[km]?)",
+                r"(?:receive(?:d)?|get|incoming)\s+(?:another\s+)?(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?)(?P<suffix>[km]?)\s*(?P<currency>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)"
+                r"|(?:receive(?:d)?|get|incoming)\s+(?:another\s+)?(?P<currency_prefix>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)\s*(?P<amount_prefix>[0-9][0-9,]*(?:\.[0-9]+)?)(?P<suffix_prefix>[km]?)",
                 normalized,
                 re.IGNORECASE,
             )

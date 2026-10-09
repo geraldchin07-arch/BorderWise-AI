@@ -719,6 +719,16 @@ class LocalAgentPlanner:
             "execute", "execute the", "make it happen", "complete the transfer",
             "run the transfer", "process the transfer", "send it now",
         ])
+        # Safety constraints that explicitly forbid execution are not execution
+        # commands. Do not let "do not execute any transaction" trigger the
+        # transaction state-machine refusal branch.
+        execution_is_explicitly_negated = any(k in t for k in [
+            "do not execute", "don't execute", "dont execute", "never execute",
+            "not execute", "cannot execute", "can't execute", "cannot send",
+            "don't send", "do not send", "without executing", "no transaction",
+        ])
+        if execution_is_explicitly_negated:
+            execute_request = False
         if execute_request and not any(k in t for k in ["ignore all", "ignore previous", "override security"]):
             pending = [p for p in self.engine.state["proposals"].values() if p.get("status") == "PENDING_AUTHORIZATION"]
             authorized = [p for p in self.engine.state["proposals"].values() if p.get("status") == "AUTHORIZED"]

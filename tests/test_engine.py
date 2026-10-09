@@ -2261,3 +2261,15 @@ def test_proposal_ui_escapes_user_provided_purpose():
     html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
 
     assert "<p>Purpose: ${escapeFXHtml(p.purpose)}</p>" in html
+
+
+def test_safe_conversion_ui_validates_quote_response_numbers():
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert "const quotedAmount=Number(data.amount), quotedRate=Number(data.rate), convertedAmount=Number(data.converted_amount)" in html
+    assert "!Number.isFinite(quotedAmount)" in html
+    assert "!Number.isFinite(quotedRate)" in html
+    assert "!Number.isFinite(convertedAmount)" in html
+    assert "The rate provider returned an invalid quote." in html

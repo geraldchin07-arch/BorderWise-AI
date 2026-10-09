@@ -128,7 +128,7 @@ For complex student-finance situations, build a goal-aware plan: identify essent
             return False
         if requested_amount is None or proposed_amount <= 0:
             return False
-        if abs(requested_amount - proposed_amount) >= self.engine.money_value("0.005"):
+        if requested_amount != proposed_amount:
             return False
 
         normalized = self.engine.repair_user_text(user_text).lower()

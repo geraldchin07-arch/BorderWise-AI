@@ -375,6 +375,8 @@ def test_redteam_local_planner_disambiguates_cup_code():
     assert planner._amount("Convert CUP 500 to SGD", "CUP") == 500
     assert planner._amount("Convert cup 500 to SGD", "CUP") is None
     assert planner._amount("Convert 500 Cuban peso to SGD", "CUP") == 500
+    assert planner._amount("Convert 100 Albanian lek to SGD", "ALL") == 100
+    assert planner._amount("Convert all 100 to SGD", "ALL") is None
 
 
 def test_redteam_local_planner_does_not_guess_between_yen_currencies():

@@ -1694,7 +1694,6 @@ class FinanceEngine:
                 "WST", "YER",
             }
             ambiguous_words = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
-            raw_code = code_match.group(1) or code_match.group(4)
             # Common English words/names that overlap ISO codes are accepted as
             # codes only when the user clearly typed the uppercase code.
             if code in supported_codes and (

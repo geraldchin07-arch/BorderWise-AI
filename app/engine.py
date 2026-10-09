@@ -1515,7 +1515,7 @@ class FinanceEngine:
             "aud", "cad", "hkd", "twd", "inr", "idr", "php", "vnd", "nzd",
             "chf", "sek", "nok", "dkk", "sar", "aed", "qar", "bnd",
         }
-        currency_mentions = [name for name in currency_aliases if re.search(rf"\\b{re.escape(name)}\\b", t)]
+        currency_mentions = [name for name in currency_aliases if re.search(rf"\b{re.escape(name)}\b", t)]
         currency_follow_up = any(k in t for k in ["how about", "what about", "and in", "what if"])
         fx_language = any(k in t for k in [
             "exchange rate", "current rate", "exchange", "fx", "convert", "conversion",

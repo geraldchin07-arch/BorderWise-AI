@@ -2502,16 +2502,77 @@ class FinanceEngine:
                     {"available_cash_sgd": float(available), "tuition_due_sgd": float(tuition_due), "shortfall_sgd": float(gap), "state_changed": False, "proposal": None},
                 )
 
-        # Deterministic savings-goal reasoning must take priority over a generic
-        # LLM forecast, so explicit figures and scenario follow-ups are not lost.
-        if any(k in normalized for k in ["save enough", "can i save", "savings goal", "target savings", "what if my expenses", "expenses increase by"]):
-            try:
-                from .local_agent import LocalAgentPlanner
-                savings_result = LocalAgentPlanner(self).run(text)
-                if savings_result is not None and savings_result.get("intent") == "savings_projection":
-                    return savings_result
-            except Exception:
-                pass
+        # Deterministic savings-goal reasoning must take priority over the
+        # general planner. Parse explicit figures here so an LLM response cannot
+        # override the arithmetic or swallow a local-planner parsing exception.
+        savings_signal = any(k in normalized for k in [
+            "save enough", "can i save", "savings goal", "target savings",
+            "what if my expenses", "expenses increase by",
+        ])
+        if savings_signal:
+            start_match = re.search(r"\b(?:have|currently have|start with|starting with)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s+(?:in\s+)?(?:my\s+)?savings", normalized, re.I)
+            income_match = re.search(r"\b(?:receive|earn|income is|income of)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:per|a)\s+month", normalized, re.I)
+            expenses_match = re.search(r"\b(?:spend|expenses are|expenses of|spending is)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:per|a)\s+month", normalized, re.I)
+            target_match = re.search(r"\b(?:target|reach|have|save up to|save)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s+in\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+months?", normalized, re.I)
+            ctx = getattr(self, "_agent_scenario_context", {})
+            prior_plan = ctx.get("savings_goal_plan")
+            increase_match = re.search(r"\b(?:expenses|spending)\s+(?:increase|go up|rise)\s+by\s+(?:sgd|s\$)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:per|a)\s+month", normalized, re.I)
+            if start_match and income_match and expenses_match and target_match:
+                month_words = {"one":1,"two":2,"three":3,"four":4,"five":5,"six":6,"seven":7,"eight":8,"nine":9,"ten":10}
+                plan = {
+                    "starting": Decimal(start_match.group(1).replace(",", "")),
+                    "income": Decimal(income_match.group(1).replace(",", "")),
+                    "expenses": Decimal(expenses_match.group(1).replace(",", "")),
+                    "target": Decimal(target_match.group(1).replace(",", "")),
+                    "months": int(target_match.group(2)) if target_match.group(2).isdigit() else month_words[target_match.group(2).lower()],
+                }
+                ctx["savings_goal_plan"] = plan
+                self._agent_scenario_context = ctx
+                monthly = money(plan["income"] - plan["expenses"])
+                projected = money(plan["starting"] + monthly * plan["months"])
+                shortfall = money(max(Decimal("0"), plan["target"] - projected))
+                surplus = money(max(Decimal("0"), projected - plan["target"]))
+                return self._result(
+                    "savings_projection",
+                    f"Savings projection over {plan['months']} months, using your stated figures:\n"
+                    f"- Starting savings: SGD {plan['starting']:,.2f}\n"
+                    f"- Monthly income: SGD {plan['income']:,.2f}\n"
+                    f"- Monthly expenses: SGD {plan['expenses']:,.2f}\n"
+                    f"- Monthly savings: SGD {monthly:,.2f}\n"
+                    f"- Projected savings: SGD {projected:,.2f}\n"
+                    f"- Target: SGD {plan['target']:,.2f}\n"
+                    + (f"You are projected to fall short by SGD {shortfall:,.2f}.\n" if shortfall else f"You are projected to meet or exceed the target by SGD {surplus:,.2f}.\n")
+                    + "Assumes income and expenses stay constant; excludes interest, fees, emergencies, and unlisted costs. Read-only scenario; no account balances changed.",
+                    [
+                        {"step":"UNDERSTAND","status":"completed","detail":"Recognized a savings goal and time horizon."},
+                        {"step":"OBSERVE","status":"completed","detail":"Used amounts explicitly supplied by the user."},
+                        {"step":"CALCULATE","status":"completed","detail":f"Monthly savings SGD {monthly:,.2f}; projected savings SGD {projected:,.2f}."},
+                        {"step":"SECURITY","status":"completed","detail":"Read-only calculation; no proposal or transaction created."},
+                    ],
+                    {"starting_savings_sgd":float(plan["starting"]),"monthly_income_sgd":float(plan["income"]),"monthly_expenses_sgd":float(plan["expenses"]),"monthly_surplus_sgd":float(monthly),"months":plan["months"],"target_savings_sgd":float(plan["target"]),"projected_savings_sgd":float(projected),"shortfall_sgd":float(shortfall),"surplus_sgd":float(surplus),"state_changed":False,"proposal":None},
+                )
+            if prior_plan and increase_match:
+                increase = Decimal(increase_match.group(1).replace(",", ""))
+                adjusted_expenses = money(prior_plan["expenses"] + increase)
+                monthly = money(prior_plan["income"] - adjusted_expenses)
+                projected = money(prior_plan["starting"] + monthly * prior_plan["months"])
+                shortfall = money(max(Decimal("0"), prior_plan["target"] - projected))
+                surplus = money(max(Decimal("0"), projected - prior_plan["target"]))
+                return self._result(
+                    "savings_projection",
+                    f"Updated projection with monthly expenses increased by SGD {increase:,.2f}:\n"
+                    f"- Monthly expenses: SGD {adjusted_expenses:,.2f}\n"
+                    f"- Monthly savings: SGD {monthly:,.2f}\n"
+                    f"- Projected savings after {prior_plan['months']} months: SGD {projected:,.2f}\n"
+                    f"- Target: SGD {prior_plan['target']:,.2f}\n"
+                    + (f"You are projected to fall short by SGD {shortfall:,.2f}." if shortfall else f"You are projected to meet or exceed the target by SGD {surplus:,.2f}."),
+                    [
+                        {"step":"UNDERSTAND","status":"completed","detail":"Applied the expense change to the remembered savings scenario."},
+                        {"step":"CALCULATE","status":"completed","detail":f"Updated monthly savings to SGD {monthly:,.2f}; projected savings SGD {projected:,.2f}."},
+                        {"step":"SECURITY","status":"completed","detail":"Read-only scenario; no balances changed."},
+                    ],
+                    {"starting_savings_sgd":float(prior_plan["starting"]),"monthly_income_sgd":float(prior_plan["income"]),"monthly_expenses_sgd":float(adjusted_expenses),"monthly_surplus_sgd":float(monthly),"months":prior_plan["months"],"target_savings_sgd":float(prior_plan["target"]),"projected_savings_sgd":float(projected),"shortfall_sgd":float(shortfall),"surplus_sgd":float(surplus),"state_changed":False,"proposal":None},
+                )
 
         # v5: optional LLM tool-calling planner. The deterministic engine remains the
         # fallback and the authority for calculations, policy and execution.

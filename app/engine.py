@@ -1560,22 +1560,38 @@ class FinanceEngine:
         return money(value.replace(',', '')), code
 
     def extract_conversion_pair(self, text: str) -> tuple[str, str] | None:
+        """Extract and canonicalize a user-requested FX pair from codes or currency names."""
         t = self.repair_user_text(text).upper()
+        aliases = {
+            "SINGAPORE DOLLARS": "SGD", "SINGAPORE DOLLAR": "SGD",
+            "MALAYSIAN RINGGIT": "MYR", "RINGGIT": "MYR",
+            "US DOLLARS": "USD", "US DOLLAR": "USD", "US$": "USD",
+            "DOLLARS": "USD", "DOLLAR": "USD",
+            "RENMINBI": "CNY", "YUAN": "CNY", "RMB": "CNY", "CNY": "CNY",
+            "S$": "SGD", "SGD": "SGD", "MYR": "MYR", "RM": "MYR",
+            "USD": "USD", "EUR": "EUR", "EURO": "EUR", "EUROS": "EUR",
+            "GBP": "GBP", "POUND": "GBP", "POUNDS": "GBP",
+            "JPY": "JPY", "YEN": "JPY", "KRW": "KRW", "WON": "KRW",
+            "THB": "THB", "BAHT": "THB", "AUD": "AUD", "CAD": "CAD",
+            "HKD": "HKD", "TWD": "TWD", "INR": "INR", "IDR": "IDR",
+            "PHP": "PHP", "VND": "VND", "NZD": "NZD", "CHF": "CHF",
+            "SEK": "SEK", "NOK": "NOK", "DKK": "DKK", "SAR": "SAR",
+            "AED": "AED", "QAR": "QAR", "BND": "BND",
+        }
+        # Match longer names first so "US DOLLARS" is not reduced to "DOLLARS".
+        choices = sorted(aliases, key=len, reverse=True)
+        token = r"(?<![A-Z])(?:" + "|".join(re.escape(a) for a in choices) + r")(?![A-Z])"
         patterns = [
-            r"\b([A-Z]{3})\s*(?:TO|→|->)\s*([A-Z]{3})\b",
-            r"\b([A-Z]{3})\s+(?:INTO|IN)\s+([A-Z]{3})\b",
-            r"\bFROM\s+([A-Z]{3})\s+TO\s+([A-Z]{3})\b",
+            rf"\bFROM\s+(?P<base>{token})\s+TO\s+(?P<quote>{token})",
+            rf"(?P<base>{token})\s*(?:TO|→|->|INTO|IN)\s*(?P<quote>{token})",
         ]
-        for p in patterns:
-            m = re.search(p, t)
-            if m:
-                return m.group(1), m.group(2)
-        names = {"RMB":"CNY", "YUAN":"CNY", "RENMINBI":"CNY", "RINGGIT":"MYR", "SINGAPORE DOLLARS":"SGD", "DOLLARS":"USD"}
-        for a,b in names.items():
-            for c,d in names.items():
-                if a == c: continue
-                if re.search(rf"\b{re.escape(a)}\b.*\b{re.escape(c)}\b", t):
-                    return b,d
+        for pattern in patterns:
+            match = re.search(pattern, t)
+            if match:
+                base = aliases[match.group("base").strip()]
+                quote = aliases[match.group("quote").strip()]
+                if base != quote:
+                    return base, quote
         return None
 
     def agent(self, text: str) -> dict[str, Any]:

@@ -616,7 +616,11 @@ class LocalAgentPlanner:
                     "forecast_after_income": {**scenario, "projected_shortfall_sgd": float(scenario_shortfall_sgd)},
                     "state_changed": False,
                 })
-            if any(k in t for k in ["can i afford", "afford it", "afford this"]) and any(k in t for k in ["tuition", "school fee", "semester fee"]):
+            if (
+                any(k in t for k in ["can i afford", "afford it", "afford this"])
+                and any(k in t for k in ["tuition", "school fee", "semester fee"])
+                and any(k in t for k in ["tuition is", "tuition costs", "tuition fee is", "tuition amount"])
+            ):
                 amount, currency = self._extract_labeled_amount(t, ["tuition", "school fee", "semester fee"]) or (None, planning)
                 if amount is None:
                     amount = self._amount(t, planning)

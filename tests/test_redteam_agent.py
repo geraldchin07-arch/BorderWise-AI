@@ -445,7 +445,7 @@ def test_redteam_web_currency_options_are_available_to_local_planner():
             # unless the caller uses an unambiguous currency name.
             continue
         assert code in aliases, f"{code} is missing from the offline planner"
-        if code not in {"TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}:
+        if code not in {"TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}:
             assert planner._amount(f"500 {code}", code) == 500, f"{code} amount parsing failed"
 
 

@@ -2846,7 +2846,7 @@ class FinanceEngine:
                 fx_text,
             )) and not any(code in fx_text for code in ["usd", "us$", "myr", "aud", "cad", "eur", "gbp"])
             ambiguous_currency_word = ambiguous_bucks or ambiguous_dollars_source
-            if not requested_pair and (vague_rate_request or ambiguous_currency_word):
+            if ambiguous_currency_word or (not requested_pair and vague_rate_request):
                 if ambiguous_currency_word:
                     currency_word = "'bucks'" if ambiguous_bucks else "'dollars'"
                     question = f"Which currency do you mean by {currency_word}—for example, US dollars (USD), Singapore dollars (SGD), or another currency?"

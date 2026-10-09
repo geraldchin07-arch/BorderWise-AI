@@ -2341,3 +2341,32 @@ def test_conversion_rejects_malformed_currency_codes():
     e = FinanceEngine()
     with pytest.raises(ValueError, match="3-letter"):
         e.quote_conversion(100, "<X>", "SGD", custom_rate=1)
+
+
+def test_profile_api_returns_client_error_for_non_finite_general_profile():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    response = client.post("/api/profile", json={
+        "general_profile": {
+            "planning_currency": "SGD",
+            "balances": {"SGD": float("nan")}
+        }
+    })
+    assert response.status_code == 400
+    assert "finite" in response.json()["detail"].lower()
+
+
+def test_fx_quote_api_rejects_malformed_currency_code():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    response = client.get("/api/fx/quote", params={
+        "from_currency": "<X>",
+        "to_currency": "SGD",
+        "amount": 100
+    })
+    assert response.status_code == 400
+    assert "3-letter" in response.json()["detail"]

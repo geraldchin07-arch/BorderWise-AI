@@ -1060,6 +1060,19 @@ class FinanceEngine:
         start_plus_income = money(Decimal(str(f["starting_sgd"])) + Decimal(str(f["expected_income_sgd"])))
         monthly_spending = money(f["monthly_spending_sgd"])
         projected = money(f["projected_balance_sgd"])
+        # For legacy profiles, the health indicator measures immediately available
+        # planning-currency cash. Foreign-currency balances are assets, but are not
+        # counted as liquid until a conversion is planned.
+        profile_meta = self.state.get("profile_meta", {})
+        if profile_meta.get("profile_schema") == "legacy":
+            planning_for_health = str(profile_meta.get("planning_currency", "SGD")).upper()
+            liquid_start = money(self.state.get("balances", {}).get(planning_for_health, 0))
+            projected = money(
+                liquid_start
+                + Decimal(str(f["expected_income_sgd"]))
+                - Decimal(str(f["monthly_spending_sgd"]))
+                - Decimal(str(f["obligations_sgd"]))
+            )
         reserve = money(self.state["emergency_reserve_myr"])
         profile_meta = self.state.get("profile_meta", {})
         reserve_currency = str(profile_meta.get("emergency_reserve_currency", "MYR")).upper()

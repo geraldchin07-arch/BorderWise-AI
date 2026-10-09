@@ -1628,7 +1628,17 @@ class FinanceEngine:
         if code_match:
             code = (code_match.group(1) or code_match.group(4)).upper()
             value = code_match.group(2) or code_match.group(3)
-            return money(value.replace(",", "")), code
+            # A three-letter word is not automatically an ISO currency code.
+            # Without this allowlist, ordinary prose such as "the 500" could be
+            # misread as currency THE and incorrectly satisfy amount detection.
+            supported_codes = {
+                "SGD", "MYR", "USD", "CNY", "EUR", "GBP", "JPY", "KRW",
+                "THB", "AUD", "CAD", "HKD", "TWD", "INR", "IDR", "PHP",
+                "VND", "NZD", "CHF", "SEK", "NOK", "DKK", "SAR", "AED",
+                "QAR", "BND",
+            }
+            if code in supported_codes:
+                return money(value.replace(",", "")), code
 
         aliases = {
             "SINGAPORE DOLLARS": "SGD", "SINGAPORE DOLLAR": "SGD", "S$": "SGD",

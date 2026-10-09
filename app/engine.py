@@ -2137,10 +2137,18 @@ class FinanceEngine:
             ))
             amounts = [money(Decimal(match.group(1).replace(",", ""))) for match in amount_matches]
             tuition_index = None
+            separators = list(re.finditer(r"[,;.!?]|\\b(?:and|while|but)\\b", normalized))
             for index, match in enumerate(amount_matches):
-                before = normalized[max(0, match.start() - 45):match.start()]
-                after = normalized[match.end():min(len(normalized), match.end() + 35)]
-                if re.search(r"\b(tuition|school fees?)\b", before + " " + after):
+                clause_start = max(
+                    [separator.end() for separator in separators if separator.end() <= match.start()]
+                    or [0]
+                )
+                clause_end = min(
+                    [separator.start() for separator in separators if separator.start() >= match.end()]
+                    or [len(normalized)]
+                )
+                clause = normalized[clause_start:clause_end]
+                if re.search(r"\\b(tuition|school fees?)\\b", clause):
                     tuition_index = index
                     break
             if len(amounts) >= 2:

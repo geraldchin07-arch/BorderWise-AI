@@ -2415,7 +2415,7 @@ class FinanceEngine:
                             {"step": "OBSERVE", "status": "completed", "detail": f"Retrieved the deterministic {base}/{quote} reference rate."},
                             {"step": "CALCULATE", "status": "completed", "detail": f"Calculated the indicative conversion for {amount:,.2f} {base}."},
                         ],
-                        {"conversion": conv, "input_normalized": repaired},
+                        {"conversion": conv, "input_normalized": repaired, "state_changed": False, "proposal": None},
                     )
             except (ValueError, HTTPError, URLError, TimeoutError, OSError, KeyError, TypeError) as exc:
                 # Do not crash on malformed/unsupported FX wording. Let the normal

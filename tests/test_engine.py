@@ -1977,3 +1977,17 @@ def test_fx_rate_lookup_does_not_substitute_pair_when_rate_unavailable(monkeypat
 def test_generic_currency_amount_recognizes_names_and_symbols(prompt, expected):
     e = FinanceEngine()
     assert e.extract_generic_currency_amount(prompt) == expected
+
+
+@pytest.mark.parametrize(
+    ("prompt", "expected_intent"),
+    [
+        ("My tuition is SGD 18,000 due in four months. I have SGD 7,000 saved.", "affordability"),
+        ("I have SGD 5,000 in savings, receive SGD 1,200 per month, and spend SGD 900 per month. Can I save enough in six months?", "forecast"),
+        ("My income is in MYR, my tuition is in SGD, and my savings are split between SGD and USD. What information do you need?", "affordability"),
+        ("Compare exchanging MYR 10,000 at two hypothetical rates and calculate the difference.", "general"),
+    ],
+)
+def test_financial_reasoning_intent_beats_incidental_fx_words(prompt, expected_intent):
+    e = FinanceEngine()
+    assert e.detect_intent(prompt) == expected_intent

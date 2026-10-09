@@ -119,6 +119,34 @@ For complex student-finance situations, build a goal-aware plan: identify essent
             "strict": True,
         }
 
+    def _proposal_request_is_explicit(self, user_text: str, args: dict[str, Any]) -> bool:
+        """Fail closed unless the user explicitly requests the exact MYR proposal amount."""
+        try:
+            requested_amount = self.engine.extract_myr_amount(user_text)
+            proposed_amount = self.engine.money_value(args.get("amount_myr"))
+        except Exception:
+            return False
+        if requested_amount is None or proposed_amount <= 0:
+            return False
+        if abs(requested_amount - proposed_amount) >= self.engine.money_value("0.005"):
+            return False
+
+        normalized = self.engine.repair_user_text(user_text).lower()
+        advice_or_scenario = any(phrase in normalized for phrase in [
+            "should i", "should we", "would you recommend", "recommend",
+            "is it wise", "what if", "hypothetical", "compare", "can i afford",
+            "might send", "may send", "could send", "expect to receive",
+            "if i receive", "if my family", "parents might", "parents may",
+        ])
+        if advice_or_scenario:
+            return False
+
+        explicit_action = any(phrase in normalized for phrase in [
+            "prepare", "create a proposal", "make a proposal", "transfer",
+            "send", "remit", "convert", "exchange",
+        ])
+        return explicit_action
+
     def call_tool(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         try:
             if name == "get_balance":
@@ -183,7 +211,18 @@ For complex student-finance situations, build a goal-aware plan: identify essent
                     name = call.name
                     args = json.loads(call.arguments or "{}")
                     trace.append({"step": "TOOL", "status": "completed", "detail": f"Selected {name} with arguments {args}."})
-                    result = self.call_tool(name, args)
+                    if name == "create_transfer_proposal" and not self._proposal_request_is_explicit(text, args):
+                        result = {
+                            "ok": False,
+                            "error": (
+                                "Proposal blocked: the user must explicitly request a transfer/preparation "
+                                "and state the exact matching MYR amount. Advice, hypothetical, conditional, "
+                                "or inferred amounts cannot create a proposal."
+                            ),
+                            "blocked_reason": "proposal_not_explicitly_requested",
+                        }
+                    else:
+                        result = self.call_tool(name, args)
                     if result.get("ok"):
                         trace.append({"step": "TOOL_RESULT", "status": "completed", "detail": f"{name} returned deterministic financial data."})
                     else:

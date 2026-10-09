@@ -540,7 +540,10 @@ class LocalAgentPlanner:
         )
         if read_only_financial_request:
             is_remittance = any(k in t for k in ["can i afford", "afford to send", "send sgd", "send money home"])
-            is_incoming_scenario = received and tuition_context and conversion_question
+            is_incoming_scenario = (
+                received and tuition_context
+                and any(k in t for k in ["convert", "exchange", "should i", "what should i do", "enough", "need to"])
+            )
             if is_remittance:
                 horizon = 30
                 forecast = self.engine.forecast_portfolio(horizon)

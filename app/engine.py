@@ -2835,7 +2835,20 @@ class FinanceEngine:
         # reach either planner. Otherwise a planner could infer an amount from a
         # forecast or saved wallet, which is not user authorization.
         early_intent = self.detect_intent(text)
-        if early_intent == "transfer" and self.extract_myr_amount(text) is None:
+        normalized_request = self.repair_user_text(text).lower()
+        planning_or_advice_request = any(
+            phrase in normalized_request
+            for phrase in [
+                "should i", "should we", "which currency", "which is better",
+                "what is the best", "best way", "recommend", "how should i",
+                "how should we", "compare", "what would be better",
+            ]
+        )
+        if (
+            early_intent == "transfer"
+            and self.extract_myr_amount(text) is None
+            and not planning_or_advice_request
+        ):
             return self._result(
                 "agentic_local",
                 "I need the exact MYR amount before preparing a transfer. Please specify it explicitly, for example: “Prepare a RM5,000 transfer to SGD.” No proposal or transaction was created.",

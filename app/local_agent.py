@@ -552,16 +552,16 @@ class LocalAgentPlanner:
             ], {"state_changed": False, "proposal": None})
 
         # Explicit savings-goal calculation: use only user-supplied scenario values.
-        savings_start = re.search(r'\\b(?:have|currently have|start with|starting with)\\s+(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)\\s+(?:in )?(?:my )?savings', t, re.I)
-        savings_income = re.search(r'\\b(?:receive|earn|income is|income of)\\s+(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)\\s*(?:per|a)\\s+month', t, re.I)
-        savings_expenses = re.search(r'\\b(?:spend|expenses are|expenses of|spending is)\\s+(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)\\s*(?:per|a)\\s+month', t, re.I)
-        savings_target = re.search(r'\\b(?:target|reach|have|save up to|save)\\s+(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)\\s+in\\s+(\\d+)\\s+months?', t, re.I)
+        savings_start = re.search(r'\b(?:have|currently have|start with|starting with)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s+(?:in )?(?:my )?savings', t, re.I)
+        savings_income = re.search(r'\b(?:receive|earn|income is|income of)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:per|a)\s+month', t, re.I)
+        savings_expenses = re.search(r'\b(?:spend|expenses are|expenses of|spending is)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:per|a)\s+month', t, re.I)
+        savings_target = re.search(r'\b(?:target|reach|have|save up to|save)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s+in\s+(\d+)\s+months?', t, re.I)
         if savings_start and savings_income and savings_expenses and savings_target and any(k in t for k in ['save enough', 'can i save', 'savings goal', 'target savings']):
             plan = {'starting': Decimal(savings_start.group(1).replace(',', '')), 'income': Decimal(savings_income.group(1).replace(',', '')), 'expenses': Decimal(savings_expenses.group(1).replace(',', '')), 'target': Decimal(savings_target.group(1).replace(',', '')), 'months': int(savings_target.group(2))}
             self.engine._agent_scenario_context['savings_goal_plan'] = plan
             return self._savings_goal_result(plan)
         remembered_plan = getattr(self.engine, '_agent_scenario_context', {}).get('savings_goal_plan')
-        expense_increase = re.search(r'(?:expenses|spending)\\s+(?:increase|go up|rise)\\s+by\\s+(?:sgd|s\\$)?\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)\\s*(?:per|a)\\s+month', t, re.I)
+        expense_increase = re.search(r'(?:expenses|spending)\s+(?:increase|go up|rise)\s+by\s+(?:sgd|s\$)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:per|a)\s+month', t, re.I)
         if remembered_plan and expense_increase and any(k in t for k in ['what if', 'increase', 'go up', 'rise']):
             return self._savings_goal_result(remembered_plan, Decimal(expense_increase.group(1).replace(',', '')))
         remembered_context = getattr(self.engine, "_agent_scenario_context", {})

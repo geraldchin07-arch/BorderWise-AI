@@ -1990,7 +1990,9 @@ def test_currency_typo_repair_preserves_valid_uncommon_codes():
     assert e.repair_user_text("KWD to EUR") == "KWD to EUR"
     assert e.repair_user_text("ZAR to PLN") == "ZAR to PLN"
     assert e.repair_user_text("MYR to SGD") == "MYR to SGD"
+    assert e.repair_user_text("RMB to SGD") == "RMB to SGD"
     assert e.repair_user_text("MRY to SGD") == "MYR to SGD"
+    assert e.repair_user_text("ABC 500") == "ABC 500"
 
 
 def test_conversion_pair_recognizes_additional_iso_codes():

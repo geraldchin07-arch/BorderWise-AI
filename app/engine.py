@@ -2658,8 +2658,8 @@ class FinanceEngine:
                     "nok": "NOK", "dkk": "DKK", "sar": "SAR", "aed": "AED", "qar": "QAR", "bnd": "BND",
                 }
                 multi_pattern = re.compile(
-                    rf"(?P<amount>[0-9][0-9,]*(?:\\.[0-9]+)?)\\s*"
-                    rf"(?P<base>{currency_words})\\s+(?:to|into|in)\\s+"
+                    rf"(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?)\s*"
+                    rf"(?P<base>{currency_words})\s+(?:to|into|in)\s+"
                     rf"(?P<quote>{currency_words})",
                     re.I,
                 )
@@ -2688,8 +2688,8 @@ class FinanceEngine:
                              {"step": "FX", "status": "blocked", "detail": "At least one requested pair could not be quoted reliably."}],
                             {"needs_clarification": True, "state_changed": False, "proposal": None},
                         )
-                    answer = "Here are both conversions using indicative reference rates:\\n" + "\\n".join(lines)
-                    answer += "\\nRates may differ from your bank's rate and exclude fees. These are calculations only; no proposal or transaction was created."
+                    answer = "Here are both conversions using indicative reference rates:\n" + "\n".join(lines)
+                    answer += "\nRates may differ from your bank's rate and exclude fees. These are calculations only; no proposal or transaction was created."
                     return self._result(
                         "fx", answer,
                         [{"step": "UNDERSTAND", "status": "completed", "detail": f"Recognized {len(results)} separate conversion requests."},

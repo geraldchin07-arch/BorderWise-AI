@@ -1631,6 +1631,11 @@ class FinanceEngine:
             return "transactions"
         return "general"
 
+    @staticmethod
+    def has_scientific_amount(text: str) -> bool:
+        """Detect scientific-notation tokens that must not be partially parsed as money."""
+        return bool(re.search(r"\d(?:\.\d+)?[eE][+-]?\d", str(text or "")))
+
     def parse_amount_token(self, raw_amount: str) -> Decimal:
         """Parse explicit numeric shorthand such as 2k or 1.5m without guessing units."""
         raw = str(raw_amount).strip().replace(",", "")
@@ -1643,6 +1648,8 @@ class FinanceEngine:
         return money(Decimal(raw) * multiplier)
 
     def extract_myr_amount(self, text: str) -> Decimal | None:
+        if self.has_scientific_amount(text):
+            return None
         amount = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[kKmM]?)(?![A-Za-z0-9]|,\d|\.\d)"
         currency = r"(?<![A-Za-z])(?:malaysian\s+ringgit|ringgit|rm|myr)(?![A-Za-z])"
         patterns = [
@@ -1656,6 +1663,8 @@ class FinanceEngine:
         return None
 
     def extract_sgd_amount(self, text: str) -> Decimal | None:
+        if self.has_scientific_amount(text):
+            return None
         amount = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[kKmM]?)(?![A-Za-z0-9]|,\d|\.\d)"
         currency = r"(?<![A-Za-z])(?:s\$|sgd|singapore\s+dollars?)(?![A-Za-z])"
         patterns = [
@@ -1670,6 +1679,8 @@ class FinanceEngine:
 
     def extract_generic_currency_amount(self, text: str) -> tuple[Decimal, str] | None:
         """Extract an explicit amount and canonical currency code from codes or common names."""
+        if self.has_scientific_amount(text):
+            return None
         raw_text = str(text or "").strip()
         t = self.repair_user_text(raw_text).strip()
         amount = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[kKmM]?)(?![A-Za-z0-9]|,\d|\.\d)"

@@ -17,7 +17,7 @@ load_dotenv()
 BASE = Path(__file__).resolve().parent.parent
 engine = FinanceEngine()
 
-app = FastAPI(title="XKF5 AI v7.3.0 — Currency-First", version="7.3.0")
+app = FastAPI(title="XKF5 AI v7.4.0 — Currency-First", version="7.4.0")
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
 @app.middleware("http")
@@ -83,7 +83,7 @@ def index():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "7.3.0", "python_compatible": "3.14+", "llm_enabled": bool(os.getenv("OPENAI_API_KEY")), "auto_fx_supported": True}
+    return {"ok": True, "version": "7.4.0", "python_compatible": "3.14+", "llm_enabled": bool(os.getenv("OPENAI_API_KEY")), "auto_fx_supported": True}
 
 
 @app.get("/api/state")

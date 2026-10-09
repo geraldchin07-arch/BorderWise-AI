@@ -856,16 +856,11 @@ class FinanceEngine:
         planning = str(meta.get("planning_currency", "SGD")).upper()
         planning_rate = self._profile_rate_to_sgd(planning)
 
-        # Forecast liquidity must include the full multi-currency wallet.
-        # Each configured balance is normalized to SGD using its configured
-        # reference/custom rate, then displayed in the planning currency.
-        start = money(0)
-        for code, balance in self.state["balances"].items():
-            balance_d = money(balance)
-            if balance_d <= 0:
-                continue
-            rate, _ = self._currency_rate_to_sgd(code)
-            start += money(balance_d * rate)
+        # The standard 30-day cash position uses the balance held in the
+        # selected planning currency. Foreign-currency assets are reported by
+        # currency_overview()/forecast_portfolio(), but should not be treated as
+        # immediately spendable cash before a conversion is planned.
+        start = money(self.state.get("balances", {}).get(planning, 0))
 
         income = money(self.state["income_monthly_sgd"])
         variable_spending = sum(self.state["monthly_spending_sgd"].values(), money(0))

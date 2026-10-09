@@ -2078,6 +2078,8 @@ def test_amount_extractors_support_shorthand_and_ringgit_names():
     assert e.extract_myr_amount("Transfer RM12,34") is None
     assert e.extract_myr_amount("Transfer RM-500 to Singapore") is None
     assert e.extract_generic_currency_amount("Convert -500 SGD to MYR") is None
+    assert e.extract_generic_currency_amount("Convert 1.2.3 SGD to MYR") is None
+    assert e.extract_myr_amount("Transfer RM1.2.3") is None
 
 
 def test_generic_currency_amount_rejects_unknown_three_letter_words():

@@ -2351,7 +2351,7 @@ def test_profile_api_returns_client_error_for_non_finite_general_profile():
     response = client.post("/api/profile", json={
         "general_profile": {
             "planning_currency": "SGD",
-            "balances": {"SGD": float("nan")}
+            "balances": {"SGD": "NaN"}
         }
     })
     assert response.status_code == 400

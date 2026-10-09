@@ -1805,6 +1805,31 @@ def test_four_currency_wallet_valuation_to_sgd():
     assert currencies["SGD"]["sgd_value"] == 500.0
 
 
+def test_quote_conversion_normalizes_rmb_alias_to_cny(monkeypatch):
+    e = FinanceEngine()
+    calls = []
+
+    def fake_pair(base, quote, force=False):
+        calls.append((base, quote))
+        return {
+            "base": base,
+            "quote": quote,
+            "rate": Decimal("0.19"),
+            "date": "2026-10-10",
+            "source": "Test reference source",
+            "live": True,
+            "updated_at": None,
+        }
+
+    monkeypatch.setattr(e, "_fetch_reference_pair", fake_pair)
+    result = e.quote_conversion(100, "RMB", "SGD")
+
+    assert calls == [("CNY", "SGD")]
+    assert result["from_currency"] == "CNY"
+    assert result["to_currency"] == "SGD"
+    assert result["converted_amount"] == 19.0
+
+
 def test_same_currency_conversion_returns_same_amount():
     e = FinanceEngine()
 

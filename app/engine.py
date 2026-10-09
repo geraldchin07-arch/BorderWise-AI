@@ -313,6 +313,9 @@ class FinanceEngine:
         self.state["monthly_spending_sgd"] = clean_spending
         self.state["spending_classifications"] = clean_classes
         self.state["balances"] = {"MYR": values["MYR"], "SGD": values["SGD"], **clean_extra}
+        # The legacy profile API retains its historical SGD cash position:
+        # MYR is a separate wallet balance until a conversion is planned.
+        self.state["profile_meta"]["profile_schema"] = "legacy"
         previous_prefs = self.state.get("fx_preferences", {})
         self.state["fx_preferences"] = {
             "myr_mode": myr_mode,

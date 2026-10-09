@@ -2304,3 +2304,19 @@ def test_profile_request_uses_independent_default_dictionaries():
     first.custom_fx_rates_to_sgd["ZZZ"] = 2
     assert "test" not in second.monthly_spending_sgd
     assert "ZZZ" not in second.custom_fx_rates_to_sgd
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf"), "NaN", "Infinity"])
+def test_money_rejects_non_finite_values(value):
+    from app.engine import money
+
+    with pytest.raises(ValueError, match="finite"):
+        money(value)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), "NaN", "Infinity"])
+def test_fxrate_rejects_non_finite_values(value):
+    from app.engine import fxrate
+
+    with pytest.raises(ValueError, match="finite"):
+        fxrate(value)

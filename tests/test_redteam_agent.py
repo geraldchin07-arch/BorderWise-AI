@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.engine import FinanceEngine
+from app.agent import AgentOrchestrator
 
 
 def test_redteam_all_funds_transfer_is_blocked_before_proposal():
@@ -303,3 +304,31 @@ def test_redteam_explicit_sgd_remittance_is_not_misclassified_as_missing_amount(
     assert e.state["transactions"] == before_transactions
     assert e.get_balance() == before_balances
 
+
+
+def test_redteam_llm_proposal_requires_explicit_matching_transfer_request():
+    e = FinanceEngine()
+    planner = AgentOrchestrator(e)
+
+    assert planner._proposal_request_is_explicit(
+        "Prepare the RM5000 conversion to SGD.", {"amount_myr": 5000}
+    )
+    assert not planner._proposal_request_is_explicit(
+        "I have RM5000. Should I convert some to SGD?", {"amount_myr": 5000}
+    )
+    assert not planner._proposal_request_is_explicit(
+        "Prepare a transfer using the recommended amount.", {"amount_myr": 5000}
+    )
+    assert not planner._proposal_request_is_explicit(
+        "Prepare a transfer of RM7000 to SGD.", {"amount_myr": 5000}
+    )
+
+
+def test_redteam_llm_proposal_rejects_conditional_incoming_money():
+    e = FinanceEngine()
+    planner = AgentOrchestrator(e)
+
+    assert not planner._proposal_request_is_explicit(
+        "My parents might send RM5000, prepare a transfer of RM5000 to SGD.",
+        {"amount_myr": 5000},
+    )

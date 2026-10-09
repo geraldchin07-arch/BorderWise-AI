@@ -365,7 +365,7 @@ async function send(){
  }
 }
 function showProposal(p){
- document.getElementById('proposal').innerHTML=`<div class="proposal"><b>Level 2 authorization required</b><p>Convert <b>RM ${Number(p.amount_myr).toLocaleString(undefined,{minimumFractionDigits:2})}</b> → <b>S$ ${Number(p.amount_sgd).toLocaleString(undefined,{minimumFractionDigits:2})}</b></p><p>Purpose: ${p.purpose}</p><div style="display:flex;gap:8px"><button class="btn" onclick="authorize(true)">Authorize & execute</button><button class="btn secondary" onclick="authorize(false)">Reject</button></div></div>`;
+ document.getElementById('proposal').innerHTML=`<div class="proposal"><b>Level 2 authorization required</b><p>Convert <b>RM ${Number(p.amount_myr).toLocaleString(undefined,{minimumFractionDigits:2})}</b> → <b>S$ ${Number(p.amount_sgd).toLocaleString(undefined,{minimumFractionDigits:2})}</b></p><p>Purpose: ${escapeFXHtml(p.purpose)}</p><div style="display:flex;gap:8px"><button class="btn" onclick="authorize(true)">Authorize & execute</button><button class="btn secondary" onclick="authorize(false)">Reject</button></div></div>`;
 }
 async function authorize(approved){
  if(!latestProposal)return;

@@ -2129,51 +2129,6 @@ class FinanceEngine:
         # is around 6k soon, am I cooked?" should use only the balances and
         # tuition amount explicitly stated in the message, not the saved demo
         # wallet or saved emergency-reserve configuration.
-        casual_tuition_question = (
-            "tuition" in normalized
-            and any(k in normalized for k in [
-                "am i cooked", "cooked", "am i okay", "am i ok",
-                "can i afford", "do i have enough", "can i cover",
-            ])
-            and any(k in normalized for k in ["got", "have", "i've got", "ive got"])
-        )
-        if casual_tuition_question:
-            casual_sgd_values = []
-            # Keep these regexes simple: support "SGD 2k" and "2k SGD"
-            # without nested escaping.
-            for match in re.finditer(
-                r"(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)([km]?)",
-                normalized,
-                re.IGNORECASE,
-            ):
-                amount_text, suffix = match.groups()
-                multiplier = (
-                    Decimal("1000") if suffix.lower() == "k"
-                    else Decimal("1000000") if suffix.lower() == "m"
-                    else Decimal("1")
-                )
-                casual_sgd_values.append(
-                    money(Decimal(amount_text.replace(",", "")) * multiplier)
-                )
-            for match in re.finditer(
-                r"([0-9][0-9,]*(?:\.[0-9]+)?)([km]?)\s*(?:sgd|s\$)",
-                normalized,
-                re.IGNORECASE,
-            ):
-                amount_text, suffix = match.groups()
-                multiplier = (
-                    Decimal("1000") if suffix.lower() == "k"
-                    else Decimal("1000000") if suffix.lower() == "m"
-                    else Decimal("1")
-                )
-                casual_sgd_values.append(
-                    money(Decimal(amount_text.replace(",", "")) * multiplier)
-                )
-            # The two explicit-SGD regexes intentionally cover both word orders,
-            # but the same amount can match both. Deduplicate before deciding whether
-            # a second (implicit-SGD) tuition amount still needs to be parsed.
-            casual_sgd_values = list(dict.fromkeys(casual_sgd_values))
-
         # Explicit figures in an affordability question override demo-wallet
         # values. This read-only path must never create a conversion proposal.
         explicit_tuition_case = (
@@ -2659,6 +2614,52 @@ class FinanceEngine:
                 # Do not crash on malformed/unsupported FX wording. Let the normal
                 # planner explain the issue rather than returning a server error.
                 pass
+
+
+        casual_tuition_question = (
+            "tuition" in normalized
+            and any(k in normalized for k in [
+                "am i cooked", "cooked", "am i okay", "am i ok",
+                "can i afford", "do i have enough", "can i cover",
+            ])
+            and any(k in normalized for k in ["got", "have", "i've got", "ive got"])
+        )
+        if casual_tuition_question:
+            casual_sgd_values = []
+            # Keep these regexes simple: support "SGD 2k" and "2k SGD"
+            # without nested escaping.
+            for match in re.finditer(
+                r"(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)([km]?)",
+                normalized,
+                re.IGNORECASE,
+            ):
+                amount_text, suffix = match.groups()
+                multiplier = (
+                    Decimal("1000") if suffix.lower() == "k"
+                    else Decimal("1000000") if suffix.lower() == "m"
+                    else Decimal("1")
+                )
+                casual_sgd_values.append(
+                    money(Decimal(amount_text.replace(",", "")) * multiplier)
+                )
+            for match in re.finditer(
+                r"([0-9][0-9,]*(?:\.[0-9]+)?)([km]?)\s*(?:sgd|s\$)",
+                normalized,
+                re.IGNORECASE,
+            ):
+                amount_text, suffix = match.groups()
+                multiplier = (
+                    Decimal("1000") if suffix.lower() == "k"
+                    else Decimal("1000000") if suffix.lower() == "m"
+                    else Decimal("1")
+                )
+                casual_sgd_values.append(
+                    money(Decimal(amount_text.replace(",", "")) * multiplier)
+                )
+            # The two explicit-SGD regexes intentionally cover both word orders,
+            # but the same amount can match both. Deduplicate before deciding whether
+            # a second (implicit-SGD) tuition amount still needs to be parsed.
+            casual_sgd_values = list(dict.fromkeys(casual_sgd_values))
 
         # Deterministic savings-goal reasoning must take priority over the
         # general planner. Parse explicit figures here so an LLM response cannot

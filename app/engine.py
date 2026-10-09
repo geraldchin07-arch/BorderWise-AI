@@ -856,15 +856,18 @@ class FinanceEngine:
         planning = str(meta.get("planning_currency", "SGD")).upper()
         planning_rate = self._profile_rate_to_sgd(planning)
 
-        # Forecast liquidity includes the full wallet. Normalize each currency
-        # to SGD first, then express the total in the selected planning currency.
-        start = money(0)
-        for code, balance in self.state["balances"].items():
-            balance_d = money(balance)
-            if balance_d <= 0:
-                continue
-            rate, _ = self._currency_rate_to_sgd(code)
-            start += money(balance_d * rate)
+        # Modern currency-first profiles explicitly model a multi-currency wallet.
+        # Preserve legacy cash-position semantics until foreign funds are converted.
+        if meta.get("planning_currency"):
+            start = money(0)
+            for code, balance in self.state["balances"].items():
+                balance_d = money(balance)
+                if balance_d <= 0:
+                    continue
+                rate, _ = self._currency_rate_to_sgd(code)
+                start += money(balance_d * rate)
+        else:
+            start = money(self.state.get("balances", {}).get(planning, 0))
 
         income = money(self.state["income_monthly_sgd"])
         variable_spending = sum(self.state["monthly_spending_sgd"].values(), money(0))

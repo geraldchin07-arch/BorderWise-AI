@@ -2370,3 +2370,35 @@ def test_fx_quote_api_rejects_malformed_currency_code():
     })
     assert response.status_code == 400
     assert "3-letter" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("payload", ["[]", "null", "{"])
+def test_fx_provider_malformed_payload_uses_safe_fallback(monkeypatch, payload):
+    class MalformedResponse:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def read(self):
+            return payload.encode()
+
+    monkeypatch.setattr(engine_module, "urlopen", lambda *args, **kwargs: MalformedResponse())
+    result = FinanceEngine().quote_conversion(100, "CNY", "SGD")
+    assert result["rate"] == pytest.approx(0.1908)
+    assert result["fx"]["live"] is False
+    assert "fallback" in result["fx"]["source"].lower() or "last known" in result["fx"]["source"].lower()
+
+
+def test_fx_provider_non_finite_rate_uses_safe_fallback(monkeypatch):
+    class NonFiniteResponse:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def read(self):
+            return b'{"rate": "NaN", "date": "2026-10-09"}'
+
+    monkeypatch.setattr(engine_module, "urlopen", lambda *args, **kwargs: NonFiniteResponse())
+    result = FinanceEngine().quote_conversion(100, "CNY", "SGD")
+    assert result["rate"] == pytest.approx(0.1908)
+    assert result["fx"]["live"] is False

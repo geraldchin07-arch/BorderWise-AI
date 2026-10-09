@@ -2076,6 +2076,8 @@ def test_amount_extractors_support_shorthand_and_ringgit_names():
     assert e.extract_generic_currency_amount("Convert 1,200 MYR to SGD") == (Decimal("1200.00"), "MYR")
     assert e.extract_generic_currency_amount("Convert 12,34 MYR to SGD") is None
     assert e.extract_myr_amount("Transfer RM12,34") is None
+    assert e.extract_myr_amount("Transfer RM-500 to Singapore") is None
+    assert e.extract_generic_currency_amount("Convert -500 SGD to MYR") is None
 
 
 def test_generic_currency_amount_rejects_unknown_three_letter_words():

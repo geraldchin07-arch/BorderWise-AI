@@ -838,6 +838,9 @@ class FinanceEngine:
         amount_d = money(amount)
         base = from_currency.upper().strip()
         quote = to_currency.upper().strip()
+        # RMB is a common alias for the ISO currency code CNY.
+        base = {"RMB": "CNY"}.get(base, base)
+        quote = {"RMB": "CNY"}.get(quote, quote)
         if amount_d <= 0:
             raise ValueError("Conversion amount must be positive.")
         if not re.fullmatch(r"[A-Z]{3}", base) or not re.fullmatch(r"[A-Z]{3}", quote):

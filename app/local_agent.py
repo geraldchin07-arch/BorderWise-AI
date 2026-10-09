@@ -230,8 +230,9 @@ class LocalAgentPlanner:
             )
             match = re.search(pattern, raw_text)
             if match:
-                raw_amount = match.group(1)
-                return self._parse_human_amount(raw_amount)
+                raw_amount = next((value for value in match.groups() if value), None)
+                if raw_amount:
+                    return self._parse_human_amount(raw_amount)
         t = raw_text.lower().strip()
 
         aliases = self._currency_aliases()

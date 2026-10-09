@@ -369,6 +369,25 @@ def test_redteam_llm_proposal_rejects_conditional_incoming_money():
     )
 
 
+def test_redteam_local_planner_disambiguates_word_shaped_currency_codes():
+    planner = LocalAgentPlanner(FinanceEngine())
+
+    assert planner._amount("Convert MAD 500 to SGD", "MAD") == 500
+    assert planner._amount("Convert mad 500 to SGD", "MAD") is None
+    assert planner._amount("Convert TRY 500 to SGD", "TRY") == 500
+    assert planner._amount("Please try 500 examples", "TRY") is None
+    assert planner._extract_wallet_balances_from_text(
+        "I have 500 MAD and 100 SGD."
+    ) == {
+        "MAD": planner.engine.money_value(500),
+        "SGD": planner.engine.money_value(100),
+    }
+    assert planner._extract_labeled_amount(
+        "Tuition is MAD 500 and I may transfer RM300 later.",
+        ["tuition"],
+    ) == (planner.engine.money_value(500), "MAD")
+
+
 def test_redteam_local_planner_validates_grouped_amounts_and_decimals():
     planner = LocalAgentPlanner(FinanceEngine())
 

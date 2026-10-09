@@ -1985,6 +1985,24 @@ def test_generic_currency_amount_recognizes_names_and_symbols(prompt, expected):
     assert e.extract_generic_currency_amount(prompt) == expected
 
 
+def test_web_currency_selector_codes_are_recognized_by_engine():
+    from pathlib import Path
+    import re
+
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+    match = re.search(r"function currencyOptions\(\)\{return \[([^\]]+)\]", html)
+    assert match, "Web currency selector definition should exist"
+    codes = re.findall(r"'([A-Z]{3})'", match.group(1))
+    assert len(codes) >= 100
+    assert len(codes) == len(set(codes)), "Currency selector must not contain duplicates"
+
+    engine = FinanceEngine()
+    for code in codes:
+        assert engine.repair_user_text(code) == code
+        pair = engine.extract_conversion_pair(f"{code} to SGD")
+        assert pair == (code, "SGD"), f"Currency selector code {code} is not recognized by the engine"
+
+
 def test_currency_typo_repair_preserves_valid_uncommon_codes():
     e = FinanceEngine()
     assert e.repair_user_text("KWD to EUR") == "KWD to EUR"

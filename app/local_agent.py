@@ -539,7 +539,7 @@ class LocalAgentPlanner:
             ])
         )
         if read_only_financial_request:
-            is_remittance = any(k in t for k in ["can i afford", "afford to send", "send sgd", "send money home"])
+            is_remittance = any(k in t for k in ["afford to send", "send sgd", "send money home", "remittance"])
             is_incoming_scenario = (
                 received and tuition_context
                 and any(k in t for k in ["convert", "exchange", "should i", "what should i do", "enough", "need to"])
@@ -572,7 +572,17 @@ class LocalAgentPlanner:
                     {"step": "SECURITY", "status": "completed", "detail": "No proposal or transaction was created."},
                     {"step": "RECOMMEND", "status": "completed", "detail": action},
                 ]
-                return self._result("remittance_affordability", answer, trace, {"action": action, "forecast": forecast, "health": health, "state_changed": False})
+                return self._result("remittance_affordability", answer, trace, {
+                    "goal": "remittance_affordability",
+                    "remittance": {
+                        "target": {"currency": planning_currency, "amount": float(amount)},
+                        "action": action,
+                        "projected_after": float(after),
+                        "state_changed": False,
+                    },
+                    "action": action, "forecast": forecast, "health": health, "state_changed": False,
+                    "judge": {"goal": "remittance_affordability"},
+                })
             if is_incoming_scenario:
                 amount = myr if myr is not None else sgd
                 currency = "MYR" if myr is not None else "SGD"
@@ -600,7 +610,33 @@ class LocalAgentPlanner:
                     {"step": "SECURITY", "status": "completed", "detail": "Saved balances unchanged; no proposal or transaction was created."},
                     {"step": "RECOMMEND", "status": "completed", "detail": "Confirm receipt and review tuition due date before converting."},
                 ]
-                return self._result("incoming_funds_planning", answer, trace, {"incoming_funds": {"amount": float(amount), "currency": currency, "state_changed": False}, "forecast_after_income": scenario, "state_changed": False})
+                scenario_shortfall_sgd = self.engine.money_value(scenario.get("projected_shortfall_sgd", scenario.get("shortfall_sgd", 0)))
+                return self._result("incoming_funds_planning", answer, trace, {
+                    "incoming_funds": {"amount": float(amount), "currency": currency, "state_changed": False},
+                    "forecast_after_income": {**scenario, "projected_shortfall_sgd": float(scenario_shortfall_sgd)},
+                    "state_changed": False,
+                })
+            if any(k in t for k in ["can i afford", "afford it", "afford this"]) and any(k in t for k in ["tuition", "school fee", "semester fee"]):
+                amount, currency = self._extract_labeled_amount(t, ["tuition", "school fee", "semester fee"]) or (None, planning)
+                if amount is None:
+                    amount = self._amount(t, planning)
+                amount = self.engine.money_value(amount or 0)
+                balances = remembered_context.get("wallet_balances") or self.engine.get_balance()
+                cash = self.engine.money_value(balances.get(planning, 0))
+                answer = (
+                    f"Tuition affordability assessment: stated available {planning} cash is {cash:,.2f}. "
+                    f"Tuition obligation: {currency} {amount:,.2f}. "
+                    + ("The stated cash balance alone appears sufficient, but confirm other obligations and reserve needs." if currency == planning and cash >= amount else "The stated cash balance alone does not cover the tuition amount; account for any confirmed incoming funds and due dates before deciding.")
+                    + " This is read-only; no proposal or transaction was created."
+                )
+                trace = [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a tuition affordability question."},
+                    {"step": "OBSERVE", "status": "completed", "detail": "Used the latest stated wallet balance and tuition amount."},
+                    {"step": "CALCULATE", "status": "completed", "detail": f"Compared available {planning} {cash:,.2f} with tuition {currency} {amount:,.2f}."},
+                    {"step": "SECURITY", "status": "completed", "detail": "No proposal or transaction was created."},
+                    {"step": "RECOMMEND", "status": "completed", "detail": "Recommended checking remaining obligations and reserve needs."},
+                ]
+                return self._result("affordability", answer, trace, {"goal": "affordability", "agent_mode": "local_agent_planner", "state_changed": False, "tuition_amount": float(amount), "tuition_currency": currency, "available_balance": float(cash)})
             if any(k in t for k in ["financial position", "cash position", "funding gap", "current balances", "available balances", "how much do i have"]):
                 horizon = self._extract_horizon_days(t) or 30
                 forecast = self.engine.forecast_portfolio(horizon)

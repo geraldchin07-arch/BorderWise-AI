@@ -2148,3 +2148,37 @@ def test_agent_tuition_affordability_identifies_amounts_by_label_not_order():
     assert r["data"]["shortfall_sgd"] == 11000.0
     assert r["data"]["state_changed"] is False
     assert r["data"]["proposal"] is None
+
+
+def test_agent_clarifies_ambiguous_dollars_even_when_destination_is_sgd():
+    e = FinanceEngine()
+    before = e.get_balance()
+    r = e.agent("Convert 200 dollars into Singapore dollars.")
+
+    assert r["intent"] == "fx"
+    assert r["data"]["needs_clarification"] is True
+    assert "Which currency do you mean by 'dollars'" in r["answer"]
+    assert r["data"]["state_changed"] is False
+    assert r["data"]["proposal"] is None
+    assert e.get_balance() == before
+
+
+def test_agent_still_accepts_explicit_us_dollars():
+    e = FinanceEngine()
+    calls = []
+
+    def fake_quote(amount, base, quote, **kwargs):
+        calls.append((float(amount), base, quote))
+        return {
+            "amount": float(amount), "from_currency": base, "to_currency": quote,
+            "rate": 1.35, "converted_amount": float(amount) * 1.35,
+            "fx": {"source": "Test reference source", "rate_date": "2026-10-09", "live": True},
+        }
+
+    e.quote_conversion = fake_quote
+    r = e.agent("Convert 200 US dollars into Singapore dollars.")
+
+    assert r["intent"] == "fx"
+    assert calls == [(200.0, "USD", "SGD")]
+    assert r["data"]["state_changed"] is False
+    assert r["data"]["proposal"] is None

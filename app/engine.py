@@ -1494,15 +1494,29 @@ class FinanceEngine:
         # agent's all-funds safety gate.
         if any(k in t for k in ["transfer", "send money", "remit", "remittance", "send myr", "send sgd", "pay"]):
             return "transfer"
-        currency_mentions = re.findall(r"\b(?:sgd|myr|usd|cny|jpy|krw|thb|eur|gbp|aud|cad|hkd|twd|inr)\b", t)
+        currency_aliases = {
+            "sgd", "s$", "singapore dollar", "singapore dollars",
+            "myr", "rm", "ringgit", "malaysian ringgit",
+            "usd", "us$", "us dollar", "us dollars", "dollar", "dollars",
+            "cny", "rmb", "yuan", "renminbi", "jpy", "yen", "krw", "won",
+            "thb", "baht", "eur", "euro", "euros", "gbp", "pound", "pounds",
+            "aud", "cad", "hkd", "twd", "inr", "idr", "php", "vnd", "nzd",
+            "chf", "sek", "nok", "dkk", "sar", "aed", "qar", "bnd",
+        }
+        currency_mentions = [name for name in currency_aliases if re.search(rf"\b{re.escape(name)}\b", t)]
+        currency_follow_up = any(k in t for k in ["how about", "what about", "and in", "what if"])
+        fx_language = any(k in t for k in [
+            "exchange rate", "current rate", "exchange", "fx", "convert", "conversion",
+            "change my money", "change money", "want change money", "want to change money",
+            "change currency", "change my currency", "exchange currency", "change my",
+            "can i change", "i want change", "i want to change", "convert my money", "how do i exchange",
+            "exchange myr", "exchange sgd", "how much myr do i need", "myr do i need", "sgd to myr",
+            "current currency", "currency of", "rate of",
+        ])
         if (
-            any(k in t for k in ["exchange rate", "current rate", "exchange", "fx", "convert", "conversion",
-                                 "change my money", "change money", "want change money", "want to change money",
-                                 "change currency", "change my currency", "exchange currency",
-                                 "can i change", "i want change", "i want to change", "convert my money", "how do i exchange",
-                                 "exchange myr", "exchange sgd", "how much myr do i need", "myr do i need", "sgd to myr",
-                                 "current currency", "currency of", "rate of"])
-            or (len(set(currency_mentions)) >= 2 and any(k in t for k in ["to", "into", "in", "rate", "currency", "current"]))
+            fx_language
+            or (len(currency_mentions) >= 1 and currency_follow_up)
+            or (len(currency_mentions) >= 2 and any(k in t for k in ["to", "into", "in", "rate", "currency", "current"]))
         ):
             return "fx"
         if any(k in t for k in ["afford", "tuition", "fees", "enough money", "enough for"]):

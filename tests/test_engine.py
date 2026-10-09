@@ -2273,3 +2273,34 @@ def test_safe_conversion_ui_validates_quote_response_numbers():
     assert "!Number.isFinite(quotedRate)" in html
     assert "!Number.isFinite(convertedAmount)" in html
     assert "The rate provider returned an invalid quote." in html
+
+
+def test_fx_api_rejects_non_currency_codes():
+    from pydantic import ValidationError
+    from app.main import FXConversionRequest
+
+    with pytest.raises(ValidationError):
+        FXConversionRequest(amount=100, from_currency="<script>", to_currency="SGD")
+    with pytest.raises(ValidationError):
+        FXConversionRequest(amount=100, from_currency="MYR", to_currency="12!")
+
+
+def test_fx_api_rejects_non_finite_conversion_values():
+    from pydantic import ValidationError
+    from app.main import FXConversionRequest
+
+    with pytest.raises(ValidationError):
+        FXConversionRequest(amount=float("nan"), from_currency="MYR", to_currency="SGD")
+    with pytest.raises(ValidationError):
+        FXConversionRequest(amount=100, from_currency="MYR", to_currency="SGD", custom_rate=float("inf"))
+
+
+def test_profile_request_uses_independent_default_dictionaries():
+    from app.main import ProfileRequest
+
+    first = ProfileRequest()
+    second = ProfileRequest()
+    first.monthly_spending_sgd["test"] = 1
+    first.custom_fx_rates_to_sgd["ZZZ"] = 2
+    assert "test" not in second.monthly_spending_sgd
+    assert "ZZZ" not in second.custom_fx_rates_to_sgd

@@ -2425,6 +2425,51 @@ class FinanceEngine:
                 },
             )
 
+        # User-supplied hypothetical FX rates are arithmetic inputs, not live quotes.
+        # Evaluate them directly so a reference-rate lookup cannot override the scenario.
+        hypothetical_text = self.repair_user_text(text).lower()
+        if any(k in hypothetical_text for k in ["compare", "difference between", "what is the difference"]) and any(
+            k in hypothetical_text for k in ["hypothetical", "assume", "at rate", "at 0.", "versus", " vs "]
+        ):
+            amount_match = re.search(
+                r"\\b(?P<currency>myr|rm|ringgit|malaysian ringgit|sgd|s\\$|singapore dollars?|usd|us\\$|us dollars?)\\s*(?P<amount>[0-9][0-9,]*(?:\\.[0-9]+)?)|"
+                r"\\b(?P<amount_after>[0-9][0-9,]*(?:\\.[0-9]+)?)\\s*(?P<currency_after>myr|rm|ringgit|malaysian ringgit|sgd|s\\$|singapore dollars?|usd|us\\$|us dollars?)\\b",
+                hypothetical_text,
+            )
+            rate_matches = re.findall(r"\\b(?:at\\s+(?:a\\s+)?rate\\s+of\\s+|rate\\s+of\\s+)?(0?\\.[0-9]+|[1-9][0-9]*(?:\\.[0-9]+)?)\\b", hypothetical_text)
+            pair_match = re.search(
+                r"\\b(sgd|singapore dollars?|myr|ringgit|usd|us dollars?)\\s+per\\s+(myr|ringgit|sgd|singapore dollars?|usd|us dollars?)\\b",
+                hypothetical_text,
+            )
+            if amount_match and len(rate_matches) >= 2 and pair_match:
+                currency_aliases = {
+                    "rm": "MYR", "ringgit": "MYR", "malaysian ringgit": "MYR", "myr": "MYR",
+                    "s$": "SGD", "singapore dollar": "SGD", "singapore dollars": "SGD", "sgd": "SGD",
+                    "us$": "USD", "us dollar": "USD", "us dollars": "USD", "usd": "USD",
+                }
+                amount_currency = currency_aliases.get((amount_match.group("currency") or amount_match.group("currency_after")).lower())
+                amount_raw = amount_match.group("amount") or amount_match.group("amount_after")
+                rate_quote = currency_aliases.get(pair_match.group(1).lower())
+                rate_base = currency_aliases.get(pair_match.group(2).lower())
+                if amount_currency and rate_quote and rate_base and amount_currency == rate_base and rate_base != rate_quote:
+                    amount = Decimal(amount_raw.replace(",", ""))
+                    rate_a, rate_b = Decimal(rate_matches[-2]), Decimal(rate_matches[-1])
+                    result_a, result_b = amount * rate_a, amount * rate_b
+                    difference = abs(result_a - result_b)
+                    answer = (
+                        f"Using your hypothetical rates (not live market quotes):\\n"
+                        f"• {amount:,.2f} {rate_base} at {rate_a} {rate_quote} per {rate_base} = {result_a:,.2f} {rate_quote}.\\n"
+                        f"• {amount:,.2f} {rate_base} at {rate_b} {rate_quote} per {rate_base} = {result_b:,.2f} {rate_quote}.\\n"
+                        f"Difference: {difference:,.2f} {rate_quote}. The higher rate gives {difference:,.2f} {rate_quote} more. No account state changed and no transaction was created."
+                    )
+                    return self._result("fx_comparison", answer, [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Extracted the amount, currency pair and both user-supplied hypothetical rates."},
+                        {"step": "CALCULATE", "status": "completed", "detail": "Calculated both outcomes and their absolute difference using Decimal arithmetic."},
+                        {"step": "SECURITY", "status": "completed", "detail": "Scenario-only calculation; no live quote or transaction was used."},
+                    ], {"amount": float(amount), "base_currency": rate_base, "quote_currency": rate_quote,
+                        "rates": [float(rate_a), float(rate_b)], "converted_amounts": [float(result_a), float(result_b)],
+                        "difference": float(difference), "hypothetical_only": True, "state_changed": False, "proposal": None})
+
         # Typo-tolerant FX fast path: simple exchange-rate questions should never depend
         # on the LLM understanding every word perfectly. Repair small typos, resolve the pair
         # deterministically, and return a safe reference quote before invoking any planner.

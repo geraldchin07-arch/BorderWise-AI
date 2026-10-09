@@ -1525,7 +1525,24 @@ class FinanceEngine:
             if word.lower() in common_typos:
                 words[i] = common_typos[word.lower()]
         t = "".join(words)
-        currency_codes = ["SGD", "MYR", "USD", "CNY", "JPY", "KRW", "THB", "EUR", "GBP", "AUD", "CAD", "HKD", "TWD", "INR"]
+        # Preserve valid ISO currency codes before fuzzy typo repair. Otherwise
+        # uncommon but valid codes such as KWD can be silently rewritten to KRW.
+        currency_codes = [
+            "SGD", "MYR", "USD", "CNY", "JPY", "KRW", "THB", "EUR", "GBP",
+            "AUD", "CAD", "HKD", "TWD", "INR", "IDR", "PHP", "VND", "NZD",
+            "CHF", "SEK", "NOK", "DKK", "SAR", "AED", "QAR", "BND", "ALL",
+            "AMD", "ARS", "AZN", "BAM", "BGN", "BOB", "BRL", "BYN", "CLP",
+            "COP", "CRC", "CZK", "DOP", "DZD", "EGP", "GEL", "GHS", "GTQ",
+            "HNL", "HUF", "ILS", "IQD", "ISK", "JOD", "KES", "KWD", "KZT",
+            "LBP", "LKR", "MAD", "MDL", "MKD", "MMK", "MNT", "MOP", "MUR",
+            "MVR", "MXN", "NGN", "NPR", "OMR", "PEN", "PKR", "PLN", "PYG",
+            "RON", "RSD", "RUB", "RWF", "UAH", "UYU", "UZS", "VES", "XAF",
+            "XOF", "XPF", "ZAR", "ZMW", "ZWL", "ETB", "TZS", "UGX", "XCD",
+            "BWP", "BIF", "CDF", "DJF", "ERN", "FJD", "GYD", "HTG", "JMD",
+            "KHR", "KMF", "LAK", "LSL", "MGA", "MWK", "MZN", "NAD", "PAB",
+            "SBD", "SCR", "SDG", "SOS", "SRD", "SSP", "SYP", "TJS", "TMT",
+            "TOP", "TTD", "VUV", "WST", "YER",
+        ]
         common_words = {"the", "and", "for", "you", "what", "how", "are", "can", "from", "into", "this", "that", "with", "not", "now", "get", "one", "two", "all", "any", "per", "via", "use", "new", "may", "might", "could", "possibly", "maybe", "perhaps"}
         def repair_code(match: re.Match[str]) -> str:
             token = match.group(0).upper()

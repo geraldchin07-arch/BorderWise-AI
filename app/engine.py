@@ -2576,6 +2576,24 @@ class FinanceEngine:
                     {"step": "OBSERVE", "status": "needs_input", "detail": "Source currency and amount are missing."},
                     {"step": "SECURITY", "status": "completed", "detail": "Clarification only; no proposal or transaction was created."},
                 ], {"target_currency": target, "needs_clarification": True, "state_changed": False, "proposal": None})
+            # Do not silently fall back to the demo MYR/SGD pair when the user
+            # asks for a rate without identifying both currencies.
+            vague_rate_request = any(k in fx_text for k in [
+                "best exchange rate", "exchange rate right now", "current exchange rate",
+                "today's exchange rate", "todays exchange rate", "current rate",
+            ])
+            ambiguous_bucks = "buck" in fx_text and not any(
+                code in fx_text for code in ["usd", "us$", "sgd", "myr", "aud", "cad"]
+            )
+            if not requested_pair and (vague_rate_request or ambiguous_bucks):
+                if ambiguous_bucks:
+                    question = "Which currency do you mean by 'bucks'—for example, US dollars (USD), Singapore dollars (SGD), or another currency?"
+                else:
+                    question = "Which two currencies should I compare? I need the source and target currencies to retrieve the correct current reference rate."
+                return self._result("fx", question, [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Detected that the requested currency pair is not specified."},
+                    {"step": "OBSERVE", "status": "needs_input", "detail": "Asked for the missing currency information instead of assuming the default pair."},
+                ], {"needs_clarification": True, "state_changed": False, "proposal": None})
             # RMB/Yuan/CNY without a source/target pair is ambiguous. Never
             # silently substitute the app's default MYR-to-SGD quote.
             fx_text = self.repair_user_text(text).lower()

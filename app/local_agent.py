@@ -272,7 +272,7 @@ class LocalAgentPlanner:
             context = window.group("context")
             amount_match = re.search(
                 rf"(?P<currency>{token})\s*(?P<amount>(?<![\d,])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?(?![\d,]))"
-                rf"|(?P<amount_rev>(?<![\d,])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?(?![\d,]))\s*(?P<currency_rev>{token})\b",
+                rf"|(?P<amount_rev>(?<![\d,])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?(?![\d,]))\s*(?P<currency_rev>{token})",
                 context,
                 re.I,
             )

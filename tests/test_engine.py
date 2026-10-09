@@ -2558,6 +2558,42 @@ def test_legacy_profile_update_is_atomic_when_late_validation_fails():
     assert e.state == before
 
 
+def test_profile_with_unsupported_auto_currency_fails_atomically(monkeypatch):
+    e = FinanceEngine()
+    before = copy.deepcopy(e.state)
+    monkeypatch.setattr(
+        e,
+        "refresh_auto_fx",
+        lambda force=False, codes=None: {"ok": True, "rates": {}, "missing": list(codes or [])},
+    )
+    payload = {
+        "planning_currency": "SGD",
+        "balances": {"SGD": 1000, "MYR": 5000, "KWD": 50},
+        "balance_fx_modes": {"MYR": "custom", "KWD": "auto"},
+        "custom_fx_rates_to_sgd": {"MYR": 0.31},
+        "monthly_income_amount": 1000,
+        "monthly_income_currency": "SGD",
+        "emergency_reserve_amount": 500,
+        "emergency_reserve_currency": "SGD",
+        "tuition_amount": 2000,
+        "tuition_currency": "SGD",
+        "scholarship_amount": 0,
+        "loan_amount": 0,
+        "accommodation_amount": 300,
+        "accommodation_currency": "SGD",
+        "other_obligations_amount": 0,
+        "other_obligations_currency": "SGD",
+        "monthly_spending_currency": "SGD",
+        "monthly_spending": {"Food": 100},
+        "spending_classifications": {"Food": "Adjustable"},
+    }
+
+    with pytest.raises(ValueError, match="KWD/SGD is currently unavailable"):
+        e.update_profile_general(payload)
+
+    assert e.state == before
+
+
 def test_transfer_proposal_requires_both_wallet_currency_rows():
     e = FinanceEngine()
     e.state["balances"] = {"MYR": Decimal("10000.00")}

@@ -1552,12 +1552,50 @@ class FinanceEngine:
         return None
 
     def extract_generic_currency_amount(self, text: str) -> tuple[Decimal, str] | None:
-        m = re.search(r"(?:^|\s)([A-Za-z]{3})\s*([0-9][0-9,]*(?:\.[0-9]+)?)\b|(?:^|\s)([0-9][0-9,]*(?:\.[0-9]+)?)\s*([A-Za-z]{3})(?:\s|$)", text)
-        if not m:
-            return None
-        code = (m.group(1) or m.group(4)).upper()
-        value = m.group(2) or m.group(3)
-        return money(value.replace(',', '')), code
+        """Extract an explicit amount and canonical currency code from codes or common names."""
+        t = self.repair_user_text(text).strip()
+        amount = r"([0-9][0-9,]*(?:\\.[0-9]+)?)"
+        # ISO codes are the least ambiguous form and retain compatibility with existing inputs.
+        code_match = re.search(
+            rf"(?:^|\\s)([A-Za-z]{{3}})\\s*{amount}\\b|(?:^|\\s){amount}\\s*([A-Za-z]{{3}})(?:\\s|$)",
+            t,
+        )
+        if code_match:
+            code = (code_match.group(1) or code_match.group(4)).upper()
+            value = code_match.group(2) or code_match.group(3)
+            return money(value.replace(",", "")), code
+
+        aliases = {
+            "SINGAPORE DOLLARS": "SGD", "SINGAPORE DOLLAR": "SGD", "S$": "SGD",
+            "MALAYSIAN RINGGIT": "MYR", "RINGGIT": "MYR", "RM": "MYR",
+            "US DOLLARS": "USD", "US DOLLAR": "USD", "US$": "USD",
+            "DOLLARS": "USD", "DOLLAR": "USD",
+            "RENMINBI": "CNY", "YUAN": "CNY", "RMB": "CNY", "CNY": "CNY",
+            "EUROS": "EUR", "EURO": "EUR", "EUR": "EUR",
+            "POUNDS": "GBP", "POUND": "GBP", "GBP": "GBP",
+            "YEN": "JPY", "JPY": "JPY", "WON": "KRW", "KRW": "KRW",
+            "BAHT": "THB", "THB": "THB", "AUD": "AUD", "CAD": "CAD",
+            "HKD": "HKD", "TWD": "TWD", "INR": "INR", "IDR": "IDR",
+            "PHP": "PHP", "VND": "VND", "NZD": "NZD", "CHF": "CHF",
+            "SEK": "SEK", "NOK": "NOK", "DKK": "DKK", "SAR": "SAR",
+            "AED": "AED", "QAR": "QAR", "BND": "BND",
+        }
+        for alias in sorted(aliases, key=len, reverse=True):
+            escaped = re.escape(alias)
+            if re.fullmatch(r"[A-Z]+", alias):
+                token = rf"(?<![A-Za-z]){escaped}(?![A-Za-z])"
+            else:
+                token = rf"(?<![A-Za-z]){escaped}(?![A-Za-z])"
+            patterns = [
+                (rf"{token}\\s*{amount}", True),
+                (rf"{amount}\\s*{token}", False),
+            ]
+            for pattern, amount_follows in patterns:
+                match = re.search(pattern, t, re.IGNORECASE)
+                if match:
+                    value = match.group(1) if amount_follows else match.group(1)
+                    return money(value.replace(",", "")), aliases[alias]
+        return None
 
     def extract_conversion_pair(self, text: str) -> tuple[str, str] | None:
         """Extract and canonicalize a user-requested FX pair from codes or currency names."""

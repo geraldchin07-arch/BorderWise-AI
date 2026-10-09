@@ -2024,6 +2024,15 @@ def test_conversion_pair_recognizes_additional_iso_codes():
     assert e.extract_conversion_pair("Kuwaiti dinar into EUR") == ("KWD", "EUR")
 
 
+def test_amount_extractors_support_shorthand_and_ringgit_names():
+    e = FinanceEngine()
+    assert e.extract_myr_amount("Prepare a transfer of 5k ringgit") == Decimal("5000.00")
+    assert e.extract_myr_amount("Send Malaysian ringgit 1.5m") == Decimal("1500000.00")
+    assert e.extract_sgd_amount("Pay SGD 2.5k") == Decimal("2500.00")
+    assert e.extract_generic_currency_amount("Convert 2k KWD to SGD") == (Decimal("2000.00"), "KWD")
+    assert e.extract_generic_currency_amount("Convert 1.5m ringgit to SGD") == (Decimal("1500000.00"), "MYR")
+
+
 def test_generic_currency_amount_rejects_unknown_three_letter_words():
     e = FinanceEngine()
     assert e.extract_generic_currency_amount("transfer the 500 to Singapore") is None

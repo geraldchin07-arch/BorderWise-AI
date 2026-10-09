@@ -2842,7 +2842,7 @@ class FinanceEngine:
             # A destination such as "Singapore dollars" does not disambiguate
             # a source amount written only as "dollars".
             ambiguous_dollars_source = bool(re.search(
-                r"\\b[0-9][0-9,]*(?:\\.[0-9]+)?\\s+dollars?\\s+(?:in|to|into)\\s+(?:singapore dollars?|sgd|s\\$)\\b",
+                r"\b[0-9][0-9,]*(?:\.[0-9]+)?\s+dollars?\s+(?:in|to|into)\s+(?:singapore dollars?|sgd|s\$)\b",
                 fx_text,
             )) and not any(code in fx_text for code in ["usd", "us$", "myr", "aud", "cad", "eur", "gbp"])
             ambiguous_currency_word = ambiguous_bucks or ambiguous_dollars_source

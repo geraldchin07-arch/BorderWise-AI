@@ -305,12 +305,16 @@ async function calculateFXPair(){
     const r=await fetch('/api/fx/quote?'+params.toString());
     const data=await r.json();
     if(!r.ok) throw new Error(data.detail||'Unable to calculate this conversion.');
+    const quotedAmount=Number(data.amount), quotedRate=Number(data.rate), convertedAmount=Number(data.converted_amount);
+    if(!Number.isFinite(quotedAmount)||quotedAmount<=0||!Number.isFinite(quotedRate)||quotedRate<=0||!Number.isFinite(convertedAmount)||convertedAmount<0){
+      throw new Error('The rate provider returned an invalid quote. Please retry or use a different rate mode.');
+    }
     const fx=data.fx||{};
     const source=fx.source||'reference data';
     const date=fx.rate_date?'Rate date: '+fx.rate_date+'.':'Rate date unavailable.';
     const modeLabel=mode==='custom'?'custom quoted rate':'reference rate';
-    result.innerHTML='<div class="fxrate-big">1 '+from+' = '+Number(data.rate).toFixed(6)+' '+to+'</div>'
-      +'<div style="font-size:16px;font-weight:800;margin:5px 0 8px">'+Number(data.amount).toLocaleString(undefined,{maximumFractionDigits:2})+' '+from+' → '+Number(data.converted_amount).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' '+to+'</div>'
+    result.innerHTML='<div class="fxrate-big">1 '+from+' = '+quotedRate.toFixed(6)+' '+to+'</div>'
+      +'<div style="font-size:16px;font-weight:800;margin:5px 0 8px">'+quotedAmount.toLocaleString(undefined,{maximumFractionDigits:2})+' '+from+' → '+convertedAmount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' '+to+'</div>'
       +'<div class="fxmeta-line">'+modeLabel+' · '+escapeFXHtml(source)+' · '+escapeFXHtml(date)+'</div>'
       +'<div class="fxhint">Indicative/mid-market conversion only. It is not a guaranteed bank or remittance settlement quote.</div>';
   }catch(err){

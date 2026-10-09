@@ -229,7 +229,16 @@ class FinanceEngine:
             "auto_fx_live": dict(prefs.get("auto_fx_live", {})),
         }
 
-    def update_profile(self, myr_balance: Any, sgd_balance: Any, monthly_income_sgd: Any,
+    def update_profile(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        """Apply legacy profile updates atomically, including FX refresh failures."""
+        previous_state = copy.deepcopy(self.state)
+        try:
+            return self._update_profile_unchecked(*args, **kwargs)
+        except Exception:
+            self.state = previous_state
+            raise
+
+    def _update_profile_unchecked(self, myr_balance: Any, sgd_balance: Any, monthly_income_sgd: Any,
                        emergency_reserve_myr: Any, tuition_semester_sgd: Any,
                        scholarship_semester_sgd: Any, loan_semester_sgd: Any,
                        tuition_due_days: Any, accommodation_monthly_sgd: Any,

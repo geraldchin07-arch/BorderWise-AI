@@ -1891,3 +1891,73 @@ def test_custom_fx_rate_overrides_automatic_reference():
 
     assert usd["rate_to_planning"] == 1.30
     assert usd["sgd_value"] == 650.0
+
+def test_fx_rate_question_uses_exact_requested_currency_pair(monkeypatch):
+    e = FinanceEngine()
+    calls = []
+
+    def fake_quote(amount, base, quote, **kwargs):
+        calls.append((amount, base, quote))
+        return {
+            "amount": float(amount),
+            "from_currency": base,
+            "to_currency": quote,
+            "rate": 0.19,
+            "converted_amount": float(amount) * 0.19,
+            "fx": {
+                "source": "Test reference source",
+                "rate_date": "2026-10-09",
+                "live": True,
+            },
+        }
+
+    monkeypatch.setattr(e, "quote_conversion", fake_quote)
+    r = e.agent("what is the rate of MYR to RMB")
+
+    assert r["intent"] == "fx"
+    assert calls == [(1, "MYR", "CNY")]
+    assert "1 MYR = 0.190000 CNY" in r["answer"]
+    assert "MYR to SGD" not in r["answer"]
+    assert r["data"]["state_changed"] is False
+    assert r["data"]["proposal"] is None
+
+
+def test_fx_rate_question_with_yuan_alias_uses_cny_pair(monkeypatch):
+    e = FinanceEngine()
+    calls = []
+
+    def fake_quote(amount, base, quote, **kwargs):
+        calls.append((amount, base, quote))
+        return {
+            "amount": float(amount),
+            "from_currency": base,
+            "to_currency": quote,
+            "rate": 0.19,
+            "converted_amount": float(amount) * 0.19,
+            "fx": {"source": "Test reference source", "rate_date": "2026-10-09", "live": True},
+        }
+
+    monkeypatch.setattr(e, "quote_conversion", fake_quote)
+    r = e.agent("what is the rate of MYR to yuan")
+
+    assert r["intent"] == "fx"
+    assert calls == [(1, "MYR", "CNY")]
+    assert "1 MYR = 0.190000 CNY" in r["answer"]
+
+
+def test_fx_rate_lookup_does_not_substitute_pair_when_rate_unavailable(monkeypatch):
+    e = FinanceEngine()
+
+    def unavailable_quote(amount, base, quote, **kwargs):
+        raise ValueError("pair unavailable")
+
+    monkeypatch.setattr(e, "quote_conversion", unavailable_quote)
+    r = e.agent("what is the rate of MYR to RMB")
+
+    assert r["intent"] == "fx"
+    assert "couldn't retrieve a reliable reference rate" in r["answer"]
+    assert "won't substitute a different currency pair" in r["answer"]
+    assert "MYR to SGD" not in r["answer"]
+    assert r["data"]["state_changed"] is False
+    assert r["data"]["proposal"] is None
+

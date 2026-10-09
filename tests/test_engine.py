@@ -1983,6 +1983,14 @@ def test_generic_currency_amount_recognizes_names_and_symbols(prompt, expected):
     assert e.extract_generic_currency_amount(prompt) == expected
 
 
+def test_currency_typo_repair_preserves_valid_uncommon_codes():
+    e = FinanceEngine()
+    assert e.repair_user_text("KWD to EUR") == "KWD to EUR"
+    assert e.repair_user_text("ZAR to PLN") == "ZAR to PLN"
+    assert e.repair_user_text("MYR to SGD") == "MYR to SGD"
+    assert e.repair_user_text("MRY to SGD") == "MYR to SGD"
+
+
 def test_conversion_pair_recognizes_additional_iso_codes():
     e = FinanceEngine()
     assert e.extract_conversion_pair("convert ZAR to SGD") == ("ZAR", "SGD")

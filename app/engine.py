@@ -1535,7 +1535,7 @@ class FinanceEngine:
         # uncommon but valid codes such as KWD can be silently rewritten to KRW.
         currency_codes = [
             "SGD", "MYR", "USD", "CNY", "RMB", "JPY", "KRW", "THB", "EUR", "GBP",
-            "AUD", "CAD", "HKD", "TWD", "INR", "IDR", "PHP", "VND", "NZD",
+            "AUD", "CAD", "HKD", "TWD", "INR", "AFN", "AOA", "BBD", "BMD", "BSD", "BTN", "BZD", "CUP", "CVE", "FKP", "GIP", "GMD", "GNF", "IRR", "KGS", "KPW", "KYD", "LRD", "LYD", "MRU", "NIO", "PGK", "SHP", "SLE", "STN", "SZL", "ZWG", "IDR", "PHP", "VND", "NZD",
             "CHF", "SEK", "NOK", "DKK", "SAR", "AED", "QAR", "BND", "BHD", "ALL",
             "AMD", "ARS", "AZN", "BAM", "BGN", "BOB", "BRL", "BYN", "CLP",
             "COP", "CRC", "CZK", "DOP", "DZD", "EGP", "GEL", "GHS", "GTQ",
@@ -1683,7 +1683,7 @@ class FinanceEngine:
             # misread as currency THE and incorrectly satisfy amount detection.
             supported_codes = {
                 "SGD", "MYR", "USD", "CNY", "EUR", "GBP", "JPY", "KRW",
-                "THB", "AUD", "CAD", "HKD", "TWD", "INR", "IDR", "PHP",
+                "THB", "AUD", "CAD", "HKD", "TWD", "INR", "AFN", "AOA", "BBD", "BMD", "BSD", "BTN", "BZD", "CUP", "CVE", "FKP", "GIP", "GMD", "GNF", "IRR", "KGS", "KPW", "KYD", "LRD", "LYD", "MRU", "NIO", "PGK", "SHP", "SLE", "STN", "SZL", "ZWG", "IDR", "PHP",
                 "VND", "NZD", "CHF", "SEK", "NOK", "DKK", "SAR", "AED",
                 "QAR", "BND", "BHD", "TRY", "BDT", "TND", "ALL", "AMD", "ARS", "AZN", "BAM", "BGN",
                 "BOB", "BRL", "BYN", "CLP", "COP", "CRC", "CZK", "DOP",
@@ -1743,6 +1743,7 @@ class FinanceEngine:
             "NIGERIAN NAIRA": "NGN", "EGYPTIAN POUND": "EGP",
             "ISRAELI NEW SHEKEL": "ILS",
             "ALL": "ALL", "AMD": "AMD", "ARS": "ARS", "AZN": "AZN",
+            "AFN": "AFN", "AOA": "AOA", "BBD": "BBD", "BMD": "BMD", "BSD": "BSD", "BTN": "BTN", "BZD": "BZD", "CUP": "CUP", "CVE": "CVE", "FKP": "FKP", "GIP": "GIP", "GMD": "GMD", "GNF": "GNF", "IRR": "IRR", "KGS": "KGS", "KPW": "KPW", "KYD": "KYD", "LRD": "LRD", "LYD": "LYD", "MRU": "MRU", "NIO": "NIO", "PGK": "PGK", "SHP": "SHP", "SLE": "SLE", "STN": "STN", "SZL": "SZL", "ZWG": "ZWG",
             "BAM": "BAM", "BGN": "BGN", "BOB": "BOB", "BRL": "BRL",
             "BYN": "BYN", "CLP": "CLP", "COP": "COP", "CRC": "CRC",
             "CZK": "CZK", "DOP": "DOP", "DZD": "DZD", "EGP": "EGP",
@@ -1828,6 +1829,7 @@ class FinanceEngine:
             "NIGERIAN NAIRA": "NGN", "EGYPTIAN POUND": "EGP",
             "ISRAELI NEW SHEKEL": "ILS",
             "ALL": "ALL", "AMD": "AMD", "ARS": "ARS", "AZN": "AZN",
+            "AFN": "AFN", "AOA": "AOA", "BBD": "BBD", "BMD": "BMD", "BSD": "BSD", "BTN": "BTN", "BZD": "BZD", "CUP": "CUP", "CVE": "CVE", "FKP": "FKP", "GIP": "GIP", "GMD": "GMD", "GNF": "GNF", "IRR": "IRR", "KGS": "KGS", "KPW": "KPW", "KYD": "KYD", "LRD": "LRD", "LYD": "LYD", "MRU": "MRU", "NIO": "NIO", "PGK": "PGK", "SHP": "SHP", "SLE": "SLE", "STN": "STN", "SZL": "SZL", "ZWG": "ZWG",
             "BAM": "BAM", "BGN": "BGN", "BOB": "BOB", "BRL": "BRL",
             "BYN": "BYN", "CLP": "CLP", "COP": "COP", "CRC": "CRC",
             "CZK": "CZK", "DOP": "DOP", "DZD": "DZD", "EGP": "EGP",

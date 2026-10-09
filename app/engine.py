@@ -1622,26 +1622,41 @@ class FinanceEngine:
             return "transactions"
         return "general"
 
+    def parse_amount_token(self, raw_amount: str) -> Decimal:
+        """Parse explicit numeric shorthand such as 2k or 1.5m without guessing units."""
+        raw = str(raw_amount).strip().replace(",", "")
+        suffix = raw[-1:].lower()
+        if suffix in {"k", "m"}:
+            multiplier = Decimal("1000") if suffix == "k" else Decimal("1000000")
+            raw = raw[:-1]
+        else:
+            multiplier = Decimal("1")
+        return money(Decimal(raw) * multiplier)
+
     def extract_myr_amount(self, text: str) -> Decimal | None:
+        amount = r"([0-9][0-9,]*(?:\.[0-9]+)?[km]?)"
+        currency = r"(?:malaysian\s+ringgit|ringgit|rm|myr)"
         patterns = [
-            r"(?:rm|myr)\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
-            r"([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:rm|myr)\b",
+            rf"{currency}\s*{amount}",
+            rf"{amount}\s*{currency}\b",
         ]
-        for p in patterns:
-            m = re.search(p, text.lower())
-            if m:
-                return money(m.group(1).replace(",", ""))
+        for pattern in patterns:
+            match = re.search(pattern, text.lower())
+            if match:
+                return self.parse_amount_token(match.group(1))
         return None
 
     def extract_sgd_amount(self, text: str) -> Decimal | None:
+        amount = r"([0-9][0-9,]*(?:\.[0-9]+)?[km]?)"
+        currency = r"(?:s\$|sgd|singapore\s+dollars?)"
         patterns = [
-            r"(?:s\$|sgd)\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
-            r"([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:s\$|sgd)\b",
+            rf"{currency}\s*{amount}",
+            rf"{amount}\s*{currency}\b",
         ]
-        for p in patterns:
-            m = re.search(p, text.lower())
-            if m:
-                return money(m.group(1).replace(",", ""))
+        for pattern in patterns:
+            match = re.search(pattern, text.lower())
+            if match:
+                return self.parse_amount_token(match.group(1))
         return None
 
     def extract_generic_currency_amount(self, text: str) -> tuple[Decimal, str] | None:
@@ -1678,7 +1693,7 @@ class FinanceEngine:
                 "WST", "YER",
             }
             if code in supported_codes:
-                return money(value.replace(",", "")), code
+                return self.parse_amount_token(value), code
 
         aliases = {
             "SINGAPORE DOLLARS": "SGD", "SINGAPORE DOLLAR": "SGD", "S$": "SGD",
@@ -1748,7 +1763,7 @@ class FinanceEngine:
                 match = re.search(pattern, t, re.IGNORECASE)
                 if match:
                     value = match.group(1) if amount_follows else match.group(1)
-                    return money(value.replace(",", "")), aliases[alias]
+                    return self.parse_amount_token(value), aliases[alias]
         return None
 
     def extract_conversion_pair(self, text: str) -> tuple[str, str] | None:

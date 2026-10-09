@@ -2473,11 +2473,11 @@ class FinanceEngine:
         # If the user names a conversion target and a different display currency,
         # calculate both explicitly instead of silently discarding either instruction.
         display_currency_match = re.search(
-            r"\\b(?:show|display|give|report)\\s+(?:the\\s+)?(?:result|answer|amount|value)\\s+in\\s+(sgd|singapore dollars?|myr|ringgit|usd|us dollars?|cny|rmb|yuan|eur|euros?|gbp|pounds?|jpy|yen)\\b",
+            r"\b(?:show|display|give|report)\s+(?:the\s+)?(?:result|answer|amount|value)\s+in\s+(sgd|singapore dollars?|myr|ringgit|usd|us dollars?|cny|rmb|yuan|eur|euros?|gbp|pounds?|jpy|yen)\b",
             normalized,
         )
         explicit_conversion_match = re.search(
-            r"\\b(?:convert|exchange)\\s+(?P<amount>[0-9][0-9,]*(?:\\.[0-9]+)?)\\s*(?P<base>myr|rm|ringgit|malaysian ringgit|sgd|s\\$|singapore dollars?|usd|us\\$|us dollars?|cny|rmb|yuan|eur|euros?|gbp|pounds?|jpy|yen)\\s+(?:to|into)\\s+(?P<target>myr|rm|ringgit|malaysian ringgit|sgd|s\\$|singapore dollars?|usd|us\\$|us dollars?|cny|rmb|yuan|eur|euros?|gbp|pounds?|jpy|yen)\\b",
+            r"\b(?:convert|exchange)\s+(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?)\s*(?P<base>myr|rm|ringgit|malaysian ringgit|sgd|s\$|singapore dollars?|usd|us\$|us dollars?|cny|rmb|yuan|eur|euros?|gbp|pounds?|jpy|yen)\s+(?:to|into)\s+(?P<target>myr|rm|ringgit|malaysian ringgit|sgd|s\$|singapore dollars?|usd|us\$|us dollars?|cny|rmb|yuan|eur|euros?|gbp|pounds?|jpy|yen)\b",
             normalized,
         )
         if display_currency_match and explicit_conversion_match:
@@ -2497,7 +2497,7 @@ class FinanceEngine:
                     display_result = self.quote_conversion(target_result["converted_amount"], target, display)
                     answer = (
                         f"Your requested conversion is {amount:,.2f} {base} ≈ "
-                        f"{target_result['converted_amount']:,.2f} {target} at {target_result['rate']:.6f} {target} per {base}.\\n"
+                        f"{target_result['converted_amount']:,.2f} {target} at {target_result['rate']:.6f} {target} per {base}.\n"
                         f"You also asked to show the result in {display}: that is approximately "
                         f"{display_result['converted_amount']:,.2f} {display}, using a separate {target}/{display} reference rate of "
                         f"{display_result['rate']:.6f}. These are indicative reference-rate estimates, not a transaction quote. No account state changed."

@@ -1,4 +1,5 @@
 from decimal import Decimal
+import copy
 from app.engine import FinanceEngine
 import json
 import pytest
@@ -2422,3 +2423,45 @@ def test_authorization_api_bounds_proposal_identifiers():
         AuthRequest(proposal_id="", approved=True)
     with pytest.raises(ValidationError):
         ExecuteRequest(proposal_id="P" * 65)
+
+
+
+def test_currency_first_profile_update_is_atomic_when_late_validation_fails():
+    e = FinanceEngine()
+    before = copy.deepcopy(e.state)
+    with pytest.raises(ValueError, match="Scholarship plus loan"):
+        e.update_profile_general({
+            "planning_currency": "SGD",
+            "balances": {"SGD": 1234, "MYR": 9999},
+            "balance_fx_modes": {"MYR": "custom"},
+            "custom_fx_rates_to_sgd": {"MYR": 0.30},
+            "monthly_income_amount": 2500,
+            "monthly_income_currency": "SGD",
+            "emergency_reserve_amount": 500,
+            "emergency_reserve_currency": "MYR",
+            "tuition_amount": 1000,
+            "tuition_currency": "SGD",
+            "scholarship_amount": 900,
+            "loan_amount": 200,
+            "accommodation_amount": 400,
+            "accommodation_currency": "SGD",
+            "other_obligations_amount": 0,
+            "other_obligations_currency": "SGD",
+            "monthly_spending_currency": "SGD",
+            "monthly_spending": {"Food": 100},
+        })
+    assert e.state == before
+
+
+def test_currency_first_profile_rejects_non_finite_custom_rate():
+    e = FinanceEngine()
+    before = copy.deepcopy(e.state)
+    with pytest.raises(ValueError):
+        e.update_profile_general({
+            "planning_currency": "SGD",
+            "balances": {"SGD": 100, "MYR": 100},
+            "balance_fx_modes": {"MYR": "custom"},
+            "custom_fx_rates_to_sgd": {"MYR": "NaN"},
+            "monthly_spending": {"Food": 1},
+        })
+    assert e.state == before

@@ -2402,3 +2402,23 @@ def test_fx_provider_non_finite_rate_uses_safe_fallback(monkeypatch):
     result = FinanceEngine().quote_conversion(100, "CNY", "SGD")
     assert result["rate"] == pytest.approx(0.1908)
     assert result["fx"]["live"] is False
+
+
+def test_transfer_api_bounds_proposal_purpose_length():
+    from pydantic import ValidationError
+    from app.main import TransferRequest
+
+    with pytest.raises(ValidationError):
+        TransferRequest(amount_myr=100, purpose="x" * 201)
+    with pytest.raises(ValidationError):
+        TransferRequest(amount_myr=100, purpose="")
+
+
+def test_authorization_api_bounds_proposal_identifiers():
+    from pydantic import ValidationError
+    from app.main import AuthRequest, ExecuteRequest
+
+    with pytest.raises(ValidationError):
+        AuthRequest(proposal_id="", approved=True)
+    with pytest.raises(ValidationError):
+        ExecuteRequest(proposal_id="P" * 65)

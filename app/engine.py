@@ -2574,6 +2574,73 @@ class FinanceEngine:
                     {"starting_savings_sgd":float(prior_plan["starting"]),"monthly_income_sgd":float(prior_plan["income"]),"monthly_expenses_sgd":float(adjusted_expenses),"monthly_surplus_sgd":float(monthly),"months":prior_plan["months"],"target_savings_sgd":float(prior_plan["target"]),"projected_savings_sgd":float(projected),"shortfall_sgd":float(shortfall),"surplus_sgd":float(surplus),"state_changed":False,"proposal":None},
                 )
 
+        # Multi-conversion requests are deterministic and must be handled before
+        # either planner can collapse them to a single conversion.
+        multi_fx_text = self.repair_user_text(text).lower()
+        if self.detect_intent(text) == "fx":
+        # Handle multiple explicit conversions in one request instead of
+        # silently answering only the first pair. Keep this before the
+        # single-conversion parser so each amount/pair is calculated independently.
+        if any(word in fx_text for word in ["convert", "conversion", "convertions", "exchange"]):
+            currency_words = (
+                r"singapore\s+dollars?|sgd|s\$|malaysian\s+ringgit|ringgit|myr|rm|"
+                r"us\s+dollars?|usd|us\$|dollars?|dollar|cny|rmb|renminbi|yuan|"
+                r"eur|euros?|gbp|pounds?|jpy|yen|krw|won|thb|baht|aud|cad|hkd|twd|inr|"
+                r"idr|php|vnd|nzd|chf|sek|nok|dkk|sar|aed|qar|bnd"
+            )
+            aliases_to_code = {
+                "singapore dollar": "SGD", "singapore dollars": "SGD", "sgd": "SGD", "s$": "SGD",
+                "malaysian ringgit": "MYR", "ringgit": "MYR", "myr": "MYR", "rm": "MYR",
+                "us dollar": "USD", "us dollars": "USD", "usd": "USD", "us$": "USD",
+                "dollar": "USD", "dollars": "USD", "cny": "CNY", "rmb": "CNY",
+                "renminbi": "CNY", "yuan": "CNY", "eur": "EUR", "euro": "EUR", "euros": "EUR",
+                "gbp": "GBP", "pound": "GBP", "pounds": "GBP", "jpy": "JPY", "yen": "JPY",
+                "krw": "KRW", "won": "KRW", "thb": "THB", "baht": "THB", "aud": "AUD",
+                "cad": "CAD", "hkd": "HKD", "twd": "TWD", "inr": "INR", "idr": "IDR",
+                "php": "PHP", "vnd": "VND", "nzd": "NZD", "chf": "CHF", "sek": "SEK",
+                "nok": "NOK", "dkk": "DKK", "sar": "SAR", "aed": "AED", "qar": "QAR", "bnd": "BND",
+            }
+            multi_pattern = re.compile(
+                rf"(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?)\s*"
+                rf"(?P<base>{currency_words})\s+(?:to|into|in)\s+"
+                rf"(?P<quote>{currency_words})",
+                re.I,
+            )
+            requests = []
+            for match in multi_pattern.finditer(fx_text):
+                base = aliases_to_code.get(match.group("base").lower())
+                quote = aliases_to_code.get(match.group("quote").lower())
+                if base and quote and base != quote:
+                    requests.append((money(match.group("amount").replace(",", "")), base, quote))
+            if len(requests) >= 2:
+                results = []
+                lines = []
+                try:
+                    for amount, base, quote in requests:
+                        conversion = self.quote_conversion(amount, base, quote)
+                        results.append(conversion)
+                        lines.append(
+                            f"{amount:,.2f} {base} ≈ {conversion['converted_amount']:,.2f} {quote} "
+                            f"(1 {base} = {conversion['rate']:.6f} {quote})"
+                        )
+                except (ValueError, KeyError, HTTPError, URLError, TimeoutError, OSError) as exc:
+                    return self._result(
+                        "fx",
+                        f"I identified multiple conversions, but couldn't retrieve a reliable quote for every pair ({type(exc).__name__}). I won't provide a partial set of results that could be misleading. No account state was changed.",
+                        [{"step": "UNDERSTAND", "status": "completed", "detail": "Detected multiple explicit currency conversions."},
+                         {"step": "FX", "status": "blocked", "detail": "At least one requested pair could not be quoted reliably."}],
+                        {"needs_clarification": True, "state_changed": False, "proposal": None},
+                    )
+                answer = "Here are both conversions using indicative reference rates:\n" + "\n".join(lines)
+                answer += "\nRates may differ from your bank's rate and exclude fees. These are calculations only; no proposal or transaction was created."
+                return self._result(
+                    "fx", answer,
+                    [{"step": "UNDERSTAND", "status": "completed", "detail": f"Recognized {len(results)} separate conversion requests."},
+                     {"step": "FX", "status": "completed", "detail": "Quoted each requested currency pair independently."},
+                     {"step": "SECURITY", "status": "completed", "detail": "Read-only conversions; no proposal or transaction was created."}],
+                    {"conversions": results, "state_changed": False, "proposal": None},
+                )
+        requested_pair = self.extract_conversion_pair(text)
         # v5: optional LLM tool-calling planner. The deterministic engine remains the
         # fallback and the authority for calculations, policy and execution.
         try:
@@ -2635,69 +2702,6 @@ class FinanceEngine:
         if intent == "fx":
             fx_text = self.repair_user_text(text).lower()
 
-            # Handle multiple explicit conversions in one request instead of
-            # silently answering only the first pair. Keep this before the
-            # single-conversion parser so each amount/pair is calculated independently.
-            if any(word in fx_text for word in ["convert", "conversion", "convertions", "exchange"]):
-                currency_words = (
-                    r"singapore\s+dollars?|sgd|s\$|malaysian\s+ringgit|ringgit|myr|rm|"
-                    r"us\s+dollars?|usd|us\$|dollars?|dollar|cny|rmb|renminbi|yuan|"
-                    r"eur|euros?|gbp|pounds?|jpy|yen|krw|won|thb|baht|aud|cad|hkd|twd|inr|"
-                    r"idr|php|vnd|nzd|chf|sek|nok|dkk|sar|aed|qar|bnd"
-                )
-                aliases_to_code = {
-                    "singapore dollar": "SGD", "singapore dollars": "SGD", "sgd": "SGD", "s$": "SGD",
-                    "malaysian ringgit": "MYR", "ringgit": "MYR", "myr": "MYR", "rm": "MYR",
-                    "us dollar": "USD", "us dollars": "USD", "usd": "USD", "us$": "USD",
-                    "dollar": "USD", "dollars": "USD", "cny": "CNY", "rmb": "CNY",
-                    "renminbi": "CNY", "yuan": "CNY", "eur": "EUR", "euro": "EUR", "euros": "EUR",
-                    "gbp": "GBP", "pound": "GBP", "pounds": "GBP", "jpy": "JPY", "yen": "JPY",
-                    "krw": "KRW", "won": "KRW", "thb": "THB", "baht": "THB", "aud": "AUD",
-                    "cad": "CAD", "hkd": "HKD", "twd": "TWD", "inr": "INR", "idr": "IDR",
-                    "php": "PHP", "vnd": "VND", "nzd": "NZD", "chf": "CHF", "sek": "SEK",
-                    "nok": "NOK", "dkk": "DKK", "sar": "SAR", "aed": "AED", "qar": "QAR", "bnd": "BND",
-                }
-                multi_pattern = re.compile(
-                    rf"(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?)\s*"
-                    rf"(?P<base>{currency_words})\s+(?:to|into|in)\s+"
-                    rf"(?P<quote>{currency_words})",
-                    re.I,
-                )
-                requests = []
-                for match in multi_pattern.finditer(fx_text):
-                    base = aliases_to_code.get(match.group("base").lower())
-                    quote = aliases_to_code.get(match.group("quote").lower())
-                    if base and quote and base != quote:
-                        requests.append((money(match.group("amount").replace(",", "")), base, quote))
-                if len(requests) >= 2:
-                    results = []
-                    lines = []
-                    try:
-                        for amount, base, quote in requests:
-                            conversion = self.quote_conversion(amount, base, quote)
-                            results.append(conversion)
-                            lines.append(
-                                f"{amount:,.2f} {base} ≈ {conversion['converted_amount']:,.2f} {quote} "
-                                f"(1 {base} = {conversion['rate']:.6f} {quote})"
-                            )
-                    except (ValueError, KeyError, HTTPError, URLError, TimeoutError, OSError) as exc:
-                        return self._result(
-                            "fx",
-                            f"I identified multiple conversions, but couldn't retrieve a reliable quote for every pair ({type(exc).__name__}). I won't provide a partial set of results that could be misleading. No account state was changed.",
-                            [{"step": "UNDERSTAND", "status": "completed", "detail": "Detected multiple explicit currency conversions."},
-                             {"step": "FX", "status": "blocked", "detail": "At least one requested pair could not be quoted reliably."}],
-                            {"needs_clarification": True, "state_changed": False, "proposal": None},
-                        )
-                    answer = "Here are both conversions using indicative reference rates:\n" + "\n".join(lines)
-                    answer += "\nRates may differ from your bank's rate and exclude fees. These are calculations only; no proposal or transaction was created."
-                    return self._result(
-                        "fx", answer,
-                        [{"step": "UNDERSTAND", "status": "completed", "detail": f"Recognized {len(results)} separate conversion requests."},
-                         {"step": "FX", "status": "completed", "detail": "Quoted each requested currency pair independently."},
-                         {"step": "SECURITY", "status": "completed", "detail": "Read-only conversions; no proposal or transaction was created."}],
-                        {"conversions": results, "state_changed": False, "proposal": None},
-                    )
-            requested_pair = self.extract_conversion_pair(text)
             # A destination-only request such as "change my money to USD"
             # needs the source currency and amount before a meaningful quote.
             destination_only = re.search(r"\b(?:to|into)\s+(usd|sgd|myr|cny|rmb|yuan|eur|gbp|aud|cad|jpy|krw|thb|hkd|twd|inr)\b", fx_text)

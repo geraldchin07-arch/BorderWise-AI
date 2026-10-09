@@ -1855,9 +1855,41 @@ class LocalAgentPlanner:
                             else:
                                 forecast = self.engine.forecast()
                             health = self.engine.health_analysis()
+                            # Remittance affordability must be based on liquid
+                            # planning-currency cash flow, not foreign assets that
+                            # have not been converted. The emergency reserve remains
+                            # separately protected by reserve_ok below.
+                            planning_rate = self.engine._profile_rate_to_sgd(planning_currency)
+                            liquid_sgd = self.engine.money_value(
+                                self.engine.get_balance().get(planning_currency, 0)
+                                * planning_rate
+                            )
+                            monthly_income_sgd = self.engine.money_value(
+                                self.engine.state.get("income_monthly_sgd", 0)
+                            )
+                            monthly_spending_sgd = self.engine.money_value(
+                                sum(
+                                    self.engine.state.get("monthly_spending_sgd", {}).values(),
+                                    Decimal("0"),
+                                )
+                                + self.engine.state.get("accommodation_monthly_sgd", 0)
+                            )
+                            obligations_sgd = self.engine.money_value(
+                                sum(
+                                    (
+                                        Decimal(str(item["amount_sgd"]))
+                                        for item in self.engine.get_obligations()
+                                        if int(item.get("days", 30)) <= 30
+                                    ),
+                                    Decimal("0"),
+                                )
+                            )
                             projected_after = self.engine.money_value(
-                                Decimal(str(forecast["projected_balance_planning"]))
-                                - target_in_planning
+                                (
+                                    liquid_sgd + monthly_income_sgd
+                                    - monthly_spending_sgd - obligations_sgd
+                                    - target_in_planning * planning_rate
+                                ) / planning_rate
                             )
                             reserve_currency = str(
                                 self.engine.state.get("profile_meta", {}).get(

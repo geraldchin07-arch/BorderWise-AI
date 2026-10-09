@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 from .engine import FinanceEngine
+from .security import SecurityHeadersMiddleware, SimpleRateLimiter
 
 load_dotenv()
 
@@ -18,6 +19,16 @@ BASE = Path(__file__).resolve().parent.parent
 engine = FinanceEngine()
 
 app = FastAPI(title="BorderWise AI v7.3.0 — Currency-First", version="7.3.0")
+
+app.add_middleware(SecurityHeadersMiddleware)
+rate_limiter = SimpleRateLimiter()
+
+@app.middleware("http")
+async def enforce_rate_limit(request, call_next):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    rate_limiter.check_rate_limit(client_ip)
+    return await call_next(request)
+
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
 @app.middleware("http")

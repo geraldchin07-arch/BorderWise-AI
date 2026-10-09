@@ -1976,6 +1976,8 @@ def test_fx_rate_lookup_does_not_substitute_pair_when_rate_unavailable(monkeypat
         ("convert ZAR 750 to SGD", (Decimal("750.00"), "ZAR")),
         ("convert 200 KWD into EUR", (Decimal("200.00"), "KWD")),
         ("convert PLN 1250 to USD", (Decimal("1250.00"), "PLN")),
+        ("convert 300 South African rand to SGD", (Decimal("300.00"), "ZAR")),
+        ("convert 25 Kuwaiti dinar to EUR", (Decimal("25.00"), "KWD")),
     ],
 )
 def test_generic_currency_amount_recognizes_names_and_symbols(prompt, expected):
@@ -1996,6 +1998,8 @@ def test_conversion_pair_recognizes_additional_iso_codes():
     assert e.extract_conversion_pair("convert ZAR to SGD") == ("ZAR", "SGD")
     assert e.extract_conversion_pair("convert KWD into EUR") == ("KWD", "EUR")
     assert e.extract_conversion_pair("PLN to USD") == ("PLN", "USD")
+    assert e.extract_conversion_pair("South African rand to SGD") == ("ZAR", "SGD")
+    assert e.extract_conversion_pair("Kuwaiti dinar into EUR") == ("KWD", "EUR")
 
 
 def test_generic_currency_amount_rejects_unknown_three_letter_words():

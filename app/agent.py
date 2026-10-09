@@ -133,8 +133,8 @@ For complex student-finance situations, build a goal-aware plan: identify essent
         # Match the MYR amount attached to an action, not an earlier wallet
         # balance mentioned in the same message.
         amount_pattern = re.compile(
-            r"\b(?:rm|myr)\s*([0-9][0-9,]*(?:\.[0-9]+)?)"
-            r"|\b([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:rm|myr)\b",
+            r"\b(?:malaysian\s+ringgit|ringgit|rm|myr)\s*([0-9][0-9,]*(?:\.[0-9]+)?[km]?)"
+            r"|\b([0-9][0-9,]*(?:\.[0-9]+)?[km]?)\s*(?:malaysian\s+ringgit|ringgit|rm|myr)\b",
             re.IGNORECASE,
         )
         action_phrases = [
@@ -149,7 +149,7 @@ For complex student-finance situations, build a goal-aware plan: identify essent
             if any(phrase in segment_before_amount for phrase in action_phrases):
                 raw_amount = match.group(1) or match.group(2)
                 try:
-                    action_amounts.append(self.engine.money_value(raw_amount.replace(",", "")))
+                    action_amounts.append(self.engine.parse_amount_token(raw_amount))
                 except Exception:
                     continue
         if proposed_amount not in action_amounts:

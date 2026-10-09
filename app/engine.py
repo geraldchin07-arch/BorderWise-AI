@@ -2132,7 +2132,7 @@ class FinanceEngine:
         )
         if explicit_tuition_case:
             amount_matches = list(re.finditer(
-                r"(?<![A-Za-z])(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.\\d{1,2})?)",
+                r"(?<![A-Za-z])(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.\d{1,2})?)",
                 normalized,
             ))
             amounts = [money(Decimal(match.group(1).replace(",", ""))) for match in amount_matches]
@@ -2140,7 +2140,7 @@ class FinanceEngine:
             for index, match in enumerate(amount_matches):
                 before = normalized[max(0, match.start() - 45):match.start()]
                 after = normalized[match.end():min(len(normalized), match.end() + 35)]
-                if re.search(r"\\b(tuition|school fees?)\\b", before + " " + after):
+                if re.search(r"\b(tuition|school fees?)\b", before + " " + after):
                     tuition_index = index
                     break
             if len(amounts) >= 2:

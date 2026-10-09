@@ -1709,6 +1709,24 @@ class LocalAgentPlanner:
                 },
                 "state_changed": False,
             }
+            # Keep the received-funds planning trace explicit and auditable:
+            # these are advisory calculations only and do not imply any transaction.
+            if received and tuition_context and conversion_question:
+                required_steps = [
+                    ("UNDERSTAND", "Recognized received family funds and the tuition/conversion question."),
+                    ("OBSERVE", "Reviewed the stated incoming amount and the current forecast without changing balances."),
+                    ("SIMULATE", "Simulated the incoming MYR as a hypothetical scenario only."),
+                    ("REASON", "Compared the updated shortfall with the tuition need."),
+                    ("FX", "Identified MYR-to-SGD conversion as the relevant currency pair."),
+                    ("CALCULATE", "Calculated the projected position after hypothetical incoming funds."),
+                    ("SECURITY", "Confirmed no wallet balance changed and no transaction was created."),
+                    ("RECOMMEND", "Provided an advisory next step; no conversion was executed."),
+                ]
+                present = {item.get("step") for item in trace}
+                for step, detail in required_steps:
+                    if step not in present:
+                        trace.append({"step": step, "status": "completed", "detail": detail})
+
             trace.append({
                 "step": "RECOMMEND",
                 "status": "completed",

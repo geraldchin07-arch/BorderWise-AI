@@ -2028,6 +2028,9 @@ def test_amount_extractors_support_shorthand_and_ringgit_names():
     e = FinanceEngine()
     assert e.extract_myr_amount("Prepare a transfer of 5k ringgit") == Decimal("5000.00")
     assert e.extract_myr_amount("Send Malaysian ringgit 1.5m") == Decimal("1500000.00")
+    assert e.extract_myr_amount("The money is coming from 500 accounts") is None
+    assert e.extract_myr_amount("Transfer from 500 to Singapore") is None
+    assert e.extract_myr_amount("Transfer from RM 500 to Singapore") == Decimal("500.00")
     assert e.extract_sgd_amount("Pay SGD 2.5k") == Decimal("2500.00")
     assert e.extract_generic_currency_amount("Convert 2k KWD to SGD") == (Decimal("2000.00"), "KWD")
     assert e.extract_generic_currency_amount("Convert 1.5m ringgit to SGD") == (Decimal("1500000.00"), "MYR")

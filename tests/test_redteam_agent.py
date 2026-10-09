@@ -414,6 +414,14 @@ def test_redteam_local_planner_disambiguates_word_shaped_currency_codes():
     ) is None
 
 
+def test_redteam_local_planner_does_not_flip_negative_amounts_positive():
+    planner = LocalAgentPlanner(FinanceEngine())
+
+    assert planner._amount("Transfer -500 SGD to Singapore", "SGD") is None
+    assert planner._amount_after_need("I need to pay -300 SGD", "SGD") is None
+    assert planner._extract_wallet_balances_from_text("I have -500 SGD.") == {}
+
+
 def test_redteam_local_planner_validates_grouped_amounts_and_decimals():
     planner = LocalAgentPlanner(FinanceEngine())
 

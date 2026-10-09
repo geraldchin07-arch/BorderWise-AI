@@ -2131,12 +2131,23 @@ class FinanceEngine:
             and any(k in normalized for k in ["can i afford", "tell me i can afford", "even if the numbers"])
         )
         if explicit_tuition_case:
-            amounts = [
-                money(Decimal(x.replace(",", "")))
-                for x in re.findall(r"(?<![A-Za-z])(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.\d{1,2})?)", normalized)
-            ]
+            amount_matches = list(re.finditer(
+                r"(?<![A-Za-z])(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.\\d{1,2})?)",
+                normalized,
+            ))
+            amounts = [money(Decimal(match.group(1).replace(",", ""))) for match in amount_matches]
+            tuition_index = None
+            for index, match in enumerate(amount_matches):
+                before = normalized[max(0, match.start() - 45):match.start()]
+                after = normalized[match.end():min(len(normalized), match.end() + 35)]
+                if re.search(r"\\b(tuition|school fees?)\\b", before + " " + after):
+                    tuition_index = index
+                    break
             if len(amounts) >= 2:
-                available, tuition_due = amounts[0], amounts[1]
+                tuition_position = tuition_index if tuition_index is not None else 1
+                tuition_due = amounts[tuition_position]
+                available_index = next(index for index in range(len(amounts)) if index != tuition_position)
+                available = amounts[available_index]
                 gap = money(max(Decimal("0"), tuition_due - available))
                 answer = (
                     f"Based only on the figures you supplied, you cannot fully cover the tuition from the stated available cash. "

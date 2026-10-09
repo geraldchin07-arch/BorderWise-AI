@@ -2486,7 +2486,7 @@ class FinanceEngine:
             requested_pair = self.extract_conversion_pair(text)
             # A destination-only request such as "change my money to USD"
             # needs the source currency and amount before a meaningful quote.
-            destination_only = re.search(r"\\b(?:to|into)\\s+(usd|sgd|myr|cny|rmb|yuan|eur|gbp|aud|cad|jpy|krw|thb|hkd|twd|inr)\\b", fx_text)
+            destination_only = re.search(r"\b(?:to|into)\s+(usd|sgd|myr|cny|rmb|yuan|eur|gbp|aud|cad|jpy|krw|thb|hkd|twd|inr)\b", fx_text)
             has_amount = bool(self.extract_generic_currency_amount(text) or self.extract_sgd_amount(text) or self.extract_myr_amount(text))
             if destination_only and not requested_pair and not has_amount:
                 target = destination_only.group(1).upper()

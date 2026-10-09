@@ -2398,7 +2398,7 @@ class FinanceEngine:
         if explicit_tuition_case:
             amounts = [
                 money(Decimal(x.replace(",", "")))
-                for x in re.findall(r"(?<![A-Za-z])(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.\\d{1,2})?)", normalized)
+                for x in re.findall(r"(?<![A-Za-z])(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.\d{1,2})?)", normalized)
             ]
             if len(amounts) >= 2:
                 available, tuition_due = amounts[0], amounts[1]

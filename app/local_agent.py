@@ -92,14 +92,32 @@ class LocalAgentPlanner:
             multiplier = Decimal("1")
         return self.engine.money_value(Decimal(raw) * multiplier)
 
+    def _explicit_ambiguous_code_amount(self, text: str, currency: str) -> Decimal | None:
+        """Accept word-shaped ISO codes only when the user typed the code in uppercase."""
+        code = currency.upper().strip()
+        ambiguous = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
+        if code not in ambiguous:
+            return None
+        amount = r"(?<![\d,])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?!\d|,\d)"
+        token = rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])"
+        for pattern in (rf"{token}\s*{amount}", rf"{amount}\s*{token}"):
+            match = re.search(pattern, str(text or ""))
+            if match:
+                return self._parse_human_amount(match.group(1))
+        return None
+
     def _amount(self, text: str, currency: str) -> Decimal | None:
         """Extract an amount for a requested currency.
 
         Supports common currency codes/symbols/aliases without assuming
         MYR and SGD are the only currencies.
         """
-        t = text.lower().strip()
+        raw_text = str(text or "")
         code = currency.upper().strip()
+        explicit_code_amount = self._explicit_ambiguous_code_amount(raw_text, code)
+        if explicit_code_amount is not None:
+            return explicit_code_amount
+        t = raw_text.lower().strip()
 
         aliases = self._currency_aliases()
 
@@ -200,8 +218,21 @@ class LocalAgentPlanner:
         This is separate from _amount() because a currency may appear more than once
         in the same sentence (for example, SGD 500 held and SGD 3,000 needed).
         """
-        t = text.lower().strip()
+        raw_text = str(text or "")
         code = currency.upper().strip()
+        ambiguous = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
+        if code in ambiguous and re.search(rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", raw_text):
+            amount = r"(?<![\d,])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?!\d|,\d)"
+            token = rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])"
+            pattern = (
+                rf"(?i:\b(?:need|needs|pay|paying|require|required|requirement|for)\b)"
+                rf"[^.;,]{{0,100}}?(?:{token}\s*{amount}|{amount}\s*{token})"
+            )
+            match = re.search(pattern, raw_text)
+            if match:
+                raw_amount = match.group(1)
+                return self._parse_human_amount(raw_amount)
+        t = raw_text.lower().strip()
 
         aliases = self._currency_aliases()
         names = aliases.get(code, [code.lower()])

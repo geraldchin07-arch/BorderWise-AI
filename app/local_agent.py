@@ -1861,7 +1861,7 @@ class LocalAgentPlanner:
                             # separately protected by reserve_ok below.
                             planning_rate = self.engine._profile_rate_to_sgd(planning_currency)
                             liquid_sgd = self.engine.money_value(
-                                self.engine.get_balance().get(planning_currency, 0)
+                                Decimal(str(self.engine.get_balance().get(planning_currency, 0)))
                                 * planning_rate
                             )
                             monthly_income_sgd = self.engine.money_value(

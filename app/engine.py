@@ -1662,7 +1662,7 @@ class FinanceEngine:
     def extract_generic_currency_amount(self, text: str) -> tuple[Decimal, str] | None:
         """Extract an explicit amount and canonical currency code from codes or common names."""
         t = self.repair_user_text(text).strip()
-        amount = r"([0-9][0-9,]*(?:\.[0-9]+)?)"
+        amount = r"([0-9][0-9,]*(?:\.[0-9]+)?[km]?)"
         # ISO codes are the least ambiguous form and retain compatibility with existing inputs.
         code_match = re.search(
             rf"(?:^|\s)([A-Za-z]{{3}})\s*{amount}\b|(?:^|\s){amount}\s*([A-Za-z]{{3}})(?:\s|$)",

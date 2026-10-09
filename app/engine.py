@@ -871,7 +871,19 @@ class FinanceEngine:
                 rate, _ = self._currency_rate_to_sgd(code)
                 start += money(balance_d * rate)
         else:
-            start = money(self.state.get("balances", {}).get(planning, 0))
+            # Legacy profiles preserve the original reporting behaviour: include
+            # MYR at the demo legacy quote when tuition is due inside the horizon,
+            # while later-due tuition forecasts show planning-currency cash only.
+            # New currency-first profiles always use the normalized full portfolio.
+            if int(self.state["education"].get("tuition_due_days", 31)) <= 30:
+                start = money(
+                    self.state.get("balances", {}).get(planning, 0)
+                    + self.state.get("balances", {}).get("MYR", 0) * Decimal("0.31")
+                    if planning == "SGD" and planning != "MYR"
+                    else self.state.get("balances", {}).get(planning, 0)
+                )
+            else:
+                start = money(self.state.get("balances", {}).get(planning, 0))
 
         income = money(self.state["income_monthly_sgd"])
         variable_spending = sum(self.state["monthly_spending_sgd"].values(), money(0))

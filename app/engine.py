@@ -1497,8 +1497,9 @@ class FinanceEngine:
         currency_mentions = re.findall(r"\b(?:sgd|myr|usd|cny|jpy|krw|thb|eur|gbp|aud|cad|hkd|twd|inr)\b", t)
         if (
             any(k in t for k in ["exchange rate", "current rate", "exchange", "fx", "convert", "conversion",
-                                 "change my money", "change currency", "change my currency", "exchange currency",
-                                 "can i change", "convert my money", "how do i exchange",
+                                 "change my money", "change money", "want change money", "want to change money",
+                                 "change currency", "change my currency", "exchange currency",
+                                 "can i change", "i want change", "i want to change", "convert my money", "how do i exchange",
                                  "exchange myr", "exchange sgd", "how much myr do i need", "myr do i need", "sgd to myr",
                                  "current currency", "currency of", "rate of"])
             or (len(set(currency_mentions)) >= 2 and any(k in t for k in ["to", "into", "in", "rate", "currency", "current"]))

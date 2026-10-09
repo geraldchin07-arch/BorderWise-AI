@@ -2043,6 +2043,9 @@ def test_amount_extractors_support_shorthand_and_ringgit_names():
     assert e.extract_sgd_amount("Pay SGD 2.5k") == Decimal("2500.00")
     assert e.extract_generic_currency_amount("Convert 2k KWD to SGD") == (Decimal("2000.00"), "KWD")
     assert e.extract_generic_currency_amount("Convert 1.5m ringgit to SGD") == (Decimal("1500000.00"), "MYR")
+    assert e.extract_generic_currency_amount("Convert 1,200 MYR to SGD") == (Decimal("1200.00"), "MYR")
+    assert e.extract_generic_currency_amount("Convert 12,34 MYR to SGD") is None
+    assert e.extract_myr_amount("Transfer RM12,34") is None
 
 
 def test_generic_currency_amount_rejects_unknown_three_letter_words():

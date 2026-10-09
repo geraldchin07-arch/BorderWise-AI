@@ -199,11 +199,16 @@ class LocalAgentPlanner:
         names = aliases.get(code, [code.lower()])
         escaped = sorted((re.escape(x) for x in names), key=len, reverse=True)
         currency_token = r"(?<![A-Za-z])(?:" + "|".join(escaped) + r")(?![A-Za-z])"
-        pattern = rf"\b(?:need|needs|pay|paying|require|required|requirement|for)\b[^.;,]{{0,100}}?{currency_token}\s*([0-9]+(?:\.[0-9]+)?)"
+        amount_pattern = r"([0-9]+(?:\.[0-9]+)?[km]?)"
+        pattern = (
+            rf"\b(?:need|needs|pay|paying|require|required|requirement|for)\b"
+            rf"[^.;,]{{0,100}}?(?:{currency_token}\s*{amount_pattern}|{amount_pattern}\s*{currency_token})"
+        )
         matches = re.findall(pattern, t, re.IGNORECASE)
         if not matches:
             return None
-        return self.engine.money_value(matches[-1])
+        raw_amount = next((value for match in reversed(matches) for value in match if value), None)
+        return self._parse_human_amount(raw_amount) if raw_amount else None
 
     def _extract_horizon_days(self, text: str) -> int | None:
         """Extract a practical obligation horizon from natural language."""

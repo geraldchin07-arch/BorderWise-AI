@@ -2218,3 +2218,14 @@ def test_safe_conversion_ui_handler_is_wired_to_fx_quote_endpoint():
     assert "fetch('/api/fx/quote?'+params.toString())" in html
     assert "params.set('custom_rate',String(custom))" in html
     assert "Conversion unavailable" in html
+
+
+def test_safe_conversion_ui_escapes_untrusted_fx_provider_text():
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert "function escapeFXHtml(value)" in html
+    assert "escapeFXHtml(source)" in html
+    assert "escapeFXHtml(date)" in html
+    assert "escapeFXHtml(err.message" in html

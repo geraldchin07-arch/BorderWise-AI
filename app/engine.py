@@ -1428,6 +1428,9 @@ class FinanceEngine:
 
     def create_proposal(self, amount_myr: Decimal, purpose: str = "student finance transfer") -> dict[str, Any]:
         amount_myr = money(amount_myr)
+        balances = self.state.get("balances", {})
+        if "MYR" not in balances or "SGD" not in balances:
+            raise ValueError("A MYR-to-SGD transfer requires both MYR and SGD wallet balances to be configured.")
         risk = self.risk_check(amount_myr, purpose)
         if risk["status"] == "BLOCKED":
             raise ValueError("; ".join(risk["reasons"]))
@@ -1471,6 +1474,9 @@ class FinanceEngine:
         if proposal["status"] != "AUTHORIZED":
             raise ValueError("Execution requires explicit Level 2 authorization.")
 
+        balances = self.state.get("balances", {})
+        if "MYR" not in balances or "SGD" not in balances:
+            raise ValueError("Execution requires both MYR and SGD wallet balances; no funds were changed.")
         amount_myr = money(proposal["amount_myr"])
         amount_sgd = money(proposal["amount_sgd"])
         risk = self.risk_check(amount_myr, proposal["purpose"])

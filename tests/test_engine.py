@@ -2552,3 +2552,35 @@ def test_legacy_profile_update_is_atomic_when_late_validation_fails():
             {"Food": 100},
         )
     assert e.state == before
+
+
+def test_transfer_proposal_requires_both_wallet_currency_rows():
+    e = FinanceEngine()
+    e.state["balances"] = {"MYR": Decimal("10000.00")}
+    before = copy.deepcopy(e.state)
+
+    with pytest.raises(ValueError, match="both MYR and SGD"):
+        e.create_proposal(Decimal("1000.00"))
+
+    assert e.state == before
+
+
+def test_execute_with_missing_destination_currency_fails_before_mutation():
+    e = FinanceEngine()
+    e.state["balances"] = {"MYR": Decimal("10000.00")}
+    e.state["proposals"]["P-TEST"] = {
+        "id": "P-TEST",
+        "status": "AUTHORIZED",
+        "amount_myr": 1000.0,
+        "amount_sgd": 320.0,
+        "purpose": "student finance transfer",
+    }
+    before_balances = copy.deepcopy(e.state["balances"])
+    before_transactions = copy.deepcopy(e.state["transactions"])
+
+    with pytest.raises(ValueError, match="both MYR and SGD"):
+        e.execute("P-TEST")
+
+    assert e.state["balances"] == before_balances
+    assert e.state["transactions"] == before_transactions
+    assert e.state["proposals"]["P-TEST"]["status"] == "AUTHORIZED"

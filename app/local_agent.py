@@ -522,6 +522,87 @@ class LocalAgentPlanner:
         planning = str(
             self.engine.state.get("profile_meta", {}).get("planning_currency", "SGD")
         ).upper()
+
+        # Deterministic read-only financial assessment. Broad analysis requests
+        # must not fall through to the transaction/proposal handler merely because
+        # they mention "transactions" in a safety instruction.
+        assessment_request = (
+            any(k in t for k in [
+                "analyze my current financial position",
+                "analyse my current financial position",
+                "analyze my financial position",
+                "analyse my financial position",
+                "financial assessment",
+                "review my available balances",
+                "projected cash position",
+            ])
+            and any(k in t for k in ["30 days", "next 30", "cash position", "financial risks", "financial position"])
+        )
+        if assessment_request:
+            horizon = message_horizon_days or 30
+            forecast = self.engine.forecast_portfolio(horizon)
+            overview = self.engine.currency_overview()
+            obligations = self.engine.get_obligations()
+            spending = self.engine.spending_analysis()
+            health = self.engine.health_analysis()
+            shortfall = self.engine.money_value(forecast.get("shortfall_planning", 0))
+            projected = self.engine.money_value(forecast.get("projected_balance_planning", 0))
+            reserve_currency = str(health.get("emergency_reserve_currency", planning)).upper()
+            reserve_amount = self.engine.money_value(health.get("emergency_reserve_amount", 0))
+            trace = [
+                {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a read-only request to assess the current financial position."},
+                {"step": "OBSERVE", "status": "completed", "detail": "Read all configured currency balances, income, spending, accommodation and upcoming obligations."},
+                {"step": "CALCULATE", "status": "completed", "detail": f"Calculated the {horizon}-day multi-currency forecast in {planning}."},
+                {"step": "REASON", "status": "completed", "detail": f"Projected position is {planning} {projected:,.2f}; projected shortfall is {planning} {shortfall:,.2f}."},
+                {"step": "SECURITY", "status": "completed", "detail": "Read-only assessment only; no proposal or transaction was created and no account state was changed."},
+                {"step": "RECOMMEND", "status": "completed", "detail": "Provided practical next steps based on the deterministic forecast and reserve status."},
+            ]
+            balance_text = ", ".join(
+                f"{code} {amount:,.2f}" for code, amount in self.engine.get_balance().items()
+            )
+            obligation_text = (
+                "; ".join(
+                    f"{item.get('name', item.get('type', 'Obligation'))}: {planning} {float(item.get('amount_planning', item.get('amount_sgd', 0))):,.2f} due in {item.get('days', item.get('due_days', '?'))} days"
+                    for item in obligations
+                )
+                if obligations else "No obligations are recorded as due within the forecast horizon."
+            )
+            if shortfall > 0:
+                recommendation = (
+                    f"The forecast indicates a funding gap of {planning} {shortfall:,.2f}. Prioritize obligations due within {horizon} days, "
+                    "pause optional spending where practical, and evaluate a funding plan that protects the emergency reserve before considering any conversion."
+                )
+            else:
+                recommendation = (
+                    f"The forecast shows a projected surplus of {planning} {projected:,.2f} after expected income, spending and recorded obligations. "
+                    "Keep the emergency reserve intact and avoid unnecessary conversions."
+                )
+            answer = (
+                f"**{horizon}-day financial assessment**\\n\\n"
+                f"**Configured balances:** {balance_text}.\\n\\n"
+                f"**Projected position:** {planning} {projected:,.2f} after expected income, monthly living expenses, accommodation and obligations in the forecast horizon. "
+                f"**Funding gap:** {planning} {shortfall:,.2f}.\\n\\n"
+                f"**Obligations:** {obligation_text}\\n\\n"
+                f"**Emergency reserve:** {reserve_currency} {reserve_amount:,.2f} configured; health analysis reports the reserve "
+                f"{'is met' if health.get('emergency_reserve_met') else 'is not fully met or cannot be verified'}.\\n\\n"
+                f"**Risk and next steps:** {recommendation}\\n\\n"
+                "This is a planning estimate based on the configured profile and reference FX data, not a guaranteed bank balance. "
+                "No proposal or transaction was created."
+            )
+            return self._result(
+                "financial_assessment",
+                answer,
+                trace,
+                {
+                    "forecast": forecast,
+                    "currency_overview": overview,
+                    "obligations": obligations,
+                    "spending": spending,
+                    "health": health,
+                    "state_changed": False,
+                    "agent_mode": "local_agent_planner",
+                },
+            )
         message_horizon_days = self._extract_horizon_days(t)
         conversion_question = any(k in t for k in ["convert", "exchange", "should i", "what should i do", "enough", "need to"])
         # A conditional family-income question must stay advisory and must not be

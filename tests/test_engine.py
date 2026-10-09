@@ -2033,3 +2033,22 @@ def test_agent_handles_two_explicit_conversions_in_one_request():
     assert "SGD" in r["answer"] and "MYR" in r["answer"]
     assert r["data"]["state_changed"] is False
     assert r["data"]["proposal"] is None
+
+
+def test_agent_compares_explicit_hypothetical_fx_rates_without_live_quote():
+    e = FinanceEngine()
+    before = e.get_balance()
+    r = e.agent(
+        "Compare MYR 10,000 at hypothetical rates 0.32 and 0.33 SGD per MYR "
+        "and calculate the difference."
+    )
+
+    assert r["intent"] == "fx_comparison"
+    assert r["data"]["rates"] == [0.32, 0.33]
+    assert r["data"]["converted_amounts"] == [3200.0, 3300.0]
+    assert r["data"]["difference"] == 100.0
+    assert "Difference: 100.00 SGD" in r["answer"]
+    assert r["data"]["hypothetical_only"] is True
+    assert r["data"]["state_changed"] is False
+    assert r["data"]["proposal"] is None
+    assert e.get_balance() == before

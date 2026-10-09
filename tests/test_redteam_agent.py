@@ -333,6 +333,19 @@ def test_redteam_llm_proposal_requires_explicit_matching_transfer_request():
     )
 
 
+def test_redteam_llm_proposal_accepts_explicit_ringgit_shorthand():
+    planner = AgentOrchestrator(FinanceEngine())
+
+    assert planner._proposal_request_is_explicit(
+        "Prepare a transfer of 5k ringgit to Singapore.",
+        {"amount_myr": 5000},
+    )
+    assert not planner._proposal_request_is_explicit(
+        "I have RM10000. Should I transfer 5k ringgit?",
+        {"amount_myr": 5000},
+    )
+
+
 def test_redteam_llm_proposal_rejects_conditional_incoming_money():
     e = FinanceEngine()
     planner = AgentOrchestrator(e)

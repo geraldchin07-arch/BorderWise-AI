@@ -155,7 +155,8 @@ class LocalAgentPlanner:
         possession clauses separately so obligation amounts are never promoted to wallet
         balances.
         """
-        t = self.engine.repair_user_text(text).lower().strip()
+        raw_text = str(text or "").strip()
+        t = self.engine.repair_user_text(raw_text).lower().strip()
         aliases = self._currency_aliases()
         balances: dict[str, Decimal] = {}
 
@@ -175,6 +176,7 @@ class LocalAgentPlanner:
             re.I,
         )
         possession_segments = [m.group("segment") for m in possession_pattern.finditer(t)]
+        possession_segments_raw = [m.group("segment") for m in possession_pattern.finditer(raw_text)]
 
         for segment in possession_segments:
             for code, pattern in patterns_by_code.items():
@@ -182,6 +184,17 @@ class LocalAgentPlanner:
                 if match:
                     raw_amount = match.group(1) or match.group(2)
                     balances[code] = self._parse_human_amount(raw_amount)
+
+        # Ambiguous word-shaped codes (ALL, TRY, MAD, PEN, TOP, GEL, COP, BOB,
+        # RON) are accepted only in uppercase, so ordinary prose is not mistaken
+        # for a wallet currency.
+        ambiguous_codes = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
+        for code in ambiguous_codes:
+            for segment in possession_segments_raw:
+                amount_value = self._explicit_ambiguous_code_amount(segment, code)
+                if amount_value is not None:
+                    balances[code] = amount_value
+                    break
 
         # Also support a standalone reverse form such as "2,000 SGD" when it is not
         # associated with an outgoing obligation. This is a fallback for short scenarios

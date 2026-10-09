@@ -33,17 +33,17 @@ class ChatRequest(BaseModel):
 
 
 class AuthRequest(BaseModel):
-    proposal_id: str
+    proposal_id: str = Field(min_length=1, max_length=64)
     approved: bool
 
 
 class ExecuteRequest(BaseModel):
-    proposal_id: str
+    proposal_id: str = Field(min_length=1, max_length=64)
 
 
 class TransferRequest(BaseModel):
     amount_myr: float = Field(gt=0, allow_inf_nan=False)
-    purpose: str = "student finance transfer"
+    purpose: str = Field(default="student finance transfer", min_length=1, max_length=200)
 
 
 class FXConversionRequest(BaseModel):

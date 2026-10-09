@@ -1991,3 +1991,33 @@ def test_generic_currency_amount_recognizes_names_and_symbols(prompt, expected):
 def test_financial_reasoning_intent_beats_incidental_fx_words(prompt, expected_intent):
     e = FinanceEngine()
     assert e.detect_intent(prompt) == expected_intent
+
+
+def test_local_agent_calculates_savings_goal_from_explicit_inputs():
+    e = FinanceEngine()
+    before = e.get_balance()
+    r = e.agent(
+        'I have SGD 5,000 in savings, receive SGD 1,200 per month, and spend SGD 900 per month. '
+        'Can I save enough to have SGD 8,000 in six months?'
+    )
+    assert r['intent'] == 'savings_projection'
+    assert r['data']['monthly_surplus_sgd'] == 300.0
+    assert r['data']['projected_savings_sgd'] == 6800.0
+    assert r['data']['shortfall_sgd'] == 1200.0
+    assert r['data']['state_changed'] is False
+    assert e.get_balance() == before
+
+
+def test_local_agent_updates_savings_projection_on_expense_follow_up():
+    e = FinanceEngine()
+    e.agent(
+        'I have SGD 5,000 in savings, receive SGD 1,200 per month, and spend SGD 900 per month. '
+        'Can I save enough to have SGD 8,000 in six months?'
+    )
+    r = e.agent('What if my expenses increase by SGD 200 per month?')
+    assert r['intent'] == 'savings_projection'
+    assert r['data']['monthly_expenses_sgd'] == 1100.0
+    assert r['data']['monthly_surplus_sgd'] == 100.0
+    assert r['data']['projected_savings_sgd'] == 5600.0
+    assert r['data']['shortfall_sgd'] == 2400.0
+    assert r['data']['state_changed'] is False

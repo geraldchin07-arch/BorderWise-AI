@@ -30,7 +30,11 @@ class LocalAgentPlanner:
         MVR MZN NAD PAB PYG PEN BOB CLP COP CRC DOP GTQ HNL ARS UYU VES ZMW ZWL
         TZS UGX RWF SOS SDG SSP SYP SRD TTD TOP VUV WST YER IQD MOP SBD SCR TJS TMT
         """.split()
-        aliases = {code: [code.lower()] for code in codes if code not in {"ALL", "TRY", "MAD", "PEN", "TOP"}}
+        aliases = {
+            code: [code.lower()]
+            for code in codes
+            if code not in {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
+        }
         aliases.update({
             "MYR": ["myr", "rm", "ringgit", "malaysian ringgit"],
             "SGD": ["sgd", "s$", "singapore dollar", "singapore dollars"],
@@ -70,6 +74,10 @@ class LocalAgentPlanner:
             "ILS": ["ils", "israeli new shekel", "shekel", "shekels"],
             "PKR": ["pkr", "pakistani rupee", "pakistani rupees"],
             "LKR": ["lkr", "sri lankan rupee", "sri lankan rupees"],
+            "GEL": ["georgian lari", "lari"],
+            "COP": ["colombian peso", "colombian pesos"],
+            "BOB": ["bolivian boliviano", "bolivian bolivianos"],
+            "RON": ["romanian leu", "romanian lei"],
         })
         return aliases
 

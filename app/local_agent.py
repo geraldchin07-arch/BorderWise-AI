@@ -207,7 +207,7 @@ class LocalAgentPlanner:
         names = aliases.get(code, [code.lower()])
         escaped = sorted((re.escape(x) for x in names), key=len, reverse=True)
         currency_token = r"(?<![A-Za-z])(?:" + "|".join(escaped) + r")(?![A-Za-z])"
-        amount_pattern = r"(?<![\d,])([0-9]{1,3}(?:,[0-9]{3})*|[0-9]+)(?:\.[0-9]+)?[km]?(?![\d,])"
+        amount_pattern = r"(?<![\d,])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?![\d,])"
         pattern = (
             rf"\b(?:need|needs|pay|paying|require|required|requirement|for)\b"
             rf"[^.;,]{{0,100}}?(?:{currency_token}\s*{amount_pattern}|{amount_pattern}\s*{currency_token})"

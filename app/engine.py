@@ -1717,9 +1717,14 @@ class FinanceEngine:
             "SEK": "SEK", "NOK": "NOK", "DKK": "DKK", "SAR": "SAR",
             "AED": "AED", "QAR": "QAR", "BND": "BND", "BHD": "BHD",
             "TRY": "TRY", "BDT": "BDT", "TND": "TND",
+            "ALBANIAN LEK": "ALL", "LEK": "ALL",
             "SOUTH AFRICAN RAND": "ZAR", "RAND": "ZAR",
             "KUWAITI DINAR": "KWD", "POLISH ZLOTY": "PLN", "ZLOTY": "PLN",
             "TURKISH LIRA": "TRY", "MEXICAN PESO": "MXN",
+            "MOROCCAN DIRHAM": "MAD", "PERUVIAN SOL": "PEN",
+            "TONGAN PAANGA": "TOP", "GEORGIAN LARI": "GEL", "LARI": "GEL",
+            "COLOMBIAN PESO": "COP", "BOLIVIAN BOLIVIANO": "BOB",
+            "ROMANIAN LEU": "RON", "ROMANIAN LEI": "RON",
             "BRAZILIAN REAL": "BRL", "SWISS FRANC": "CHF",
             "CANADIAN DOLLAR": "CAD", "AUSTRALIAN DOLLAR": "AUD",
             "HONG KONG DOLLAR": "HKD", "NEW ZEALAND DOLLAR": "NZD",
@@ -1780,7 +1785,8 @@ class FinanceEngine:
 
     def extract_conversion_pair(self, text: str) -> tuple[str, str] | None:
         """Extract and canonicalize a user-requested FX pair from codes or currency names."""
-        t = self.repair_user_text(text).upper()
+        raw_text = str(text or "")
+        t = self.repair_user_text(raw_text).upper()
         aliases = {
             "SINGAPORE DOLLARS": "SGD", "SINGAPORE DOLLAR": "SGD",
             "MALAYSIAN RINGGIT": "MYR", "RINGGIT": "MYR",
@@ -1836,8 +1842,19 @@ class FinanceEngine:
             "SYP": "SYP", "TJS": "TJS", "TMT": "TMT", "TOP": "TOP",
             "TTD": "TTD", "VUV": "VUV", "WST": "WST", "YER": "YER",
         }
+        # Ambiguous English words/names that overlap ISO codes are treated as
+        # currency codes only when the user typed the uppercase code explicitly.
+        ambiguous_codes = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
+        choices = sorted(
+            [
+                alias for alias in aliases
+                if alias not in ambiguous_codes
+                or re.search(rf"(?<![A-Za-z]){re.escape(alias)}(?![A-Za-z])", raw_text)
+            ],
+            key=len,
+            reverse=True,
+        )
         # Match longer names first so "US DOLLARS" is not reduced to "DOLLARS".
-        choices = sorted(aliases, key=len, reverse=True)
         token = r"(?<![A-Z])(?:" + "|".join(re.escape(a) for a in choices) + r")(?![A-Z])"
         patterns = [
             rf"\bFROM\s+(?P<base>{token})\s+TO\s+(?P<quote>{token})",

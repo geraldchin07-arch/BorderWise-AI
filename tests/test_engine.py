@@ -2204,3 +2204,17 @@ def test_agent_clarifies_bucks_even_when_destination_currency_is_named():
     assert "Which currency do you mean by 'bucks'" in r["answer"]
     assert r["data"]["state_changed"] is False
     assert r["data"]["proposal"] is None
+
+
+def test_safe_conversion_ui_handler_is_wired_to_fx_quote_endpoint():
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert 'onclick="calculateFXPair()"' in html
+    assert "async function calculateFXPair()" in html
+    assert "function toggleStudioRate()" in html
+    assert "function fxCurrencyHint()" in html
+    assert "fetch('/api/fx/quote?'+params.toString())" in html
+    assert "params.set('custom_rate',String(custom))" in html
+    assert "Conversion unavailable" in html

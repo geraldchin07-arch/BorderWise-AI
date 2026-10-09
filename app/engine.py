@@ -2590,15 +2590,14 @@ class FinanceEngine:
         if self.detect_intent(text) == "fx":
             # Resolve ambiguous source-money words before any fast parser or planner
             # can silently canonicalize them to USD.
-            ambiguous_bucks_early = "buck" in multi_fx_text and not any(
-                code in multi_fx_text for code in ["usd", "us$", "sgd", "myr", "aud", "cad"]
-            )
+            ambiguous_bucks_early = bool(re.search(r"\b[0-9][0-9,]*(?:\.[0-9]+)?\s+bucks?\b", multi_fx_text))
+            # A generic "dollars" source remains ambiguous even when the destination
+            # is explicitly named (USD, SGD, MYR, etc.). Only "US dollars"/"US$"
+            # explicitly identifies the source as USD.
             ambiguous_dollars_early = bool(re.search(
-                r"\b[0-9][0-9,]*(?:\.[0-9]+)?\s+dollars?\s+(?:in|to|into)\s+(?:singapore dollars?|sgd|s\$)\b",
+                r"\b[0-9][0-9,]*(?:\.[0-9]+)?\s+dollars?\s+(?:in|to|into)\s+(?:singapore dollars?|sgd|s\$|malaysian ringgit|ringgit|myr|rm|usd|us\$|us dollars?|cny|rmb|yuan|euros?|eur|pounds?|gbp|yen|jpy|aud|cad|hkd|twd|inr|idr|php|vnd|nzd|chf|sek|nok|dkk|sar|aed|qar|bnd)\b",
                 multi_fx_text,
-            )) and not any(
-                code in multi_fx_text for code in ["usd", "us$", "myr", "aud", "cad", "eur", "gbp"]
-            )
+            )) and not re.search(r"\b(?:us dollars?|us\$)\s*[0-9]|[0-9][0-9,]*(?:\.[0-9]+)?\s+(?:us dollars?|us\$)\b", multi_fx_text)
             if ambiguous_bucks_early or ambiguous_dollars_early:
                 word = "'bucks'" if ambiguous_bucks_early else "'dollars'"
                 return self._result(

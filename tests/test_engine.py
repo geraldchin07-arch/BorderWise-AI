@@ -2465,3 +2465,15 @@ def test_currency_first_profile_rejects_non_finite_custom_rate():
             "monthly_spending": {"Food": 1},
         })
     assert e.state == before
+
+
+
+def test_legacy_profile_update_is_atomic_when_late_validation_fails():
+    e = FinanceEngine()
+    before = copy.deepcopy(e.state)
+    with pytest.raises(ValueError, match="Scholarship plus loan"):
+        e.update_profile(
+            1000, 500, 1000, 100, 1000, 800, 300, 30, 400, 0,
+            {"Food": 100},
+        )
+    assert e.state == before

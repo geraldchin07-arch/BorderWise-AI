@@ -2474,7 +2474,8 @@ class FinanceEngine:
                 r"\b(sgd|singapore dollars?|myr|ringgit|usd|us dollars?)\s+per\s+(myr|ringgit|sgd|singapore dollars?|usd|us dollars?)\b",
                 hypothetical_text,
             )
-            if amount_match and len(rate_matches) >= 2 and pair_match:
+            explicit_pair = self.extract_conversion_pair(text) if not pair_match else None
+            if amount_match and len(rate_matches) >= 2 and (pair_match or explicit_pair):
                 currency_aliases = {
                     "rm": "MYR", "ringgit": "MYR", "malaysian ringgit": "MYR", "myr": "MYR",
                     "s$": "SGD", "singapore dollar": "SGD", "singapore dollars": "SGD", "sgd": "SGD",
@@ -2482,8 +2483,11 @@ class FinanceEngine:
                 }
                 amount_currency = currency_aliases.get((amount_match.group("currency") or amount_match.group("currency_after")).lower())
                 amount_raw = amount_match.group("amount") or amount_match.group("amount_after")
-                rate_quote = currency_aliases.get(pair_match.group(1).lower())
-                rate_base = currency_aliases.get(pair_match.group(2).lower())
+                if pair_match:
+                    rate_quote = currency_aliases.get(pair_match.group(1).lower())
+                    rate_base = currency_aliases.get(pair_match.group(2).lower())
+                else:
+                    rate_base, rate_quote = explicit_pair
                 if amount_currency and rate_quote and rate_base and amount_currency == rate_base and rate_base != rate_quote:
                     amount = Decimal(amount_raw.replace(",", ""))
                     rate_a, rate_b = Decimal(rate_matches[-2]), Decimal(rate_matches[-1])

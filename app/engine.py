@@ -1643,7 +1643,7 @@ class FinanceEngine:
         return money(Decimal(raw) * multiplier)
 
     def extract_myr_amount(self, text: str) -> Decimal | None:
-        amount = r"(?<![\d,])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[kKmM]?)(?!\d|,\d)"
+        amount = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[kKmM]?)(?!\d|,\d)"
         currency = r"(?<![A-Za-z])(?:malaysian\s+ringgit|ringgit|rm|myr)(?![A-Za-z])"
         patterns = [
             rf"{currency}\s*{amount}",
@@ -1656,7 +1656,7 @@ class FinanceEngine:
         return None
 
     def extract_sgd_amount(self, text: str) -> Decimal | None:
-        amount = r"(?<![\d,])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[kKmM]?)(?!\d|,\d)"
+        amount = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[kKmM]?)(?!\d|,\d)"
         currency = r"(?<![A-Za-z])(?:s\$|sgd|singapore\s+dollars?)(?![A-Za-z])"
         patterns = [
             rf"{currency}\s*{amount}",
@@ -1672,7 +1672,7 @@ class FinanceEngine:
         """Extract an explicit amount and canonical currency code from codes or common names."""
         raw_text = str(text or "").strip()
         t = self.repair_user_text(raw_text).strip()
-        amount = r"(?<![\d,])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[kKmM]?)(?!\d|,\d)"
+        amount = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[kKmM]?)(?!\d|,\d)"
         # ISO codes are the least ambiguous form and retain compatibility with existing inputs.
         code_match = re.search(
             rf"(?:^|\s)([A-Za-z]{{3}})\s*{amount}\b|(?:^|\s){amount}\s*([A-Za-z]{{3}})(?:\s|$)",

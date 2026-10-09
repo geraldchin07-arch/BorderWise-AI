@@ -1502,6 +1502,11 @@ class FinanceEngine:
         # Explicit money-moving actions must take priority over FX wording.
         if any(k in t for k in ["transfer", "send money", "remit", "remittance", "send myr", "send sgd", "pay"]):
             return "transfer"
+        # Explicit comparisons of hypothetical rates are arithmetic tasks, not live FX lookups.
+        if any(k in t for k in ["compare", "difference between", "what is the difference"]) and any(
+            k in t for k in ["hypothetical", "assume", "versus", " vs ", "at 0."]
+        ):
+            return "general"
         currency_aliases = {
             "sgd", "s$", "singapore dollar", "singapore dollars",
             "myr", "rm", "ringgit", "malaysian ringgit",

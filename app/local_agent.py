@@ -523,6 +523,57 @@ class LocalAgentPlanner:
             self.engine.state.get("profile_meta", {}).get("planning_currency", "SGD")
         ).upper()
 
+        # Handle explicit multi-currency tuition calculations as a read-only
+        # scenario before generic intent/proposal handlers can intercept the prompt.
+        explicit_tuition_scenario = (
+            "tuition" in t
+            and any(k in t for k in ["total available funds", "tuition shortfall", "cover tuition in full"])
+            and any(k in t for k in ["do not create a proposal", "don't create a proposal", "no proposal", "do not execute"])
+        )
+        if explicit_tuition_scenario:
+            sgd_match = re.search(r"\\b(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)", t)
+            myr_match = re.search(r"\\bmyr\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)", t)
+            reserve_match = re.search(r"emergency reserve of\\s*(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)", t)
+            tuition_match = re.search(r"tuition of\\s*(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)", t)
+            if sgd_match and myr_match and reserve_match and tuition_match:
+                sgd_cash = self.engine.money_value(sgd_match.group(1).replace(",", ""))
+                myr_cash = self.engine.money_value(myr_match.group(1).replace(",", ""))
+                reserve = self.engine.money_value(reserve_match.group(1).replace(",", ""))
+                tuition = self.engine.money_value(tuition_match.group(1).replace(",", ""))
+                fx = self.engine.convert_currency(float(myr_cash), "MYR", "SGD")
+                converted_myr = self.engine.money_value(fx.get("converted_amount", 0))
+                total = self.engine.money_value(sgd_cash + converted_myr)
+                spendable = self.engine.money_value(max(Decimal("0"), total - reserve))
+                gap = self.engine.money_value(max(Decimal("0"), tuition - spendable))
+                covered = spendable >= tuition
+                rate = fx.get("rate")
+                answer = (
+                    "**Tuition funding calculation (read-only)**\\n"
+                    f"- Existing SGD balance: SGD {sgd_cash:,.2f}\\n"
+                    f"- MYR balance: MYR {myr_cash:,.2f}\\n"
+                    f"- Reference conversion: MYR {myr_cash:,.2f} ≈ SGD {converted_myr:,.2f}"
+                    + (f" at 1 MYR = SGD {float(rate):.4f}.\\n" if rate is not None else ".\\n")
+                    + f"- Total funds at reference rate: SGD {total:,.2f}\\n"
+                    + f"- Emergency reserve protected: SGD {reserve:,.2f}\\n"
+                    + f"- Funds available for tuition after reserve: SGD {spendable:,.2f}\\n"
+                    + f"- Tuition due: SGD {tuition:,.2f}\\n"
+                    + (f"- Shortfall: SGD {gap:,.2f}. Tuition cannot be covered in full while preserving the reserve.\\n" if not covered else "- Shortfall: SGD 0.00. Tuition can be covered while preserving the reserve.\\n")
+                    + "This is a hypothetical calculation using the figures in your message and a reference FX rate. Fees, spreads and settlement timing may change the result. No proposal or transaction was created."
+                )
+                trace = [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a read-only multi-currency tuition scenario with explicit figures."},
+                    {"step": "OBSERVE", "status": "completed", "detail": "Used balances, tuition and reserve amounts stated in the prompt, not saved demo balances."},
+                    {"step": "FX", "status": "completed", "detail": f"Converted MYR {myr_cash:,.2f} to SGD {converted_myr:,.2f} using the configured reference rate."},
+                    {"step": "CALCULATE", "status": "completed", "detail": f"Total SGD {total:,.2f}; protected reserve SGD {reserve:,.2f}; spendable SGD {spendable:,.2f}; shortfall SGD {gap:,.2f}."},
+                    {"step": "SECURITY", "status": "completed", "detail": "Read-only scenario; no proposal or transaction was created."},
+                    {"step": "RECOMMEND", "status": "completed", "detail": "Reported whether tuition can be covered after preserving the reserve."},
+                ]
+                return self._result("tuition_funding_analysis", answer, trace, {
+                    "scenario_inputs": {"sgd_balance": float(sgd_cash), "myr_balance": float(myr_cash), "tuition_sgd": float(tuition), "reserve_sgd": float(reserve)},
+                    "fx_conversion": fx, "total_funds_sgd": float(total), "spendable_after_reserve_sgd": float(spendable),
+                    "shortfall_sgd": float(gap), "tuition_fully_covered": covered, "state_changed": False, "proposal": None,
+                })
+
         # Keep simple balance lookups separate from broader forecasting.
         # A short "how much do I have in SGD?" question should not trigger
         # a 30-day assessment merely because it contains "how much".

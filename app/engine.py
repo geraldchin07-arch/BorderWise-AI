@@ -2844,9 +2844,14 @@ class FinanceEngine:
                 "how should we", "compare", "what would be better",
             ]
         )
+        explicit_currency_amount = (
+            self.extract_generic_currency_amount(text)
+            or self.extract_sgd_amount(text)
+            or self.extract_myr_amount(text)
+        )
         if (
             early_intent == "transfer"
-            and self.extract_myr_amount(text) is None
+            and explicit_currency_amount is None
             and not planning_or_advice_request
         ):
             return self._result(
@@ -3041,12 +3046,16 @@ class FinanceEngine:
         if intent == "transfer":
             amount = self.extract_myr_amount(text)
             if amount is None:
-                f = self.forecast()
-                if f["shortfall_sgd"] > 0:
-                    q = self.refresh_fx()
-                    amount = money(Decimal(str(f["shortfall_sgd"])) / Decimal(str(q["rate"])))
-                else:
-                    return self._result(intent, "Tell me the MYR amount you want to transfer, for example: “Prepare a RM5,000 transfer to Singapore.”", trace)
+                return self._result(
+                    intent,
+                    "I can prepare a MYR-to-SGD transfer only when you explicitly state the MYR amount. If you mean to remit SGD or another currency, tell me the source account and amount so I can plan that route without guessing. No proposal or transaction was created.",
+                    trace,
+                    {
+                        "blocked_reason": "missing_explicit_myr_amount",
+                        "state_changed": False,
+                        "proposal": None,
+                    },
+                )
             risk = self.risk_check(amount, text)
             trace.append({"step": "SECURITY", "status": "completed" if risk["status"] != "BLOCKED" else "blocked", "detail": f"Risk status: {risk['status']}"})
             if risk["status"] == "BLOCKED":

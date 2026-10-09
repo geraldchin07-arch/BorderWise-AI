@@ -2085,3 +2085,34 @@ def test_agent_preserves_conversion_target_and_requested_display_currency(monkey
     assert r["data"]["state_changed"] is False
     assert r["data"]["proposal"] is None
     assert e.get_balance() == before
+
+
+def test_agent_asks_which_currency_bucks_means():
+    e = FinanceEngine()
+    before = e.get_balance()
+    r = e.agent("Convert 200 bucks into Singapore dollars.")
+
+    assert r["intent"] == "fx"
+    assert r["data"]["needs_clarification"] is True
+    assert "Which currency do you mean by 'bucks'" in r["answer"]
+    assert r["data"]["state_changed"] is False
+    assert r["data"]["proposal"] is None
+    assert e.get_balance() == before
+
+
+def test_agent_tuition_affordability_uses_only_explicit_amounts():
+    e = FinanceEngine()
+    before = e.get_balance()
+    r = e.agent(
+        "I have SGD 7,000 available and tuition is SGD 18,000. Can I afford tuition?"
+    )
+
+    assert r["intent"] == "affordability"
+    assert r["data"]["available_cash_sgd"] == 7000.0
+    assert r["data"]["tuition_due_sgd"] == 18000.0
+    assert r["data"]["shortfall_sgd"] == 11000.0
+    assert "30-day" not in r["answer"]
+    assert "emergency reserve" not in r["answer"].lower()
+    assert r["data"]["state_changed"] is False
+    assert r["data"]["proposal"] is None
+    assert e.get_balance() == before

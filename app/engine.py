@@ -1528,7 +1528,7 @@ class FinanceEngine:
         # Preserve valid ISO currency codes before fuzzy typo repair. Otherwise
         # uncommon but valid codes such as KWD can be silently rewritten to KRW.
         currency_codes = [
-            "SGD", "MYR", "USD", "CNY", "JPY", "KRW", "THB", "EUR", "GBP",
+            "SGD", "MYR", "USD", "CNY", "RMB", "JPY", "KRW", "THB", "EUR", "GBP",
             "AUD", "CAD", "HKD", "TWD", "INR", "IDR", "PHP", "VND", "NZD",
             "CHF", "SEK", "NOK", "DKK", "SAR", "AED", "QAR", "BND", "ALL",
             "AMD", "ARS", "AZN", "BAM", "BGN", "BOB", "BRL", "BYN", "CLP",
@@ -1552,7 +1552,18 @@ class FinanceEngine:
                 ((difflib.SequenceMatcher(None, token, code).ratio(), code) for code in currency_codes),
                 key=lambda item: item[0],
             )
-            return best if score >= 0.66 else token
+            # Allow a single adjacent transposition (e.g. MRY -> MYR), but
+            # don't "correct" arbitrary three-letter words into currencies.
+            transposed = any(
+                len(token) == len(code)
+                and sum(a != b for a, b in zip(token, code)) == 2
+                and any(
+                    token[i] == code[i + 1] and token[i + 1] == code[i]
+                    for i in range(len(token) - 1)
+                )
+                for code in currency_codes
+            )
+            return best if score >= 0.80 or transposed else token
         return re.sub(r"\b[A-Za-z]{3}\b", repair_code, t)
 
     def detect_intent(self, text: str) -> str:

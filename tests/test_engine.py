@@ -2021,3 +2021,15 @@ def test_local_agent_updates_savings_projection_on_expense_follow_up():
     assert r['data']['projected_savings_sgd'] == 5600.0
     assert r['data']['shortfall_sgd'] == 2400.0
     assert r['data']['state_changed'] is False
+
+
+
+def test_agent_handles_two_explicit_conversions_in_one_request():
+    e = FinanceEngine()
+    r = e.agent("Convert 100 MYR to SGD and 100 SGD to MYR.")
+    assert r["intent"] == "fx"
+    assert len(r["data"]["conversions"]) == 2
+    assert "100.00 MYR" in r["answer"] and "100.00 SGD" in r["answer"]
+    assert "SGD" in r["answer"] and "MYR" in r["answer"]
+    assert r["data"]["state_changed"] is False
+    assert r["data"]["proposal"] is None

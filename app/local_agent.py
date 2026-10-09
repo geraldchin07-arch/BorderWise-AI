@@ -126,7 +126,7 @@ class LocalAgentPlanner:
         ambiguous = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
         if code not in ambiguous:
             return None
-        amount = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?!\d|,\d|\.\d)"
+        amount = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?![A-Za-z0-9]|,\d|\.\d)"
         token = rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])"
         for pattern in (rf"{token}\s*{amount}", rf"{amount}\s*{token}"):
             match = re.search(pattern, str(text or ""))
@@ -162,7 +162,7 @@ class LocalAgentPlanner:
         prefix_pattern = alias_token + r"\s*"
         suffix_pattern = r"\s*" + alias_token
 
-        amount_pattern = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?!\d|,\d|\.\d)"
+        amount_pattern = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?![A-Za-z0-9]|,\d|\.\d)"
         patterns = [
             rf"{prefix_pattern}{amount_pattern}",
             rf"{amount_pattern}{suffix_pattern}",
@@ -192,7 +192,7 @@ class LocalAgentPlanner:
         for code, names in aliases.items():
             escaped = sorted((re.escape(x) for x in names), key=len, reverse=True)
             token = r"(?<![A-Za-z])(?:" + "|".join(escaped) + r")(?![A-Za-z])"
-            amount = r"(?<![\d,.\-+])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?(?!\d|,\d|\.\d)"
+            amount = r"(?<![\d,.\-+])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?(?![A-Za-z0-9]|,\d|\.\d)"
             patterns_by_code[code] = rf"(?:{token}\s*({amount})|({amount})\s*{token})"
 
         # First parse every explicit possession list. The lookahead stops before a
@@ -263,7 +263,7 @@ class LocalAgentPlanner:
         code = currency.upper().strip()
         ambiguous = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
         if code in ambiguous and re.search(rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", raw_text):
-            amount = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?!\d|,\d|\.\d)"
+            amount = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?![A-Za-z0-9]|,\d|\.\d)"
             token = rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])"
             pattern = (
                 rf"(?i:\b(?:need|needs|pay|paying|require|required|requirement|for)\b)"
@@ -280,7 +280,7 @@ class LocalAgentPlanner:
         names = aliases.get(code, [code.lower()])
         escaped = sorted((re.escape(x) for x in names), key=len, reverse=True)
         currency_token = r"(?<![A-Za-z])(?:" + "|".join(escaped) + r")(?![A-Za-z])"
-        amount_pattern = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?!\d|,\d|\.\d)"
+        amount_pattern = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?![A-Za-z0-9]|,\d|\.\d)"
         pattern = (
             rf"\b(?:need|needs|pay|paying|require|required|requirement|for)\b"
             rf"[^.;,]{{0,100}}?(?:{currency_token}\s*{amount_pattern}|{amount_pattern}\s*{currency_token})"
@@ -330,7 +330,7 @@ class LocalAgentPlanner:
                 currency_pattern.append((re.escape(code.lower()), code))
         currency_pattern.sort(key=lambda item: len(item[0]), reverse=True)
         token = r"(?<![A-Za-z])(?:" + "|".join(alias for alias, _ in currency_pattern) + r")(?![A-Za-z])"
-        amount_token = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?!\d|,\d|\.\d)"
+        amount_token = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?![A-Za-z0-9]|,\d|\.\d)"
 
         for label in labels:
             label_pattern = re.escape(label)

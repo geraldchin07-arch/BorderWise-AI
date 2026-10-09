@@ -1980,6 +1980,12 @@ def test_generic_currency_amount_recognizes_names_and_symbols(prompt, expected):
     assert e.extract_generic_currency_amount(prompt) == expected
 
 
+def test_generic_currency_amount_rejects_unknown_three_letter_words():
+    e = FinanceEngine()
+    assert e.extract_generic_currency_amount("transfer the 500 to Singapore") is None
+    assert e.extract_generic_currency_amount("send ABC 500") is None
+
+
 @pytest.mark.parametrize(
     ("prompt", "expected_intent"),
     [

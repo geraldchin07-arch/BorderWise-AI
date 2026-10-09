@@ -60,7 +60,7 @@ class LocalAgentPlanner:
             "BRL": ["brl", "brazilian real", "brazilian reals"],
             "MXN": ["mxn", "mexican peso", "mexican pesos"],
             "PLN": ["pln", "zloty", "polish zloty"],
-            "TRY": ["turkish lira", "turkish liras", "lira"],
+            "TRY": ["try", "turkish lira", "turkish liras"],
             "MAD": ["moroccan dirham", "moroccan dirhams"],
             "PEN": ["peruvian sol", "peruvian soles"],
             "TOP": ["tongan paanga"],

@@ -2831,6 +2831,26 @@ class FinanceEngine:
                     {"starting_savings_sgd":float(prior_plan["starting"]),"monthly_income_sgd":float(prior_plan["income"]),"monthly_expenses_sgd":float(adjusted_expenses),"monthly_surplus_sgd":float(monthly),"months":prior_plan["months"],"target_savings_sgd":float(prior_plan["target"]),"projected_savings_sgd":float(projected),"shortfall_sgd":float(shortfall),"surplus_sgd":float(surplus),"state_changed":False,"proposal":None},
                 )
 
+        # Money-moving requests must carry an explicit MYR amount before they
+        # reach either planner. Otherwise a planner could infer an amount from a
+        # forecast or saved wallet, which is not user authorization.
+        early_intent = self.detect_intent(text)
+        if early_intent == "transfer" and self.extract_myr_amount(text) is None:
+            return self._result(
+                "agentic_local",
+                "I need the exact MYR amount before preparing a transfer. Please specify it explicitly, for example: “Prepare a RM5,000 transfer to SGD.” No proposal or transaction was created.",
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a transfer request without an explicit MYR amount."},
+                    {"step": "SECURITY", "status": "blocked", "detail": "Prevented either planner from inferring a transaction amount from forecasts or wallet balances."},
+                ],
+                {
+                    "blocked_reason": "implicit_transaction_amount",
+                    "state_changed": False,
+                    "proposal": None,
+                    "agent_mode": "deterministic_amount_safety_gate",
+                },
+            )
+
         # v5: optional LLM tool-calling planner. The deterministic engine remains the
         # fallback and the authority for calculations, policy and execution.
         try:

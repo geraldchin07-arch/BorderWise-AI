@@ -1460,6 +1460,7 @@ class FinanceEngine:
         t = re.sub(r"\s+", " ", str(text or "").strip())
         common_typos = {
             "curency": "currency", "curreny": "currency", "currncy": "currency",
+            "mry": "myr", "sgdd": "sgd",
             "exhange": "exchange", "exchnge": "exchange", "exchnage": "exchange",
             "convertion": "conversion", "conver": "convert", "converrt": "convert",
             "curent": "current", "currnt": "current", "amout": "amount", "ratee": "rate", "trnsfer": "transfer", "ususal": "usual", "pleaze": "please",
@@ -1486,8 +1487,6 @@ class FinanceEngine:
         t = self.repair_user_text(text).lower()
         if any(k in t for k in ["help", "what can you do", "capabilities"]):
             return "help"
-        if any(k in t for k in ["biggest expense", "spending", "spend", "expenses", "where did i spend"]):
-            return "spending"
         # Classify financial reasoning before FX: a tuition forecast that mentions
         # MYR and SGD is still a forecast, not a request for a generic exchange quote.
         if any(k in t for k in ["afford", "tuition", "fees", "enough money", "enough for"]):
@@ -1532,6 +1531,8 @@ class FinanceEngine:
             or (len(currency_mentions) >= 2 and any(k in t for k in ["to", "into", "in", "rate", "currency", "current"]))
         ):
             return "fx"
+        if any(k in t for k in ["biggest expense", "spending", "spend", "expenses", "where did i spend"]):
+            return "spending"
         if any(k in t for k in ["balance", "how much money", "how much do i have", "account"]):
             return "balance"
         if any(k in t for k in ["transaction", "recent payment", "recent transactions", "history"]):

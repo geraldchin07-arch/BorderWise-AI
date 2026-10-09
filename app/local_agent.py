@@ -1847,9 +1847,10 @@ class LocalAgentPlanner:
                             )
                             scenario_wallet = dict(remembered_context.get("wallet_balances", {}))
                             if scenario_wallet:
+                                # Compute the baseline projection without the proposed
+                                # remittance; subtract the target exactly once below.
                                 forecast = self._scenario_forecast(
-                                    scenario_wallet, None, None,
-                                    (send_amount, send_target), None, 30
+                                    scenario_wallet, None, None, None, None, 30
                                 )
                             else:
                                 forecast = self.engine.forecast()

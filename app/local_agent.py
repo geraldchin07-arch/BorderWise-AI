@@ -517,7 +517,7 @@ class LocalAgentPlanner:
                 {"step": "RECOMMEND", "status": "completed", "detail": "Acknowledged the requested identity without initiating a financial action."},
             ], {"assistant_name": "XKF5 AI", "state_changed": False, "proposal": None})
         if any(k in t for k in ["what is your name", "what's your name", "who are you", "ur name", "your name"]):
-            return self._result("general", "I'm BorderWise AI, your financial planning assistant. I can help analyze balances, cash flow, tuition funding, and currency conversions. I provide guidance and simulations; I don't move money without the application's required authorization.", [
+            return self._result("general", "I'm XKF5 AI, your financial planning assistant. I can help analyze balances, cash flow, tuition funding, and currency conversions. I provide guidance and simulations; I don't move money without the application's required authorization.", [
                 {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a question about the assistant's identity."},
                 {"step": "RECOMMEND", "status": "completed", "detail": "Answered directly without initiating any financial action."},
             ], {"state_changed": False, "proposal": None})

@@ -104,8 +104,9 @@ class LocalAgentPlanner:
             reverse=True,
         )
 
-        prefix_pattern = r"(?:" + "|".join(escaped) + r")\s*"
-        suffix_pattern = r"\s*(?:" + "|".join(escaped) + r")\b"
+        alias_token = r"(?<![A-Za-z])(?:" + "|".join(escaped) + r")(?![A-Za-z])"
+        prefix_pattern = alias_token + r"\s*"
+        suffix_pattern = r"\s*" + alias_token
 
         amount_pattern = r"([0-9]+(?:\.[0-9]+)?[km]?)"
         patterns = [
@@ -135,9 +136,9 @@ class LocalAgentPlanner:
         patterns_by_code: dict[str, str] = {}
         for code, names in aliases.items():
             escaped = sorted((re.escape(x) for x in names), key=len, reverse=True)
-            token = "(?:" + "|".join(escaped) + ")"
+            token = r"(?<![A-Za-z])(?:" + "|".join(escaped) + r")(?![A-Za-z])"
             amount = r"[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?[km]?"
-            patterns_by_code[code] = rf"(?:{token}\s*({amount})|({amount})\s*{token}\b)"
+            patterns_by_code[code] = rf"(?:{token}\s*({amount})|({amount})\s*{token})"
 
         # First parse every explicit possession list. The lookahead stops before a
         # new obligation/action clause, but deliberately allows commas inside the list.
@@ -197,7 +198,7 @@ class LocalAgentPlanner:
         aliases = self._currency_aliases()
         names = aliases.get(code, [code.lower()])
         escaped = sorted((re.escape(x) for x in names), key=len, reverse=True)
-        currency_token = "(?:" + "|".join(escaped) + ")"
+        currency_token = r"(?<![A-Za-z])(?:" + "|".join(escaped) + r")(?![A-Za-z])"
         pattern = rf"\b(?:need|needs|pay|paying|require|required|requirement|for)\b[^.;,]{{0,100}}?{currency_token}\s*([0-9]+(?:\.[0-9]+)?)"
         matches = re.findall(pattern, t, re.IGNORECASE)
         if not matches:
@@ -244,7 +245,7 @@ class LocalAgentPlanner:
             for alias in aliases:
                 currency_pattern.append((re.escape(alias), code))
         currency_pattern.sort(key=lambda item: len(item[0]), reverse=True)
-        token = "(?:" + "|".join(alias for alias, _ in currency_pattern) + ")"
+        token = r"(?<![A-Za-z])(?:" + "|".join(alias for alias, _ in currency_pattern) + r")(?![A-Za-z])"
 
         for label in labels:
             label_pattern = re.escape(label)

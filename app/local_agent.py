@@ -36,6 +36,7 @@ class LocalAgentPlanner:
             if code not in {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
         }
         aliases.update({
+            "ALL": ["albanian lek", "lek"],
             "MYR": ["myr", "rm", "ringgit", "malaysian ringgit"],
             "SGD": ["sgd", "s$", "singapore dollar", "singapore dollars"],
             "USD": ["usd", "us$", "$", "dollar", "dollars", "us dollar", "us dollars"],

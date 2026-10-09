@@ -19,6 +19,60 @@ class LocalAgentPlanner:
         if not hasattr(self.engine, "_agent_scenario_context"):
             self.engine._agent_scenario_context = {}
 
+    def _currency_aliases(self) -> dict[str, list[str]]:
+        """Shared currency vocabulary for every offline-agent parser."""
+        codes = """
+        SGD MYR USD CNY EUR GBP JPY KRW THB AUD CAD HKD TWD INR IDR PHP VND NZD
+        CHF SEK NOK DKK SAR AED QAR BND BHD ZAR BRL MXN PLN CZK HUF RON BGN TRY
+        UAH RUB ILS EGP NGN KES GHS MAD TND DZD KWD BDT OMR JOD LBP PKR LKR
+        NPR MMK MNT KZT UZS GEL AMD AZN ALL BAM MKD RSD BYN MDL ISK XOF XAF XPF
+        XCD BWP BIF CDF DJF ERN ETB FJD GYD HTG JMD KHR KMF LAK LSL MGA MWK MUR
+        MVR MZN NAD PAB PYG PEN BOB CLP COP CRC DOP GTQ HNL ARS UYU VES ZMW ZWL
+        TZS UGX RWF SOS SDG SSP SYP SRD TTD TOP VUV WST YER IQD MOP SBD SCR TJS TMT
+        """.split()
+        aliases = {code: [code.lower()] for code in codes if code not in {"ALL", "TRY", "MAD", "PEN", "TOP"}}
+        aliases.update({
+            "MYR": ["myr", "rm", "ringgit", "malaysian ringgit"],
+            "SGD": ["sgd", "s$", "singapore dollar", "singapore dollars"],
+            "USD": ["usd", "us$", "$", "dollar", "dollars", "us dollar", "us dollars"],
+            "CNY": ["cny", "rmb", "yuan", "renminbi", "¥", "chinese yuan"],
+            "JPY": ["jpy", "yen", "¥", "japanese yen"],
+            "KRW": ["krw", "won", "₩", "korean won"],
+            "THB": ["thb", "baht", "฿", "thai baht"],
+            "EUR": ["eur", "€", "euro", "euros", "european euro"],
+            "GBP": ["gbp", "£", "pound", "pounds", "british pound"],
+            "AUD": ["aud", "a$", "australian dollar", "australian dollars"],
+            "CAD": ["cad", "c$", "canadian dollar", "canadian dollars"],
+            "HKD": ["hkd", "hk$", "hong kong dollar", "hong kong dollars"],
+            "TWD": ["twd", "nt$", "taiwan dollar", "new taiwan dollar"],
+            "INR": ["inr", "₹", "rupee", "rupees", "indian rupee"],
+            "IDR": ["idr", "rupiah", "indonesian rupiah"],
+            "PHP": ["php", "₱", "philippine peso", "philippine pesos"],
+            "VND": ["vnd", "₫", "dong", "vietnamese dong"],
+            "NZD": ["nzd", "new zealand dollar", "new zealand dollars"],
+            "CHF": ["chf", "swiss franc", "swiss francs"],
+            "ZAR": ["zar", "rand", "south african rand"],
+            "BRL": ["brl", "brazilian real", "brazilian reals"],
+            "MXN": ["mxn", "mexican peso", "mexican pesos"],
+            "PLN": ["pln", "zloty", "polish zloty"],
+            "TRY": ["turkish lira", "turkish liras", "lira"],
+            "MAD": ["moroccan dirham", "moroccan dirhams"],
+            "PEN": ["peruvian sol", "peruvian soles"],
+            "TOP": ["tongan paanga"],
+            "KWD": ["kuwaiti dinar", "kuwaiti dinars"],
+            "BHD": ["bahraini dinar", "bahraini dinars"],
+            "BDT": ["bangladeshi taka", "taka"],
+            "AED": ["uae dirham", "emirati dirham"],
+            "SAR": ["saudi riyal", "saudi riyals"],
+            "QAR": ["qatari riyal", "qatari riyals"],
+            "NGN": ["nigerian naira", "naira"],
+            "EGP": ["egyptian pound", "egyptian pounds"],
+            "ILS": ["israeli new shekel", "shekel", "shekels"],
+            "PKR": ["pakistani rupee", "pakistani rupees"],
+            "LKR": ["sri lankan rupee", "sri lankan rupees"],
+        })
+        return aliases
+
     def _parse_human_amount(self, raw_amount: str) -> Decimal:
         """Parse plain and shorthand amounts such as 2000, 2k, and 1.5m."""
         raw = str(raw_amount).strip().replace(",", "")
@@ -39,22 +93,7 @@ class LocalAgentPlanner:
         t = text.lower().replace(",", "").strip()
         code = currency.upper().strip()
 
-        aliases = {
-            "MYR": ["myr", "rm", "ringgit"],
-            "SGD": ["sgd", "s$"],
-            "USD": ["usd", "us$", "$", "dollar", "dollars"],
-            "CNY": ["cny", "rmb", "yuan", "renminbi", "¥"],
-            "JPY": ["jpy", "yen", "¥"],
-            "KRW": ["krw", "won", "₩"],
-            "THB": ["thb", "baht", "฿"],
-            "EUR": ["eur", "€", "euro", "euros"],
-            "GBP": ["gbp", "£", "pound", "pounds"],
-            "AUD": ["aud", "a$", "australian dollar"],
-            "CAD": ["cad", "c$", "canadian dollar"],
-            "HKD": ["hkd", "hk$", "hong kong dollar"],
-            "TWD": ["twd", "nt$", "taiwan dollar"],
-            "INR": ["inr", "₹", "rupee", "rupees"],
-        }
+        aliases = self._currency_aliases()
 
         names = aliases.get(code, [code.lower()])
 
@@ -90,22 +129,7 @@ class LocalAgentPlanner:
         balances.
         """
         t = self.engine.repair_user_text(text).lower().strip()
-        aliases = {
-            "MYR": ["myr", "rm", "ringgit"],
-            "SGD": ["sgd", "s$"],
-            "USD": ["usd", "us$", "$", "dollar", "dollars"],
-            "CNY": ["cny", "rmb", "yuan", "renminbi", "¥"],
-            "JPY": ["jpy", "yen", "¥"],
-            "KRW": ["krw", "won", "₩"],
-            "THB": ["thb", "baht", "฿"],
-            "EUR": ["eur", "€", "euro", "euros"],
-            "GBP": ["gbp", "£", "pound", "pounds"],
-            "AUD": ["aud", "a$", "australian dollar"],
-            "CAD": ["cad", "c$", "canadian dollar"],
-            "HKD": ["hkd", "hk$", "hong kong dollar"],
-            "TWD": ["twd", "nt$", "taiwan dollar"],
-            "INR": ["inr", "₹", "rupee", "rupees"],
-        }
+        aliases = self._currency_aliases()
         balances: dict[str, Decimal] = {}
 
         patterns_by_code: dict[str, str] = {}
@@ -170,22 +194,7 @@ class LocalAgentPlanner:
         t = text.lower().replace(",", "").strip()
         code = currency.upper().strip()
 
-        aliases = {
-            "MYR": ["myr", "rm", "ringgit"],
-            "SGD": ["sgd", "s$"],
-            "USD": ["usd", "us$", "$", "dollar", "dollars"],
-            "CNY": ["cny", "rmb", "yuan", "renminbi", "¥"],
-            "JPY": ["jpy", "yen", "¥"],
-            "KRW": ["krw", "won", "₩"],
-            "THB": ["thb", "baht", "฿"],
-            "EUR": ["eur", "€", "euro", "euros"],
-            "GBP": ["gbp", "£", "pound", "pounds"],
-            "AUD": ["aud", "a$", "australian dollar"],
-            "CAD": ["cad", "c$", "canadian dollar"],
-            "HKD": ["hkd", "hk$", "hong kong dollar"],
-            "TWD": ["twd", "nt$", "taiwan dollar"],
-            "INR": ["inr", "₹", "rupee", "rupees"],
-        }
+        aliases = self._currency_aliases()
         names = aliases.get(code, [code.lower()])
         escaped = sorted((re.escape(x) for x in names), key=len, reverse=True)
         currency_token = "(?:" + "|".join(escaped) + ")"
@@ -229,22 +238,7 @@ class LocalAgentPlanner:
         the label instead.
         """
         t = text.lower().replace(",", "")
-        supported_aliases = {
-            "MYR": ["myr", "rm", "ringgit"],
-            "SGD": ["sgd", "s$"],
-            "USD": ["usd", "us$", "dollar", "dollars"],
-            "CNY": ["cny", "rmb", "yuan"],
-            "JPY": ["jpy", "yen"],
-            "KRW": ["krw", "won"],
-            "THB": ["thb", "baht"],
-            "EUR": ["eur", "euro", "euros"],
-            "GBP": ["gbp", "pound", "pounds"],
-            "AUD": ["aud"],
-            "CAD": ["cad"],
-            "HKD": ["hkd"],
-            "TWD": ["twd"],
-            "INR": ["inr"],
-        }
+        supported_aliases = self._currency_aliases()
         currency_pattern = []
         for code, aliases in supported_aliases.items():
             for alias in aliases:
@@ -2620,26 +2614,8 @@ class LocalAgentPlanner:
 
         # Generic multi-currency reasoning: handle currencies beyond MYR/SGD before
         # falling back to the legacy demo-specific planner below.
-        supported = [
-            "MYR", "SGD", "USD", "CNY", "JPY", "KRW", "THB", "EUR", "GBP",
-            "AUD", "CAD", "HKD", "TWD", "INR",
-        ]
-        aliases = {
-            "MYR": ["myr", "rm", "ringgit"],
-            "SGD": ["sgd", "s$"],
-            "USD": ["usd", "us$", "$", "dollar", "dollars"],
-            "CNY": ["cny", "rmb", "yuan", "renminbi", "¥"],
-            "JPY": ["jpy", "yen", "¥"],
-            "KRW": ["krw", "won", "₩"],
-            "THB": ["thb", "baht", "฿"],
-            "EUR": ["eur", "€", "euro", "euros"],
-            "GBP": ["gbp", "£", "pound", "pounds"],
-            "AUD": ["aud", "a$", "australian dollar"],
-            "CAD": ["cad", "c$", "canadian dollar"],
-            "HKD": ["hkd", "hk$", "hong kong dollar"],
-            "TWD": ["twd", "nt$", "taiwan dollar"],
-            "INR": ["inr", "₹", "rupee", "rupees"],
-        }
+        supported = list(self._currency_aliases())
+        aliases = self._currency_aliases()
         detected: dict[str, Decimal] = {}
         mentioned: set[str] = set()
         for code in supported:

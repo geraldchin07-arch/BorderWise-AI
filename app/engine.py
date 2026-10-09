@@ -1090,6 +1090,10 @@ class FinanceEngine:
         available_ratio = float(obligations / max(start_plus_income, money(1))) if start_plus_income > 0 else 1.0
         obligation_penalty = min(12.0, max(0.0, available_ratio * 12.0))
         score = max(0, min(100, int(round(100 - liquidity_penalty - reserve_penalty - obligation_penalty))))
+        # A projected buffer below one month is a material liquidity risk and
+        # must not receive a "strong" score even when other factors look healthy.
+        if monthly_spending > 0 and projected / monthly_spending < 1:
+            score = min(score, 89)
         if score >= 80:
             label = "Strong liquidity position"
         elif score >= 65:

@@ -1699,7 +1699,7 @@ class FinanceEngine:
                 "SRD", "SSP", "SYP", "TJS", "TMT", "TOP", "TTD", "VUV",
                 "WST", "YER",
             }
-            ambiguous_words = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
+            ambiguous_words = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
             # Common English words/names that overlap ISO codes are accepted as
             # codes only when the user clearly typed the uppercase code.
             if code in supported_codes and (
@@ -1782,7 +1782,7 @@ class FinanceEngine:
             "SYP": "SYP", "TJS": "TJS", "TMT": "TMT", "TOP": "TOP",
             "TTD": "TTD", "VUV": "VUV", "WST": "WST", "YER": "YER",
         }
-        ambiguous_words = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
+        ambiguous_words = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
         for alias in sorted(aliases, key=len, reverse=True):
             if alias in ambiguous_words and not re.search(
                 rf"(?<![A-Za-z]){re.escape(alias)}(?![A-Za-z])", raw_text
@@ -1884,7 +1884,7 @@ class FinanceEngine:
         }
         # Ambiguous English words/names that overlap ISO codes are treated as
         # currency codes only when the user typed the uppercase code explicitly.
-        ambiguous_codes = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
+        ambiguous_codes = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
         choices = sorted(
             [
                 alias for alias in aliases

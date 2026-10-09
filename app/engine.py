@@ -2594,7 +2594,7 @@ class FinanceEngine:
                 code in multi_fx_text for code in ["usd", "us$", "sgd", "myr", "aud", "cad"]
             )
             ambiguous_dollars_early = bool(re.search(
-                r"\\b[0-9][0-9,]*(?:\\.[0-9]+)?\\s+dollars?\\s+(?:in|to|into)\\s+(?:singapore dollars?|sgd|s\\$)\\b",
+                r"\b[0-9][0-9,]*(?:\.[0-9]+)?\s+dollars?\s+(?:in|to|into)\s+(?:singapore dollars?|sgd|s\$)\b",
                 multi_fx_text,
             )) and not any(
                 code in multi_fx_text for code in ["usd", "us$", "myr", "aud", "cad", "eur", "gbp"]

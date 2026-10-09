@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.engine import FinanceEngine
 from app.agent import AgentOrchestrator
+from app.local_agent import LocalAgentPlanner
 
 
 def test_redteam_all_funds_transfer_is_blocked_before_proposal():
@@ -340,3 +341,34 @@ def test_redteam_llm_proposal_rejects_conditional_incoming_money():
         "My parents might send RM5000, prepare a transfer of RM5000 to SGD.",
         {"amount_myr": 5000},
     )
+
+
+def test_redteam_local_planner_supports_uncommon_currency_amounts():
+    planner = LocalAgentPlanner(FinanceEngine())
+
+    assert planner._amount("Convert 25 Kuwaiti dinar to SGD", "KWD") == 25
+    assert planner._amount_after_need("I need to pay 300 KWD for fees", "KWD") == 300
+    assert planner._extract_labeled_amount(
+        "My tuition is 2,500 KWD and I may transfer RM500 later.",
+        ["tuition"],
+    ) == (planner.engine.money_value(2500), "KWD")
+
+
+def test_redteam_local_planner_does_not_read_from_as_ringgit():
+    planner = LocalAgentPlanner(FinanceEngine())
+
+    assert planner._amount("The transfer is coming from 500 accounts", "MYR") is None
+    assert planner._extract_wallet_balances_from_text(
+        "I have 500 SGD and the money is coming from 300 accounts."
+    ) == {"SGD": planner.engine.money_value(500)}
+
+
+def test_redteam_local_planner_parses_uncommon_wallet_currencies():
+    planner = LocalAgentPlanner(FinanceEngine())
+
+    assert planner._extract_wallet_balances_from_text(
+        "I have 25 Kuwaiti dinar and 300 ZAR."
+    ) == {
+        "KWD": planner.engine.money_value(25),
+        "ZAR": planner.engine.money_value(300),
+    }

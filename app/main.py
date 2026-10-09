@@ -42,38 +42,38 @@ class ExecuteRequest(BaseModel):
 
 
 class TransferRequest(BaseModel):
-    amount_myr: float = Field(gt=0)
+    amount_myr: float = Field(gt=0, allow_inf_nan=False)
     purpose: str = "student finance transfer"
 
 
 class FXConversionRequest(BaseModel):
-    amount: float = Field(gt=0)
-    from_currency: str = Field(min_length=3, max_length=3)
-    to_currency: str = Field(min_length=3, max_length=3)
-    custom_rate: float | None = Field(default=None, gt=0)
+    amount: float = Field(gt=0, allow_inf_nan=False)
+    from_currency: str = Field(min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
+    to_currency: str = Field(min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
+    custom_rate: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
 
 class ProfileRequest(BaseModel):
     general_profile: dict[str, Any] | None = None
-    myr_balance: float = Field(default=0, ge=0)
-    sgd_balance: float = Field(default=0, ge=0)
-    monthly_income_sgd: float = Field(default=0, ge=0)
-    emergency_reserve_myr: float = Field(default=0, ge=0)
-    tuition_semester_sgd: float = Field(default=0, ge=0)
-    scholarship_semester_sgd: float = Field(default=0, ge=0)
-    loan_semester_sgd: float = Field(default=0, ge=0)
+    myr_balance: float = Field(default=0, ge=0, allow_inf_nan=False)
+    sgd_balance: float = Field(default=0, ge=0, allow_inf_nan=False)
+    monthly_income_sgd: float = Field(default=0, ge=0, allow_inf_nan=False)
+    emergency_reserve_myr: float = Field(default=0, ge=0, allow_inf_nan=False)
+    tuition_semester_sgd: float = Field(default=0, ge=0, allow_inf_nan=False)
+    scholarship_semester_sgd: float = Field(default=0, ge=0, allow_inf_nan=False)
+    loan_semester_sgd: float = Field(default=0, ge=0, allow_inf_nan=False)
     tuition_due_days: int = Field(default=30, ge=0, le=365)
-    accommodation_monthly_sgd: float = Field(default=0, ge=0)
-    other_monthly_obligations_sgd: float = Field(default=0, ge=0)
-    monthly_spending_sgd: dict[str, float] = {}
-    spending_classifications: dict[str, str] = {}
-    additional_currencies: dict[str, float] = {}
+    accommodation_monthly_sgd: float = Field(default=0, ge=0, allow_inf_nan=False)
+    other_monthly_obligations_sgd: float = Field(default=0, ge=0, allow_inf_nan=False)
+    monthly_spending_sgd: dict[str, float] = Field(default_factory=dict)
+    spending_classifications: dict[str, str] = Field(default_factory=dict)
+    additional_currencies: dict[str, float] = Field(default_factory=dict)
     myr_mode: str = "live"
     custom_myrsgd: float | None = Field(default=None, gt=0)
-    custom_fx_rates_to_sgd: dict[str, float] = {}
-    custom_fx_sources: dict[str, str] = {}
-    custom_fx_dates: dict[str, str] = {}
-    additional_fx_rate_modes: dict[str, str] = {}
+    custom_fx_rates_to_sgd: dict[str, float] = Field(default_factory=dict)
+    custom_fx_sources: dict[str, str] = Field(default_factory=dict)
+    custom_fx_dates: dict[str, str] = Field(default_factory=dict)
+    additional_fx_rate_modes: dict[str, str] = Field(default_factory=dict)
 
 
 @app.get("/")

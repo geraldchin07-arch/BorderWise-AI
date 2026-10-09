@@ -1961,3 +1961,19 @@ def test_fx_rate_lookup_does_not_substitute_pair_when_rate_unavailable(monkeypat
     assert r["data"]["state_changed"] is False
     assert r["data"]["proposal"] is None
 
+
+
+@pytest.mark.parametrize(
+    ("prompt", "expected"),
+    [
+        ("convert 100 ringgit to yuan", (Decimal("100.00"), "MYR")),
+        ("convert 250 yuan into MYR", (Decimal("250.00"), "CNY")),
+        ("what is 1,200 Malaysian ringgit in Singapore dollars", (Decimal("1200.00"), "MYR")),
+        ("convert US$75 to euros", (Decimal("75.00"), "USD")),
+        ("convert 80 SGD to RMB", (Decimal("80.00"), "SGD")),
+        ("convert RM500 into USD", (Decimal("500.00"), "MYR")),
+    ],
+)
+def test_generic_currency_amount_recognizes_names_and_symbols(prompt, expected):
+    e = FinanceEngine()
+    assert e.extract_generic_currency_amount(prompt) == expected

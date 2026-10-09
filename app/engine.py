@@ -501,6 +501,7 @@ class FinanceEngine:
         self.state["monthly_spending_sgd"] = clean_spending
         self.state["spending_classifications"] = clean_classes
         self.state["profile_meta"] = {
+            "profile_schema": "currency_first",
             "planning_currency": planning,
             "monthly_income_amount": income_amount,
             "monthly_income_currency": income_currency,
@@ -858,7 +859,7 @@ class FinanceEngine:
 
         # Modern currency-first profiles explicitly model a multi-currency wallet.
         # Preserve legacy cash-position semantics until foreign funds are converted.
-        if meta.get("planning_currency"):
+        if meta.get("profile_schema") == "currency_first":
             start = money(0)
             for code, balance in self.state["balances"].items():
                 balance_d = money(balance)

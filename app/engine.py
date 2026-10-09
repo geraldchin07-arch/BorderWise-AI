@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from datetime import datetime, timezone
 from typing import Any
 import copy
@@ -17,14 +17,31 @@ from urllib.error import URLError, HTTPError
 Q = Decimal("0.01")
 
 
+def _finite_decimal(x: Decimal | float | int | str, label: str) -> Decimal:
+    try:
+        value = Decimal(str(x))
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise ValueError(f"{label} must be a valid number.") from exc
+    if not value.is_finite():
+        raise ValueError(f"{label} must be finite.")
+    return value
+
+
 def money(x: Decimal | float | int | str) -> Decimal:
-    return Decimal(str(x)).quantize(Q, rounding=ROUND_HALF_UP)
+    try:
+        return _finite_decimal(x, "Amount").quantize(Q, rounding=ROUND_HALF_UP)
+    except InvalidOperation as exc:
+        raise ValueError("Amount is outside the supported numeric range.") from exc
 
 
 FXQ = Decimal("0.00000001")
 
+
 def fxrate(x: Decimal | float | int | str) -> Decimal:
-    return Decimal(str(x)).quantize(FXQ, rounding=ROUND_HALF_UP)
+    try:
+        return _finite_decimal(x, "FX rate").quantize(FXQ, rounding=ROUND_HALF_UP)
+    except InvalidOperation as exc:
+        raise ValueError("FX rate is outside the supported numeric range.") from exc
 
 
 def fmt_money(x: Decimal | float | int | str, currency: str = "") -> str:

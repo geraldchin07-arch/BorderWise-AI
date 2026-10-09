@@ -2588,6 +2588,28 @@ class FinanceEngine:
         # Multi-conversion requests must precede the single-pair FX fast path.
         multi_fx_text = self.repair_user_text(text).lower()
         if self.detect_intent(text) == "fx":
+            # Resolve ambiguous source-money words before any fast parser or planner
+            # can silently canonicalize them to USD.
+            ambiguous_bucks_early = "buck" in multi_fx_text and not any(
+                code in multi_fx_text for code in ["usd", "us$", "sgd", "myr", "aud", "cad"]
+            )
+            ambiguous_dollars_early = bool(re.search(
+                r"\\b[0-9][0-9,]*(?:\\.[0-9]+)?\\s+dollars?\\s+(?:in|to|into)\\s+(?:singapore dollars?|sgd|s\\$)\\b",
+                multi_fx_text,
+            )) and not any(
+                code in multi_fx_text for code in ["usd", "us$", "myr", "aud", "cad", "eur", "gbp"]
+            )
+            if ambiguous_bucks_early or ambiguous_dollars_early:
+                word = "'bucks'" if ambiguous_bucks_early else "'dollars'"
+                return self._result(
+                    "fx",
+                    f"Which currency do you mean by {word}—for example, US dollars (USD), Singapore dollars (SGD), or another currency?",
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an ambiguous source currency before conversion parsing."},
+                        {"step": "OBSERVE", "status": "needs_input", "detail": "Asked for clarification rather than assuming a currency."},
+                    ],
+                    {"needs_clarification": True, "state_changed": False, "proposal": None},
+                )
             # Handle multiple explicit conversions in one request instead of
             # silently answering only the first pair. Keep this before the
             # single-conversion parser so each amount/pair is calculated independently.

@@ -1,4 +1,6 @@
 
+# XKF5 AI
+
 ## v7.4.0 — Expanded currency intelligence and safer planning
 
 XKF5 AI v7.4 strengthens the currency-first workflow: the web selector and offline planner now recognize 150+ ISO currency codes, common currency names are normalized more consistently, shorthand amounts and thousands separators are validated, and ambiguous word-shaped codes or the yen symbol are not guessed. Transfer preparation requires an explicit matching MYR amount; execution is blocked before mutation if either wallet currency is missing. Unsupported automatic FX quotes require a custom rate or a retry, and failed profile updates roll back atomically.
@@ -10,7 +12,7 @@ XKF5 now starts with currency setup rather than assuming MYR + SGD. The user cho
 - Natural-language authorization now matches an existing pending proposal by exact MYR amount.
 - Explicit authorization triggers sandbox execution, verification, and audit; it never bypasses policy.
 - Ambiguous authorization without a matching proposal is blocked.
-# XKF5 AI v5.1 — Agentic Cross-Border Student Finance
+## Project overview — Agentic Cross-Border Student Finance
 
 A competition-ready prototype for Topic C: Cross-border & Student Finance Assistant.
 
@@ -25,7 +27,7 @@ It supports:
 - Spending analysis
 - 30-day cash-flow forecasting
 - Tuition/obligation affordability
-- MYR/SGD FX analysis
+- Any-currency FX analysis and multi-currency wallet valuation
 - Natural-language transfer preparation
 - Risk and reserve enforcement
 - Level-2 authorization

@@ -369,6 +369,15 @@ def test_redteam_llm_proposal_rejects_conditional_incoming_money():
     )
 
 
+def test_redteam_local_planner_does_not_guess_between_yen_currencies():
+    planner = LocalAgentPlanner(FinanceEngine())
+
+    assert planner._amount("Convert ¥100 to SGD", "CNY") is None
+    assert planner._amount("Convert ¥100 to SGD", "JPY") is None
+    assert planner._amount("Convert 100 Japanese yen to SGD", "JPY") == 100
+    assert planner._amount("Convert 100 Chinese yuan to SGD", "CNY") == 100
+
+
 def test_redteam_local_planner_disambiguates_word_shaped_currency_codes():
     planner = LocalAgentPlanner(FinanceEngine())
 

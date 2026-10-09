@@ -1973,11 +1973,21 @@ def test_fx_rate_lookup_does_not_substitute_pair_when_rate_unavailable(monkeypat
         ("convert US$75 to euros", (Decimal("75.00"), "USD")),
         ("convert 80 SGD to RMB", (Decimal("80.00"), "SGD")),
         ("convert RM500 into USD", (Decimal("500.00"), "MYR")),
+        ("convert ZAR 750 to SGD", (Decimal("750.00"), "ZAR")),
+        ("convert 200 KWD into EUR", (Decimal("200.00"), "KWD")),
+        ("convert PLN 1250 to USD", (Decimal("1250.00"), "PLN")),
     ],
 )
 def test_generic_currency_amount_recognizes_names_and_symbols(prompt, expected):
     e = FinanceEngine()
     assert e.extract_generic_currency_amount(prompt) == expected
+
+
+def test_conversion_pair_recognizes_additional_iso_codes():
+    e = FinanceEngine()
+    assert e.extract_conversion_pair("convert ZAR to SGD") == ("ZAR", "SGD")
+    assert e.extract_conversion_pair("convert KWD into EUR") == ("KWD", "EUR")
+    assert e.extract_conversion_pair("PLN to USD") == ("PLN", "USD")
 
 
 def test_generic_currency_amount_rejects_unknown_three_letter_words():

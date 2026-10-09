@@ -1,5 +1,8 @@
 
-## v7.3.0 — Currency-first profile
+## v7.4.0 — Expanded currency intelligence and safer planning
+
+XKF5 AI v7.4 strengthens the currency-first workflow: the web selector and offline planner now recognize 150+ ISO currency codes, common currency names are normalized more consistently, shorthand amounts and thousands separators are validated, and ambiguous word-shaped codes or the yen symbol are not guessed. Transfer preparation requires an explicit matching MYR amount; execution is blocked before mutation if either wallet currency is missing. Unsupported automatic FX quotes require a custom rate or a retry, and failed profile updates roll back atomically.
+
 
 XKF5 now starts with currency setup rather than assuming MYR + SGD. The user chooses a primary planning/reporting currency and can enter any number of currency balances with automatic reference FX or a user-entered quoted rate. Income, reserve, tuition, accommodation and monthly spending can be entered in the relevant selected currency; trusted arithmetic is normalized internally and displayed back in the planning currency. Any-currency conversion remains user-directed (for example CNY → MYR, USD → SGD, or MYR → SGD). The sandbox transaction module still requires explicit Level-2 authorization and does not grant the planner unrestricted execution authority.
 

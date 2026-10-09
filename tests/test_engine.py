@@ -2229,3 +2229,17 @@ def test_safe_conversion_ui_escapes_untrusted_fx_provider_text():
     assert "escapeFXHtml(source)" in html
     assert "escapeFXHtml(date)" in html
     assert "escapeFXHtml(err.message" in html
+
+
+def test_dashboard_escapes_user_controlled_profile_audit_and_trace_text():
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert "escapeFXHtml(x.source||'User-entered')" in html
+    assert "escapeFXHtml(x.rate_date||'—')" in html
+    assert "escapeFXHtml(x.category)" in html
+    assert "escapeFXHtml(x.classification)" in html
+    assert "escapeFXHtml(o.name)" in html
+    assert "escapeFXHtml(JSON.stringify(x.details))" in html
+    assert "escapeFXHtml(x.detail)" in html

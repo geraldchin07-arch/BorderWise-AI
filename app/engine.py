@@ -1488,10 +1488,18 @@ class FinanceEngine:
             return "help"
         if any(k in t for k in ["biggest expense", "spending", "spend", "expenses", "where did i spend"]):
             return "spending"
+        # Classify financial reasoning before FX: a tuition forecast that mentions
+        # MYR and SGD is still a forecast, not a request for a generic exchange quote.
+        if any(k in t for k in ["afford", "tuition", "fees", "enough money", "enough for"]):
+            return "affordability"
+        if any(k in t for k in [
+            "forecast", "projection", "projected", "project my", "run out",
+            "cash flow", "cashflow", "next month", "future balance",
+            "monthly income", "monthly expenses", "save enough", "financial projection",
+            "shortfall", "surplus", "funding gap", "what if my expenses",
+        ]):
+            return "forecast"
         # Explicit money-moving actions must take priority over FX wording.
-        # Otherwise a request such as "transfer all my MYR to SGD" can be
-        # misclassified as a harmless conversion lookup and bypass the local
-        # agent's all-funds safety gate.
         if any(k in t for k in ["transfer", "send money", "remit", "remittance", "send myr", "send sgd", "pay"]):
             return "transfer"
         currency_aliases = {
@@ -1503,7 +1511,7 @@ class FinanceEngine:
             "aud", "cad", "hkd", "twd", "inr", "idr", "php", "vnd", "nzd",
             "chf", "sek", "nok", "dkk", "sar", "aed", "qar", "bnd",
         }
-        currency_mentions = [name for name in currency_aliases if re.search(rf"\b{re.escape(name)}\b", t)]
+        currency_mentions = [name for name in currency_aliases if re.search(rf"\\b{re.escape(name)}\\b", t)]
         currency_follow_up = any(k in t for k in ["how about", "what about", "and in", "what if"])
         fx_language = any(k in t for k in [
             "exchange rate", "current rate", "exchange", "fx", "convert", "conversion",
@@ -1519,10 +1527,6 @@ class FinanceEngine:
             or (len(currency_mentions) >= 2 and any(k in t for k in ["to", "into", "in", "rate", "currency", "current"]))
         ):
             return "fx"
-        if any(k in t for k in ["afford", "tuition", "fees", "enough money", "enough for"]):
-            return "affordability"
-        if any(k in t for k in ["forecast", "run out", "cash flow", "cashflow", "next month", "future balance"]):
-            return "forecast"
         if any(k in t for k in ["balance", "how much money", "how much do i have", "account"]):
             return "balance"
         if any(k in t for k in ["transaction", "recent payment", "recent transactions", "history"]):

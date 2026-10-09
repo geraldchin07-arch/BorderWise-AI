@@ -523,6 +523,107 @@ class LocalAgentPlanner:
             self.engine.state.get("profile_meta", {}).get("planning_currency", "SGD")
         ).upper()
 
+        # Route broad financial questions before any action/proposal handlers.
+        # This guard intentionally uses intent signals rather than exact full prompts.
+        read_only_financial_request = (
+            any(k in t for k in [
+                "financial position", "cash position", "funding gap",
+                "how much do i have", "current balances", "available balances",
+                "can i afford", "afford to send", "tuition coming up",
+                "hypothetical incoming", "scenario only",
+            ])
+            and any(k in t for k in [
+                "analyze", "analyse", "review", "calculate", "project",
+                "afford", "tuition", "convert", "hypothetical", "balances",
+                "emergency reserve", "cash position", "how much",
+            ])
+        )
+        if read_only_financial_request:
+            is_remittance = any(k in t for k in ["can i afford", "afford to send", "send sgd", "send money home"])
+            is_incoming_scenario = received and tuition_context and conversion_question
+            if is_remittance:
+                horizon = 30
+                forecast = self.engine.forecast_portfolio(horizon)
+                planning_currency = str(forecast.get("planning_currency", planning)).upper()
+                amount = self._amount(t, planning_currency) or sgd or Decimal("0")
+                before = self.engine.money_value(forecast.get("projected_balance_planning", 0))
+                after = self.engine.money_value(before - amount)
+                health = self.engine.health_analysis()
+                reserve_met = bool(health.get("emergency_reserve_met", False))
+                affordable = after >= 0 and reserve_met
+                action = "REMITTANCE_AFFORDABLE" if affordable else "REMITTANCE_NOT_AFFORDABLE"
+                answer = (
+                    f"30-day remittance assessment: {action}.\\n"
+                    f"Projected position before sending: {planning_currency} {before:,.2f}.\\n"
+                    f"Remittance considered: {planning_currency} {amount:,.2f}.\\n"
+                    f"Projected position after sending: {planning_currency} {after:,.2f}.\\n"
+                    f"Emergency reserve: {'met' if reserve_met else 'not met or unverified'}.\\n"
+                    + ("Sending appears affordable under the configured forecast; keep the reserve intact." if affordable else "Do not send the full amount yet. Prioritize tuition and essential expenses, protect the reserve, and reassess a smaller amount.")
+                    + "\\nRead-only analysis; no proposal or transaction was created."
+                )
+                trace = [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Identified a read-only remittance affordability question."},
+                    {"step": "OBSERVE", "status": "completed", "detail": "Reviewed the configured 30-day forecast and reserve status."},
+                    {"step": "SIMULATE", "status": "completed", "detail": f"Subtracted {planning_currency} {amount:,.2f} once."},
+                    {"step": "CALCULATE", "status": "completed", "detail": f"Projected position after remittance is {planning_currency} {after:,.2f}."},
+                    {"step": "SECURITY", "status": "completed", "detail": "No proposal or transaction was created."},
+                    {"step": "RECOMMEND", "status": "completed", "detail": action},
+                ]
+                return self._result("remittance_affordability", answer, trace, {"action": action, "forecast": forecast, "health": health, "state_changed": False})
+            if is_incoming_scenario:
+                amount = myr if myr is not None else sgd
+                currency = "MYR" if myr is not None else "SGD"
+                amount = self.engine.money_value(amount or 0)
+                balances = self.engine.get_balance()
+                forecast = self.engine.forecast_portfolio(30)
+                scenario = self._scenario_forecast(
+                    {str(k).upper(): self.engine.money_value(v) for k, v in balances.items()},
+                    None, None, None, (amount, currency), 30
+                )
+                current_gap = self.engine.money_value(forecast.get("shortfall_planning", 0))
+                scenario_gap = self.engine.money_value(scenario.get("shortfall_planning", 0))
+                answer = (
+                    f"Hypothetical funds analysis: current projected funding gap is {planning} {current_gap:,.2f}.\\n"
+                    f"If {currency} {amount:,.2f} is received, the scenario gap becomes {planning} {scenario_gap:,.2f}.\\n"
+                    f"Saved balances remain unchanged: " + ", ".join(f"{k} {v:,.2f}" for k, v in balances.items()) + ".\\n"
+                    "Confirm the funds are available and compare the live FX rate and fees before deciding. No proposal or transaction was created."
+                )
+                trace = [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Identified hypothetical incoming funds and tuition planning."},
+                    {"step": "OBSERVE", "status": "completed", "detail": "Read saved balances and the current forecast."},
+                    {"step": "SIMULATE", "status": "completed", "detail": "Added incoming funds to a temporary scenario only."},
+                    {"step": "FX", "status": "completed", "detail": "Currency conversion should be checked against the current quoted rate and fees."},
+                    {"step": "CALCULATE", "status": "completed", "detail": f"Compared funding gap {current_gap:,.2f} with scenario gap {scenario_gap:,.2f}."},
+                    {"step": "SECURITY", "status": "completed", "detail": "Saved balances unchanged; no proposal or transaction was created."},
+                    {"step": "RECOMMEND", "status": "completed", "detail": "Confirm receipt and review tuition due date before converting."},
+                ]
+                return self._result("incoming_funds_planning", answer, trace, {"incoming_funds": {"amount": float(amount), "currency": currency, "state_changed": False}, "forecast_after_income": scenario, "state_changed": False})
+            if any(k in t for k in ["financial position", "cash position", "funding gap", "current balances", "available balances", "how much do i have"]):
+                horizon = self._extract_horizon_days(t) or 30
+                forecast = self.engine.forecast_portfolio(horizon)
+                health = self.engine.health_analysis()
+                balances = self.engine.get_balance()
+                obligations = self.engine.get_obligations()
+                projected = self.engine.money_value(forecast.get("projected_balance_planning", 0))
+                gap = self.engine.money_value(forecast.get("shortfall_planning", 0))
+                answer = (
+                    f"{horizon}-day financial assessment\\n"
+                    f"Balances: " + ", ".join(f"{k} {v:,.2f}" for k, v in balances.items()) + ".\\n"
+                    f"Projected position: {planning} {projected:,.2f}. Funding gap: {planning} {gap:,.2f}.\\n"
+                    f"Recorded obligations: {len(obligations)}. Emergency reserve: {'met' if health.get('emergency_reserve_met') else 'not met or unverified'}.\\n"
+                    + ("Prioritize obligations and reduce optional spending to address the projected gap." if gap > 0 else "Maintain the emergency reserve and monitor upcoming obligations.")
+                    + "\\nRead-only forecast; no account state changed."
+                )
+                trace = [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a read-only financial assessment."},
+                    {"step": "OBSERVE", "status": "completed", "detail": "Read balances, forecast, obligations and reserve status."},
+                    {"step": "CALCULATE", "status": "completed", "detail": f"Calculated a {horizon}-day forecast in {planning}."},
+                    {"step": "REASON", "status": "completed", "detail": f"Projected position {projected:,.2f}; funding gap {gap:,.2f}."},
+                    {"step": "SECURITY", "status": "completed", "detail": "No proposal or transaction was created."},
+                    {"step": "RECOMMEND", "status": "completed", "detail": "Recommended actions based on projected cash flow."},
+                ]
+                return self._result("financial_assessment", answer, trace, {"forecast": forecast, "health": health, "obligations": obligations, "state_changed": False})
+
         # Deterministic read-only financial assessment. Broad analysis requests
         # must not fall through to the transaction/proposal handler merely because
         # they mention "transactions" in a safety instruction.

@@ -2124,11 +2124,6 @@ class FinanceEngine:
                 },
             )
 
-        # Deterministic casual tuition-affordability gate.
-        # Natural-language student questions such as "I got 2k SGD and tuition
-        # is around 6k soon, am I cooked?" should use only the balances and
-        # tuition amount explicitly stated in the message, not the saved demo
-        # wallet or saved emergency-reserve configuration.
         # Explicit figures in an affordability question override demo-wallet
         # values. This read-only path must never create a conversion proposal.
         explicit_tuition_case = (
@@ -2661,6 +2656,12 @@ class FinanceEngine:
             # a second (implicit-SGD) tuition amount still needs to be parsed.
             casual_sgd_values = list(dict.fromkeys(casual_sgd_values))
 
+
+        # Deterministic casual tuition-affordability gate.
+        # Natural-language student questions such as "I got 2k SGD and tuition
+        # is around 6k soon, am I cooked?" should use only the balances and
+        # tuition amount explicitly stated in the message, not the saved demo
+        # wallet or saved emergency-reserve configuration.
         # Deterministic savings-goal reasoning must take priority over the
         # general planner. Parse explicit figures here so an LLM response cannot
         # override the arithmetic or swallow a local-planner parsing exception.

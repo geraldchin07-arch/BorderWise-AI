@@ -373,7 +373,25 @@ class FinanceEngine:
         return fxrate(meta["rate"])
 
     def update_profile_general(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Currency-first profile update.
+        """Apply a currency-first profile update atomically.
+
+        Profile validation and FX refreshes can fail after some derived state has
+        been prepared. Restore the previous state on any exception so callers never
+        observe a half-applied profile.
+        """
+        previous_state = copy.deepcopy(self.state)
+        try:
+            return self._update_profile_general_unchecked(payload)
+        except Exception:
+            self.state = previous_state
+            raise
+
+    def _update_profile_general_unchecked(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Validate and apply a currency-first profile update.
+
+        The selected planning currency is the user's reporting/forecast currency. Balances
+        may contain arbitrary three-letter currencies. Trusted calculations are normalized
+        internally to SGD and then presented back in the planning currency.
 
         The selected planning currency is the user's reporting/forecast currency. Balances
         may contain arbitrary three-letter currencies. Trusted calculations are normalized

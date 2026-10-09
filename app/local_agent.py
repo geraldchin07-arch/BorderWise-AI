@@ -504,6 +504,35 @@ class LocalAgentPlanner:
         }
 
 
+    def _savings_goal_result(self, plan: dict[str, Any], expense_increase: Decimal = Decimal('0')) -> dict[str, Any]:
+        starting = self.engine.money_value(plan['starting'])
+        income = self.engine.money_value(plan['income'])
+        expenses = self.engine.money_value(plan['expenses'] + expense_increase)
+        target = self.engine.money_value(plan['target'])
+        months = int(plan['months'])
+        monthly_surplus = self.engine.money_value(income - expenses)
+        projected = self.engine.money_value(starting + monthly_surplus * months)
+        gap = self.engine.money_value(max(Decimal('0'), target - projected))
+        extra = self.engine.money_value(max(Decimal('0'), projected - target))
+        outcome = f'exceed the target by SGD {extra:,.2f}' if projected >= target else f'fall short by SGD {gap:,.2f}'
+        increase_note = f' (including a SGD {expense_increase:,.2f} monthly increase)' if expense_increase else ''
+        answer = (
+            f'Savings projection over {months} months, using your stated figures:\\n'
+            f'- Starting savings: SGD {starting:,.2f}\\n'
+            f'- Monthly income: SGD {income:,.2f}\\n'
+            f'- Monthly expenses: SGD {expenses:,.2f}{increase_note}\\n'
+            f'- Monthly savings: SGD {monthly_surplus:,.2f}\\n'
+            f'- Projected savings: SGD {projected:,.2f}\\n'
+            f'- Target: SGD {target:,.2f}\\n'
+            f'You are projected to {outcome}.\\n'
+            'Assumes income and expenses stay constant; excludes interest, fees, emergencies, and unlisted costs. Read-only scenario; no account balances changed.'
+        )
+        return self._result('savings_projection', answer, [
+            {'step': 'UNDERSTAND', 'status': 'completed', 'detail': 'Recognized a savings goal and time horizon.'},
+            {'step': 'OBSERVE', 'status': 'completed', 'detail': 'Used the amounts explicitly stated by the user.'},
+            {'step': 'CALCULATE', 'status': 'completed', 'detail': f'Monthly surplus SGD {monthly_surplus:,.2f}; projected savings SGD {projected:,.2f}.'},
+            {'step': 'SECURITY', 'status': 'completed', 'detail': 'Read-only calculation; no proposal or transaction created.'},
+        ], {'starting_savings_sgd': float(starting), 'monthly_income_sgd': float(income), 'monthly_expenses_sgd': float(expenses), 'monthly_surplus_sgd': float(monthly_surplus), 'months': months, 'target_savings_sgd': float(target), 'projected_savings_sgd': float(projected), 'shortfall_sgd': float(gap), 'surplus_sgd': float(extra), 'state_changed': False, 'proposal': None})
     def run(self, text: str) -> dict[str, Any] | None:
         t = self.engine.repair_user_text(text).lower().strip()
         # Basic identity questions should receive a direct conversational answer,
@@ -522,6 +551,19 @@ class LocalAgentPlanner:
                 {"step": "RECOMMEND", "status": "completed", "detail": "Answered directly without initiating any financial action."},
             ], {"state_changed": False, "proposal": None})
 
+        # Explicit savings-goal calculation: use only user-supplied scenario values.
+        savings_start = re.search(r'\\b(?:have|currently have|start with|starting with)\\s+(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)\\s+(?:in )?(?:my )?savings', t, re.I)
+        savings_income = re.search(r'\\b(?:receive|earn|income is|income of)\\s+(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)\\s*(?:per|a)\\s+month', t, re.I)
+        savings_expenses = re.search(r'\\b(?:spend|expenses are|expenses of|spending is)\\s+(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)\\s*(?:per|a)\\s+month', t, re.I)
+        savings_target = re.search(r'\\b(?:target|reach|save up to|save)\\s+(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)\\s+in\\s+(\\d+)\\s+months?', t, re.I)
+        if savings_start and savings_income and savings_expenses and savings_target and any(k in t for k in ['save enough', 'can i save', 'savings goal', 'target savings']):
+            plan = {'starting': Decimal(savings_start.group(1).replace(',', '')), 'income': Decimal(savings_income.group(1).replace(',', '')), 'expenses': Decimal(savings_expenses.group(1).replace(',', '')), 'target': Decimal(savings_target.group(1).replace(',', '')), 'months': int(savings_target.group(2))}
+            self.engine._agent_scenario_context['savings_goal_plan'] = plan
+            return self._savings_goal_result(plan)
+        remembered_plan = getattr(self.engine, '_agent_scenario_context', {}).get('savings_goal_plan')
+        expense_increase = re.search(r'(?:expenses|spending)\\s+(?:increase|go up|rise)\\s+by\\s+(?:sgd|s\\$)?\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)\\s*(?:per|a)\\s+month', t, re.I)
+        if remembered_plan and expense_increase and any(k in t for k in ['what if', 'increase', 'go up', 'rise']):
+            return self._savings_goal_result(remembered_plan, Decimal(expense_increase.group(1).replace(',', '')))
         remembered_context = getattr(self.engine, "_agent_scenario_context", {})
         current_wallet = self._extract_wallet_balances_from_text(t)
         if current_wallet:

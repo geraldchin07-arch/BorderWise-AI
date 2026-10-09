@@ -1661,7 +1661,8 @@ class FinanceEngine:
 
     def extract_generic_currency_amount(self, text: str) -> tuple[Decimal, str] | None:
         """Extract an explicit amount and canonical currency code from codes or common names."""
-        t = self.repair_user_text(text).strip()
+        raw_text = str(text or "").strip()
+        t = self.repair_user_text(raw_text).strip()
         amount = r"([0-9][0-9,]*(?:\.[0-9]+)?[km]?)"
         # ISO codes are the least ambiguous form and retain compatibility with existing inputs.
         code_match = re.search(
@@ -1692,7 +1693,14 @@ class FinanceEngine:
                 "SRD", "SSP", "SYP", "TJS", "TMT", "TOP", "TTD", "VUV",
                 "WST", "YER",
             }
-            if code in supported_codes:
+            ambiguous_words = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
+            raw_code = code_match.group(1) or code_match.group(4)
+            # Common English words/names that overlap ISO codes are accepted as
+            # codes only when the user clearly typed the uppercase code.
+            if code in supported_codes and (
+                code not in ambiguous_words
+                or re.search(rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", raw_text)
+            ):
                 return self.parse_amount_token(value), code
 
         aliases = {
@@ -1749,7 +1757,12 @@ class FinanceEngine:
             "SYP": "SYP", "TJS": "TJS", "TMT": "TMT", "TOP": "TOP",
             "TTD": "TTD", "VUV": "VUV", "WST": "WST", "YER": "YER",
         }
+        ambiguous_words = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
         for alias in sorted(aliases, key=len, reverse=True):
+            if alias in ambiguous_words and not re.search(
+                rf"(?<![A-Za-z]){re.escape(alias)}(?![A-Za-z])", raw_text
+            ):
+                continue
             escaped = re.escape(alias)
             if re.fullmatch(r"[A-Z]+", alias):
                 token = rf"(?<![A-Za-z]){escaped}(?![A-Za-z])"

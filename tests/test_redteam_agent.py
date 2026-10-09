@@ -408,6 +408,10 @@ def test_redteam_local_planner_disambiguates_word_shaped_currency_codes():
         "Tuition is MAD 500 and I may transfer RM300 later.",
         ["tuition"],
     ) == (planner.engine.money_value(500), "MAD")
+    assert planner._extract_labeled_amount(
+        "Tuition is 2000 and keep 500 SGD emergency reserve.",
+        ["tuition"],
+    ) is None
 
 
 def test_redteam_local_planner_validates_grouped_amounts_and_decimals():

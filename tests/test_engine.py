@@ -2005,6 +2005,15 @@ def test_web_currency_selector_codes_are_recognized_by_engine():
         assert pair == (code, "SGD"), f"Currency selector code {code} is not recognized by the engine"
 
 
+def test_fx_pair_parser_disambiguates_common_words_from_currency_codes():
+    e = FinanceEngine()
+    assert e.extract_conversion_pair("convert all my money to SGD") is None
+    assert e.extract_conversion_pair("convert try 500 to SGD") is None
+    assert e.extract_conversion_pair("convert ALL to SGD") == ("ALL", "SGD")
+    assert e.extract_conversion_pair("convert Moroccan dirham to SGD") == ("MAD", "SGD")
+    assert e.extract_conversion_pair("convert Georgian lari to SGD") == ("GEL", "SGD")
+
+
 def test_currency_typo_repair_preserves_valid_uncommon_codes():
     e = FinanceEngine()
     assert e.repair_user_text("KWD to EUR") == "KWD to EUR"

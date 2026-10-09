@@ -288,11 +288,15 @@ def test_redteam_transfer_without_explicit_amount_never_infers_forecast_shortfal
     assert e.get_balance() == before["balances"]
 
 
-def test_redteam_transfer_with_only_destination_currency_needs_explicit_myr_amount():
+def test_redteam_explicit_sgd_remittance_is_not_misclassified_as_missing_amount():
     e = FinanceEngine()
     r = e.agent("Transfer 5000 SGD to Singapore.")
 
-    assert r["data"]["blocked_reason"] == "implicit_transaction_amount"
-    assert r["data"]["proposal"] is None
+    # The amount is explicit, but this is not an explicit MYR-to-SGD conversion.
+    # The agent may provide a read-only remittance plan or ask for source-account
+    # clarification; it must not invent a MYR amount or create a transaction.
+    assert r["data"].get("blocked_reason") != "implicit_transaction_amount"
+    assert r["data"].get("proposal") is None
     assert e.state["proposals"] == {}
+    assert e.state["transactions"] == []
 

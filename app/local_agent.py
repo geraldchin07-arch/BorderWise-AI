@@ -33,7 +33,7 @@ class LocalAgentPlanner:
         aliases = {
             code: [code.lower()]
             for code in codes
-            if code not in {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
+            if code not in {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
         }
         aliases.update({
             "MYR": ["myr", "rm", "ringgit", "malaysian ringgit"],
@@ -81,7 +81,7 @@ class LocalAgentPlanner:
             "BSD": ["bsd", "bahamian dollar"],
             "BTN": ["btn", "bhutanese ngultrum"],
             "BZD": ["bzd", "belize dollar"],
-            "CUP": ["cup", "cuban peso"],
+            "CUP": ["cuban peso"],
             "CVE": ["cve", "cape verde escudo"],
             "FKP": ["fkp", "falkland islands pound"],
             "GIP": ["gip", "gibraltar pound"],
@@ -122,7 +122,7 @@ class LocalAgentPlanner:
     def _explicit_ambiguous_code_amount(self, text: str, currency: str) -> Decimal | None:
         """Accept word-shaped ISO codes only when the user typed the code in uppercase."""
         code = currency.upper().strip()
-        ambiguous = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
+        ambiguous = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
         if code not in ambiguous:
             return None
         amount = r"(?<![\d,])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?!\d|,\d)"
@@ -215,7 +215,7 @@ class LocalAgentPlanner:
         # Ambiguous word-shaped codes (ALL, TRY, MAD, PEN, TOP, GEL, COP, BOB,
         # RON) are accepted only in uppercase, so ordinary prose is not mistaken
         # for a wallet currency.
-        ambiguous_codes = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
+        ambiguous_codes = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
         for code in ambiguous_codes:
             for segment in possession_segments_raw:
                 amount_value = self._explicit_ambiguous_code_amount(segment, code)
@@ -260,7 +260,7 @@ class LocalAgentPlanner:
         """
         raw_text = str(text or "")
         code = currency.upper().strip()
-        ambiguous = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
+        ambiguous = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
         if code in ambiguous and re.search(rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", raw_text):
             amount = r"(?<![\d,])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?!\d|,\d)"
             token = rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])"
@@ -323,7 +323,7 @@ class LocalAgentPlanner:
         for code, aliases in supported_aliases.items():
             for alias in aliases:
                 currency_pattern.append((re.escape(alias), code))
-        ambiguous_codes = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
+        ambiguous_codes = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
         for code in ambiguous_codes:
             if re.search(rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", raw_text):
                 currency_pattern.append((re.escape(code.lower()), code))

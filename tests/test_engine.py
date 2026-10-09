@@ -2057,6 +2057,10 @@ def test_generic_currency_amount_rejects_unknown_three_letter_words():
     assert e.extract_generic_currency_amount("try 500 to Singapore") is None
     assert e.extract_generic_currency_amount("top 500 expenses") is None
     assert e.extract_generic_currency_amount("ALL 500 to SGD") == (Decimal("500.00"), "ALL")
+    assert e.extract_generic_currency_amount("send cup 500 to Singapore") is None
+    assert e.extract_generic_currency_amount("CUP 500 to SGD") == (Decimal("500.00"), "CUP")
+    assert e.extract_conversion_pair("convert cup to SGD") is None
+    assert e.extract_conversion_pair("convert CUP to SGD") == ("CUP", "SGD")
 
 
 @pytest.mark.parametrize(

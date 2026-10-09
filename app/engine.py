@@ -752,8 +752,10 @@ class FinanceEngine:
             req = Request(api, headers={"User-Agent": "BorderWise-AI/7.3"})
             with urlopen(req, timeout=5) as response:
                 payload = json.loads(response.read().decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("FX provider returned an unexpected response shape.")
             raw = payload.get("rate")
-            rate = fxrate(Decimal(str(raw)))
+            rate = fxrate(raw)
             if rate <= 0:
                 raise ValueError("non-positive FX rate")
             data = {

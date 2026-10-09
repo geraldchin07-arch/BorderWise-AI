@@ -2480,6 +2480,17 @@ class FinanceEngine:
             return self._result(intent, answer, trace, {"forecast": f})
 
         if intent == "fx":
+            # RMB/Yuan/CNY without a source/target pair is ambiguous. Never
+            # silently substitute the app's default MYR-to-SGD quote.
+            fx_text = self.repair_user_text(text).lower()
+            requested_pair = self.extract_conversion_pair(text)
+            if any(k in fx_text for k in ["rmb", "yuan", "renminbi", "cny"]) and not requested_pair:
+                answer = "Yes, I can help estimate an RMB (CNY) exchange. Which direction do you mean—RMB to SGD, RMB to MYR, or another currency? If you want a conversion calculation, tell me the amount too. I haven't created a proposal or transaction."
+                return self._result("fx", answer, [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized RMB/CNY as the requested currency."},
+                    {"step": "OBSERVE", "status": "needs_input", "detail": "Source/target currency pair and amount were not specified."},
+                    {"step": "SECURITY", "status": "completed", "detail": "Clarification only; no proposal or transaction was created."},
+                ], {"requested_currency": "CNY", "needs_clarification": True, "state_changed": False, "proposal": None})
             q = self.refresh_fx()
             trace.append({"step": "OBSERVE", "status": "completed", "detail": f"Retrieved MYR/SGD reference rate from {q['source']}."})
             freshness = f"rate date {q['rate_date']}" if q.get('rate_date') else "rate date unavailable"

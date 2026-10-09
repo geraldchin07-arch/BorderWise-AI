@@ -572,7 +572,7 @@ class LocalAgentPlanner:
                     f"Remittance considered: {planning_currency} {amount:,.2f}.\\n"
                     f"Projected position after sending: {planning_currency} {after:,.2f}.\\n"
                     f"Emergency reserve: {'met' if reserve_met else 'not met or unverified'}.\\n"
-                    + ("Sending appears affordable under the configured forecast; keep the reserve intact." if affordable else "Do not send the full amount yet. Prioritize tuition and essential expenses, protect the reserve, and reassess a smaller amount.")
+                    + ("Sending appears affordable under the configured forecast; keep the reserve intact." if affordable else f"Do not send the full amount yet; your available projected position would fall to about {planning_currency} {after:,.2f}. Prioritize tuition and essential expenses, protect the reserve, and reassess a smaller amount.")
                     + "\\nRead-only analysis; no proposal or transaction was created."
                 )
                 trace = [

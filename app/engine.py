@@ -1635,7 +1635,7 @@ class FinanceEngine:
 
     def extract_myr_amount(self, text: str) -> Decimal | None:
         amount = r"([0-9][0-9,]*(?:\.[0-9]+)?[km]?)"
-        currency = r"(?:malaysian\s+ringgit|ringgit|rm|myr)"
+        currency = r"(?<![A-Za-z])(?:malaysian\s+ringgit|ringgit|rm|myr)(?![A-Za-z])"
         patterns = [
             rf"{currency}\s*{amount}",
             rf"{amount}\s*{currency}\b",

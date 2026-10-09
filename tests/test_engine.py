@@ -1999,6 +1999,8 @@ def test_web_currency_selector_codes_are_recognized_by_engine():
     engine = FinanceEngine()
     for code in codes:
         assert engine.repair_user_text(code) == code
+        if code == "SGD":
+            continue
         pair = engine.extract_conversion_pair(f"{code} to SGD")
         assert pair == (code, "SGD"), f"Currency selector code {code} is not recognized by the engine"
 

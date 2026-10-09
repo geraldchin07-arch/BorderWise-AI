@@ -2502,6 +2502,17 @@ class FinanceEngine:
                     {"available_cash_sgd": float(available), "tuition_due_sgd": float(tuition_due), "shortfall_sgd": float(gap), "state_changed": False, "proposal": None},
                 )
 
+        # Deterministic savings-goal reasoning must take priority over a generic
+        # LLM forecast, so explicit figures and scenario follow-ups are not lost.
+        if any(k in normalized for k in ["save enough", "can i save", "savings goal", "target savings", "what if my expenses", "expenses increase by"]):
+            try:
+                from .local_agent import LocalAgentPlanner
+                savings_result = LocalAgentPlanner(self).run(text)
+                if savings_result is not None and savings_result.get("intent") == "savings_projection":
+                    return savings_result
+            except Exception:
+                pass
+
         # v5: optional LLM tool-calling planner. The deterministic engine remains the
         # fallback and the authority for calculations, policy and execution.
         try:

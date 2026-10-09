@@ -369,6 +369,14 @@ def test_redteam_llm_proposal_rejects_conditional_incoming_money():
     )
 
 
+def test_redteam_local_planner_disambiguates_cup_code():
+    planner = LocalAgentPlanner(FinanceEngine())
+
+    assert planner._amount("Convert CUP 500 to SGD", "CUP") == 500
+    assert planner._amount("Convert cup 500 to SGD", "CUP") is None
+    assert planner._amount("Convert 500 Cuban peso to SGD", "CUP") == 500
+
+
 def test_redteam_local_planner_does_not_guess_between_yen_currencies():
     planner = LocalAgentPlanner(FinanceEngine())
 

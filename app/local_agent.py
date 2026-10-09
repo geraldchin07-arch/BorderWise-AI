@@ -508,7 +508,15 @@ class LocalAgentPlanner:
         t = self.engine.repair_user_text(text).lower().strip()
         # Basic identity questions should receive a direct conversational answer,
         # not the generic finance-capabilities fallback.
-        if any(k in t for k in ["what is your name", "what's your name", "who are you", "ur name", "your name"]):
+        if any(k in t for k in [
+            "no your name is", "no ur name is", "your name is actually",
+            "i named you", "you are called", "your name should be",
+        ]):
+            return self._result("general", "Got it — I'm XKF5 AI. I'll use that name going forward in this conversation.", [
+                {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized the user's correction to the assistant's name."},
+                {"step": "RECOMMEND", "status": "completed", "detail": "Acknowledged the requested identity without initiating a financial action."},
+            ], {"assistant_name": "XKF5 AI", "state_changed": False, "proposal": None})
+        if any(k in t for ["what is your name", "what's your name", "who are you", "ur name", "your name"]):
             return self._result("general", "I'm BorderWise AI, your financial planning assistant. I can help analyze balances, cash flow, tuition funding, and currency conversions. I provide guidance and simulations; I don't move money without the application's required authorization.", [
                 {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a question about the assistant's identity."},
                 {"step": "RECOMMEND", "status": "completed", "detail": "Answered directly without initiating any financial action."},

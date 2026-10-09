@@ -289,12 +289,17 @@ class LocalAgentPlanner:
         self, text: str, labels: list[str]
     ) -> tuple[Decimal, str] | None:
         """Extract the amount nearest a financial label and its currency."""
-        t = text.lower()
+        raw_text = str(text or "")
+        t = raw_text.lower()
         supported_aliases = self._currency_aliases()
         currency_pattern = []
         for code, aliases in supported_aliases.items():
             for alias in aliases:
                 currency_pattern.append((re.escape(alias), code))
+        ambiguous_codes = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON"}
+        for code in ambiguous_codes:
+            if re.search(rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", raw_text):
+                currency_pattern.append((re.escape(code.lower()), code))
         currency_pattern.sort(key=lambda item: len(item[0]), reverse=True)
         token = r"(?<![A-Za-z])(?:" + "|".join(alias for alias, _ in currency_pattern) + r")(?![A-Za-z])"
         amount_token = r"(?<![\d,])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?!\d|,\d)"

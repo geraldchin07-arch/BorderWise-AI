@@ -278,6 +278,19 @@ def test_redteam_future_family_support_is_not_fx_conversion():
     assert "conversion" not in r["data"]
     assert e.state["proposals"] == {}
 
+def test_redteam_transfer_from_word_does_not_infer_ringgit_amount():
+    e = FinanceEngine()
+    before = e.get_balance()
+
+    result = e.agent("Transfer from 500 to Singapore.")
+
+    assert result["data"]["state_changed"] is False
+    assert result["data"]["proposal"] is None
+    assert result["data"]["blocked_reason"] == "implicit_transaction_amount"
+    assert e.get_balance() == before
+    assert e.state["proposals"] == {}
+
+
 def test_redteam_transfer_without_explicit_amount_never_infers_forecast_shortfall():
     e = FinanceEngine()
     before = e.snapshot()

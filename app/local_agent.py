@@ -116,7 +116,7 @@ class LocalAgentPlanner:
         prefix_pattern = alias_token + r"\s*"
         suffix_pattern = r"\s*" + alias_token
 
-        amount_pattern = r"(?<![\d,])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?![\d,])"
+        amount_pattern = r"(?<![\d,])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?!\d|,\d)"
         patterns = [
             rf"{prefix_pattern}{amount_pattern}",
             rf"{amount_pattern}{suffix_pattern}",
@@ -145,7 +145,7 @@ class LocalAgentPlanner:
         for code, names in aliases.items():
             escaped = sorted((re.escape(x) for x in names), key=len, reverse=True)
             token = r"(?<![A-Za-z])(?:" + "|".join(escaped) + r")(?![A-Za-z])"
-            amount = r"(?<![\d,])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?(?![\d,])"
+            amount = r"(?<![\d,])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?(?!\d|,\d)"
             patterns_by_code[code] = rf"(?:{token}\s*({amount})|({amount})\s*{token})"
 
         # First parse every explicit possession list. The lookahead stops before a
@@ -207,7 +207,7 @@ class LocalAgentPlanner:
         names = aliases.get(code, [code.lower()])
         escaped = sorted((re.escape(x) for x in names), key=len, reverse=True)
         currency_token = r"(?<![A-Za-z])(?:" + "|".join(escaped) + r")(?![A-Za-z])"
-        amount_pattern = r"(?<![\d,])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?![\d,])"
+        amount_pattern = r"(?<![\d,])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?!\d|,\d)"
         pattern = (
             rf"\b(?:need|needs|pay|paying|require|required|requirement|for)\b"
             rf"[^.;,]{{0,100}}?(?:{currency_token}\s*{amount_pattern}|{amount_pattern}\s*{currency_token})"
@@ -271,8 +271,8 @@ class LocalAgentPlanner:
                 continue
             context = window.group("context")
             amount_match = re.search(
-                rf"(?P<currency>{token})\s*(?P<amount>(?<![\d,])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?(?![\d,]))"
-                rf"|(?P<amount_rev>(?<![\d,])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?(?![\d,]))\s*(?P<currency_rev>{token})",
+                rf"(?P<currency>{token})\s*(?P<amount>(?<![\d,])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?(?!\d|,\d))"
+                rf"|(?P<amount_rev>(?<![\d,])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?(?!\d|,\d))\s*(?P<currency_rev>{token})",
                 context,
                 re.I,
             )

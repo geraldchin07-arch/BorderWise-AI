@@ -2320,3 +2320,24 @@ def test_fxrate_rejects_non_finite_values(value):
 
     with pytest.raises(ValueError, match="finite"):
         fxrate(value)
+
+
+def test_same_currency_conversion_is_exact_identity():
+    e = FinanceEngine()
+    result = e.quote_conversion(123.45, "SGD", "SGD")
+    assert result["rate"] == 1.0
+    assert result["converted_amount"] == 123.45
+    assert result["fx"]["mode"] == "identity"
+    assert result["fx"]["live"] is False
+
+
+def test_same_currency_conversion_rejects_non_identity_custom_rate():
+    e = FinanceEngine()
+    with pytest.raises(ValueError, match="identity rate"):
+        e.quote_conversion(100, "MYR", "MYR", custom_rate=1.25)
+
+
+def test_conversion_rejects_malformed_currency_codes():
+    e = FinanceEngine()
+    with pytest.raises(ValueError, match="3-letter"):
+        e.quote_conversion(100, "<X>", "SGD", custom_rate=1)

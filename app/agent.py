@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any, Callable
 
 try:
@@ -122,16 +123,38 @@ For complex student-finance situations, build a goal-aware plan: identify essent
     def _proposal_request_is_explicit(self, user_text: str, args: dict[str, Any]) -> bool:
         """Fail closed unless the user explicitly requests the exact MYR proposal amount."""
         try:
-            requested_amount = self.engine.extract_myr_amount(user_text)
             proposed_amount = self.engine.money_value(args.get("amount_myr"))
         except Exception:
             return False
-        if requested_amount is None or proposed_amount <= 0:
-            return False
-        if requested_amount != proposed_amount:
+        if proposed_amount <= 0:
             return False
 
         normalized = self.engine.repair_user_text(user_text).lower()
+        # Match the MYR amount attached to an action, not an earlier wallet
+        # balance mentioned in the same message.
+        amount_pattern = re.compile(
+            r"\b(?:rm|myr)\s*([0-9][0-9,]*(?:\.[0-9]+)?)"
+            r"|\b([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:rm|myr)\b",
+            re.IGNORECASE,
+        )
+        action_phrases = [
+            "prepare", "transfer", "send", "remit", "convert", "exchange",
+            "create a proposal", "make a proposal",
+        ]
+        action_amounts = []
+        previous_end = 0
+        for match in amount_pattern.finditer(normalized):
+            segment_before_amount = normalized[previous_end:match.start()]
+            previous_end = match.end()
+            if any(phrase in segment_before_amount for phrase in action_phrases):
+                raw_amount = match.group(1) or match.group(2)
+                try:
+                    action_amounts.append(self.engine.money_value(raw_amount.replace(",", "")))
+                except Exception:
+                    continue
+        if proposed_amount not in action_amounts:
+            return False
+
         advice_or_scenario = any(phrase in normalized for phrase in [
             "should i", "should we", "would you recommend", "recommend",
             "is it wise", "what if", "hypothetical", "compare", "can i afford",

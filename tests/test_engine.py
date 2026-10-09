@@ -2052,3 +2052,36 @@ def test_agent_compares_explicit_hypothetical_fx_rates_without_live_quote():
     assert r["data"]["state_changed"] is False
     assert r["data"]["proposal"] is None
     assert e.get_balance() == before
+
+
+def test_agent_preserves_conversion_target_and_requested_display_currency(monkeypatch):
+    e = FinanceEngine()
+    calls = []
+
+    def fake_quote(amount, base, quote, **kwargs):
+        calls.append((float(amount), base, quote))
+        rate = {("MYR", "SGD"): 0.32, ("SGD", "USD"): 0.75}[(base, quote)]
+        return {
+            "amount": float(amount),
+            "from_currency": base,
+            "to_currency": quote,
+            "rate": rate,
+            "converted_amount": float(amount) * rate,
+            "fx": {"source": "Test reference source", "rate_date": "2026-10-09", "live": True},
+        }
+
+    monkeypatch.setattr(e, "quote_conversion", fake_quote)
+    before = e.get_balance()
+    r = e.agent("Convert 500 MYR to SGD, but show the result in USD.")
+
+    assert r["intent"] == "fx"
+    assert calls == [(500.0, "MYR", "SGD"), (160.0, "SGD", "USD")]
+    assert r["data"]["requested_target_currency"] == "SGD"
+    assert r["data"]["display_currency"] == "USD"
+    assert r["data"]["conversion"]["converted_amount"] == 160.0
+    assert r["data"]["display_conversion"]["converted_amount"] == 120.0
+    assert "160.00 SGD" in r["answer"]
+    assert "120.00 USD" in r["answer"]
+    assert r["data"]["state_changed"] is False
+    assert r["data"]["proposal"] is None
+    assert e.get_balance() == before

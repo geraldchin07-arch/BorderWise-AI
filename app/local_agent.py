@@ -506,6 +506,14 @@ class LocalAgentPlanner:
 
     def run(self, text: str) -> dict[str, Any] | None:
         t = self.engine.repair_user_text(text).lower().strip()
+        # Basic identity questions should receive a direct conversational answer,
+        # not the generic finance-capabilities fallback.
+        if any(k in t for k in ["what is your name", "what's your name", "who are you", "ur name", "your name"]):
+            return self._result("general", "I'm BorderWise AI, your financial planning assistant. I can help analyze balances, cash flow, tuition funding, and currency conversions. I provide guidance and simulations; I don't move money without the application's required authorization.", [
+                {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a question about the assistant's identity."},
+                {"step": "RECOMMEND", "status": "completed", "detail": "Answered directly without initiating any financial action."},
+            ], {"state_changed": False, "proposal": None})
+
         remembered_context = getattr(self.engine, "_agent_scenario_context", {})
         current_wallet = self._extract_wallet_balances_from_text(t)
         if current_wallet:

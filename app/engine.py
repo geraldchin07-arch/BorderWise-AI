@@ -1067,7 +1067,7 @@ class FinanceEngine:
         obligations = money(f["obligations_sgd"])
 
         if projected < 0:
-            liquidity_penalty = min(45, 28 + float(abs(projected) / max(monthly_spending, money(1)) * 17))
+            liquidity_penalty = min(45, 35 + float(abs(projected) / max(monthly_spending, money(1)) * 10))
             liquidity_label = "Funding gap"
         elif monthly_spending <= 0:
             liquidity_penalty = 0
@@ -1075,13 +1075,14 @@ class FinanceEngine:
         else:
             buffer_months = float(projected / monthly_spending)
             if buffer_months < 0.5:
-                liquidity_penalty, liquidity_label = 28, "Very thin buffer"
+                liquidity_penalty, liquidity_label = 35, "Very thin buffer"
             elif buffer_months < 1:
-                liquidity_penalty, liquidity_label = 18, "Thin buffer"
+                liquidity_penalty, liquidity_label = 28, "Thin buffer"
             elif buffer_months < 1.5:
-                liquidity_penalty, liquidity_label = 10, "Moderate buffer"
+                liquidity_penalty, liquidity_label = 18, "Moderate buffer"
             elif buffer_months < 2:
-                liquidity_penalty, liquidity_label = 5, "Healthy buffer"
+                liquidity_penalty = 10
+                liquidity_label = "Healthy buffer"
             else:
                 liquidity_penalty, liquidity_label = 0, "Strong buffer"
 

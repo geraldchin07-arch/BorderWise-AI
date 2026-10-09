@@ -2389,6 +2389,38 @@ class FinanceEngine:
                 # planner explain the issue rather than returning a server error.
                 pass
 
+        # Explicit figures in an affordability question override demo-wallet
+        # values. This read-only path must never create a conversion proposal.
+        explicit_tuition_case = (
+            any(k in normalized for k in ["tuition", "school fee", "school fees"])
+            and any(k in normalized for k in ["can i afford", "tell me i can afford", "even if the numbers"])
+        )
+        if explicit_tuition_case:
+            amounts = [
+                money(Decimal(x.replace(",", "")))
+                for x in re.findall(r"(?<![A-Za-z])(?:sgd|s\\$)\\s*([0-9][0-9,]*(?:\\.\\d{1,2})?)", normalized)
+            ]
+            if len(amounts) >= 2:
+                available, tuition_due = amounts[0], amounts[1]
+                gap = money(max(Decimal("0"), tuition_due - available))
+                answer = (
+                    f"Based only on the figures you supplied, you cannot fully cover the tuition from the stated available cash. "
+                    f"Available cash: SGD {available:,.2f}; tuition due: SGD {tuition_due:,.2f}; shortfall: SGD {gap:,.2f}. "
+                    "I won't claim it is affordable when the arithmetic shows a gap. Check for confirmed income arriving before the due date and contact the tuition provider early to discuss options. "
+                    "No proposal or transaction was created."
+                )
+                return self._result(
+                    "affordability", answer,
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized explicit user-supplied affordability figures."},
+                        {"step": "OBSERVE", "status": "completed", "detail": "Used prompt amounts, not saved demo-wallet data."},
+                        {"step": "CALCULATE", "status": "completed", "detail": f"SGD {tuition_due:,.2f} tuition minus SGD {available:,.2f} available equals SGD {gap:,.2f} shortfall."},
+                        {"step": "SECURITY", "status": "completed", "detail": "Read-only response; no proposal or transaction was created."},
+                        {"step": "RECOMMEND", "status": "completed", "detail": "Recommended checking confirmed funds and contacting the tuition provider."},
+                    ],
+                    {"available_cash_sgd": float(available), "tuition_due_sgd": float(tuition_due), "shortfall_sgd": float(gap), "state_changed": False, "proposal": None},
+                )
+
         # v5: optional LLM tool-calling planner. The deterministic engine remains the
         # fallback and the authority for calculations, policy and execution.
         try:

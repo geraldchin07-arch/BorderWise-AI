@@ -811,7 +811,16 @@ class FinanceEngine:
         quote = to_currency.upper().strip()
         if amount_d <= 0:
             raise ValueError("Conversion amount must be positive.")
-        if custom_rate is not None:
+        if not re.fullmatch(r"[A-Z]{3}", base) or not re.fullmatch(r"[A-Z]{3}", quote):
+            raise ValueError("Source and target currencies must be 3-letter currency codes.")
+        if base == quote:
+            if custom_rate is not None and fxrate(custom_rate) != Decimal("1"):
+                raise ValueError("A same-currency conversion must use an identity rate of 1.")
+            rate = Decimal("1")
+            meta = {"base": base, "quote": quote, "rate": 1.0, "date": datetime.now().date().isoformat(),
+                    "source": "Same-currency identity rate", "live": False, "updated_at": None}
+            mode = "identity"
+        elif custom_rate is not None:
             rate = fxrate(custom_rate)
             if rate <= 0:
                 raise ValueError("Custom FX rate must be positive.")

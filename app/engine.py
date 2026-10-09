@@ -2432,13 +2432,13 @@ class FinanceEngine:
             k in hypothetical_text for k in ["hypothetical", "assume", "at rate", "at 0.", "versus", " vs "]
         ):
             amount_match = re.search(
-                r"\\b(?P<currency>myr|rm|ringgit|malaysian ringgit|sgd|s\\$|singapore dollars?|usd|us\\$|us dollars?)\\s*(?P<amount>[0-9][0-9,]*(?:\\.[0-9]+)?)|"
-                r"\\b(?P<amount_after>[0-9][0-9,]*(?:\\.[0-9]+)?)\\s*(?P<currency_after>myr|rm|ringgit|malaysian ringgit|sgd|s\\$|singapore dollars?|usd|us\\$|us dollars?)\\b",
+                r"\b(?P<currency>myr|rm|ringgit|malaysian ringgit|sgd|s\$|singapore dollars?|usd|us\$|us dollars?)\s*(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?)|"
+                r"\b(?P<amount_after>[0-9][0-9,]*(?:\.[0-9]+)?)\s*(?P<currency_after>myr|rm|ringgit|malaysian ringgit|sgd|s\$|singapore dollars?|usd|us\$|us dollars?)\b",
                 hypothetical_text,
             )
-            rate_matches = re.findall(r"\\b(?:at\\s+(?:a\\s+)?rate\\s+of\\s+|rate\\s+of\\s+)?(0?\\.[0-9]+|[1-9][0-9]*(?:\\.[0-9]+)?)\\b", hypothetical_text)
+            rate_matches = re.findall(r"\b(?:at\s+(?:a\s+)?rate\s+of\s+|rate\s+of\s+)?(0?\.[0-9]+|[1-9][0-9]*(?:\.[0-9]+)?)\b", hypothetical_text)
             pair_match = re.search(
-                r"\\b(sgd|singapore dollars?|myr|ringgit|usd|us dollars?)\\s+per\\s+(myr|ringgit|sgd|singapore dollars?|usd|us dollars?)\\b",
+                r"\b(sgd|singapore dollars?|myr|ringgit|usd|us dollars?)\s+per\s+(myr|ringgit|sgd|singapore dollars?|usd|us dollars?)\b",
                 hypothetical_text,
             )
             if amount_match and len(rate_matches) >= 2 and pair_match:
@@ -2457,9 +2457,9 @@ class FinanceEngine:
                     result_a, result_b = amount * rate_a, amount * rate_b
                     difference = abs(result_a - result_b)
                     answer = (
-                        f"Using your hypothetical rates (not live market quotes):\\n"
-                        f"• {amount:,.2f} {rate_base} at {rate_a} {rate_quote} per {rate_base} = {result_a:,.2f} {rate_quote}.\\n"
-                        f"• {amount:,.2f} {rate_base} at {rate_b} {rate_quote} per {rate_base} = {result_b:,.2f} {rate_quote}.\\n"
+                        f"Using your hypothetical rates (not live market quotes):\n"
+                        f"• {amount:,.2f} {rate_base} at {rate_a} {rate_quote} per {rate_base} = {result_a:,.2f} {rate_quote}.\n"
+                        f"• {amount:,.2f} {rate_base} at {rate_b} {rate_quote} per {rate_base} = {result_b:,.2f} {rate_quote}.\n"
                         f"Difference: {difference:,.2f} {rate_quote}. The higher rate gives {difference:,.2f} {rate_quote} more. No account state changed and no transaction was created."
                     )
                     return self._result("fx_comparison", answer, [

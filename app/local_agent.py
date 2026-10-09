@@ -549,10 +549,21 @@ class LocalAgentPlanner:
                 forecast = self.engine.forecast_portfolio(horizon)
                 planning_currency = str(forecast.get("planning_currency", planning)).upper()
                 amount = self._amount(t, planning_currency) or sgd or Decimal("0")
-                before = self.engine.money_value(forecast.get("projected_balance_planning", 0))
+                # Remittance affordability must use immediately available planning-
+                # currency cash, not the full portfolio valuation (which includes
+                # foreign balances that have not been converted).
+                current_balances = self.engine.get_balance()
+                planning_cash = self.engine.money_value(current_balances.get(planning_currency, 0))
+                before = self.engine.money_value(
+                    planning_cash
+                    + self.engine.money_value(forecast.get("expected_income_planning", 0))
+                    - self.engine.money_value(forecast.get("spending_planning", 0))
+                    - self.engine.money_value(forecast.get("obligations_planning", 0))
+                )
                 after = self.engine.money_value(before - amount)
                 health = self.engine.health_analysis()
-                reserve_met = bool(health.get("emergency_reserve_met", False))
+                reserve_info = forecast.get("emergency_reserve", {})
+                reserve_met = bool(reserve_info.get("met", health.get("emergency_reserve_met", False)))
                 affordable = after >= 0 and reserve_met
                 action = "REMITTANCE_AFFORDABLE" if affordable else "REMITTANCE_NOT_AFFORDABLE"
                 answer = (

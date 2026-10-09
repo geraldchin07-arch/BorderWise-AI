@@ -1497,6 +1497,8 @@ class FinanceEngine:
         currency_mentions = re.findall(r"\b(?:sgd|myr|usd|cny|jpy|krw|thb|eur|gbp|aud|cad|hkd|twd|inr)\b", t)
         if (
             any(k in t for k in ["exchange rate", "current rate", "exchange", "fx", "convert", "conversion",
+                                 "change my money", "change currency", "change my currency", "exchange currency",
+                                 "can i change", "convert my money", "how do i exchange",
                                  "exchange myr", "exchange sgd", "how much myr do i need", "myr do i need", "sgd to myr",
                                  "current currency", "currency of", "rate of"])
             or (len(set(currency_mentions)) >= 2 and any(k in t for k in ["to", "into", "in", "rate", "currency", "current"]))
@@ -2480,6 +2482,22 @@ class FinanceEngine:
             return self._result(intent, answer, trace, {"forecast": f})
 
         if intent == "fx":
+            fx_text = self.repair_user_text(text).lower()
+            requested_pair = self.extract_conversion_pair(text)
+            # A destination-only request such as "change my money to USD"
+            # needs the source currency and amount before a meaningful quote.
+            destination_only = re.search(r"\\b(?:to|into)\\s+(usd|sgd|myr|cny|rmb|yuan|eur|gbp|aud|cad|jpy|krw|thb|hkd|twd|inr)\\b", fx_text)
+            has_amount = bool(self.extract_generic_currency_amount(text) or self.extract_sgd_amount(text) or self.extract_myr_amount(text))
+            if destination_only and not requested_pair and not has_amount:
+                target = destination_only.group(1).upper()
+                if target in {"RMB", "YUAN"}:
+                    target = "CNY"
+                answer = f"I can help estimate a conversion into {target}. Which currency are you starting from, and how much would you like to convert? I'll show a reference-rate estimate first; no proposal or transaction will be created unless you explicitly request the appropriate next step."
+                return self._result("fx", answer, [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": f"Recognized {target} as the requested destination currency."},
+                    {"step": "OBSERVE", "status": "needs_input", "detail": "Source currency and amount are missing."},
+                    {"step": "SECURITY", "status": "completed", "detail": "Clarification only; no proposal or transaction was created."},
+                ], {"target_currency": target, "needs_clarification": True, "state_changed": False, "proposal": None})
             # RMB/Yuan/CNY without a source/target pair is ambiguous. Never
             # silently substitute the app's default MYR-to-SGD quote.
             fx_text = self.repair_user_text(text).lower()

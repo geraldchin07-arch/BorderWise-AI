@@ -342,6 +342,9 @@ class LocalAgentPlanner:
             if not window:
                 continue
             context = window.group("context")
+            # Do not let a later obligation's currency amount leak backward to
+            # an earlier label when the first amount has no currency.
+            context = re.split(r"\b(?:and|but|while|then|plus|whereas)\b", context, maxsplit=1, flags=re.I)[0]
             # Walk currency mentions in text order and bind each to the nearest
             # immediately adjacent amount, so a later remittance cannot replace
             # the tuition amount associated with the label.

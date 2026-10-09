@@ -2476,20 +2476,22 @@ class FinanceEngine:
             r"\\b(?:show|display|give|report)\\s+(?:the\\s+)?(?:result|answer|amount|value)\\s+in\\s+(sgd|singapore dollars?|myr|ringgit|usd|us dollars?|cny|rmb|yuan|eur|euros?|gbp|pounds?|jpy|yen)\\b",
             normalized,
         )
-        explicit_pair = self.extract_conversion_pair(text)
-        explicit_amount = self.extract_generic_currency_amount(text)
-        if display_currency_match and explicit_pair and explicit_amount:
+        explicit_conversion_match = re.search(
+            r"\\b(?:convert|exchange)\\s+(?P<amount>[0-9][0-9,]*(?:\\.[0-9]+)?)\\s*(?P<base>myr|rm|ringgit|malaysian ringgit|sgd|s\\$|singapore dollars?|usd|us\\$|us dollars?|cny|rmb|yuan|eur|euros?|gbp|pounds?|jpy|yen)\\s+(?:to|into)\\s+(?P<target>myr|rm|ringgit|malaysian ringgit|sgd|s\\$|singapore dollars?|usd|us\\$|us dollars?|cny|rmb|yuan|eur|euros?|gbp|pounds?|jpy|yen)\\b",
+            normalized,
+        )
+        if display_currency_match and explicit_conversion_match:
             display_aliases = {
                 "sgd": "SGD", "singapore dollar": "SGD", "singapore dollars": "SGD",
                 "myr": "MYR", "ringgit": "MYR", "usd": "USD", "us dollar": "USD", "us dollars": "USD",
                 "cny": "CNY", "rmb": "CNY", "yuan": "CNY", "eur": "EUR", "euro": "EUR", "euros": "EUR",
                 "gbp": "GBP", "pound": "GBP", "pounds": "GBP", "jpy": "JPY", "yen": "JPY",
             }
-            base, target = explicit_pair
-            base, target = base.upper(), target.upper()
+            base = display_aliases.get(explicit_conversion_match.group("base").lower(), explicit_conversion_match.group("base").upper())
+            target = display_aliases.get(explicit_conversion_match.group("target").lower(), explicit_conversion_match.group("target").upper())
             display = display_aliases.get(display_currency_match.group(1).lower(), display_currency_match.group(1).upper())
-            amount, amount_currency = explicit_amount
-            if amount_currency == base and display != target:
+            amount = money(explicit_conversion_match.group("amount").replace(",", ""))
+            if display != target:
                 try:
                     target_result = self.quote_conversion(amount, base, target)
                     display_result = self.quote_conversion(target_result["converted_amount"], target, display)

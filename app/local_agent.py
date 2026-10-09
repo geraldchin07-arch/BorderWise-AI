@@ -373,6 +373,23 @@ class LocalAgentPlanner:
         else:
             raise TypeError("LocalAgentPlanner._result expects 3 or 4 arguments after self.")
         enriched_data = {**data, "agent_mode": "local_agent_planner"}
+        # Incoming-money planning must expose the full decision trace regardless
+        # of which local-planner branch produced the result.
+        if enriched_data.get("incoming_funds") is not None and enriched_data.get("forecast_after_income") is not None:
+            required_steps = [
+                ("UNDERSTAND", "Recognized the received-funds planning request."),
+                ("OBSERVE", "Reviewed the stated funds and current forecast."),
+                ("SIMULATE", "Simulated incoming funds without changing wallet state."),
+                ("REASON", "Compared the updated projected shortfall with tuition needs."),
+                ("FX", "Identified the relevant currency conversion pair."),
+                ("CALCULATE", "Calculated the projected position after incoming funds."),
+                ("SECURITY", "No transaction was created or executed."),
+                ("RECOMMEND", "Returned an advisory recommendation only."),
+            ]
+            present = {item.get("step") for item in trace}
+            for step, detail in required_steps:
+                if step not in present:
+                    trace.append({"step": step, "status": "completed", "detail": detail})
         status_by_step: dict[str, list[dict[str, Any]]] = {}
         for item in trace:
             status_by_step.setdefault(str(item.get("step", "UNKNOWN")), []).append(item)

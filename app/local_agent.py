@@ -523,6 +523,35 @@ class LocalAgentPlanner:
             self.engine.state.get("profile_meta", {}).get("planning_currency", "SGD")
         ).upper()
 
+        # Keep simple balance lookups separate from broader forecasting.
+        # A short "how much do I have in SGD?" question should not trigger
+        # a 30-day assessment merely because it contains "how much".
+        simple_balance_request = (
+            any(k in t for k in ["how much do i have", "what is my balance", "show my balance", "current balance"])
+            and not any(k in t for k in [
+                "financial position", "cash position", "funding gap", "30 day",
+                "30-day", "forecast", "tuition", "emergency reserve", "projected",
+                "monthly spending", "monthly expenses", "afford",
+            ])
+        )
+        if simple_balance_request:
+            balances = self.engine.get_balance()
+            requested_currency = next(
+                (code for code in ["SGD", "MYR", "USD", "CNY"] if code.lower() in t),
+                None,
+            )
+            if requested_currency and requested_currency in balances:
+                answer = f"You currently have {requested_currency} {self.engine.money_value(balances[requested_currency]):,.2f} in the demo accounts."
+            else:
+                answer = "Your current demo-account balances are: " + ", ".join(
+                    f"{code} {self.engine.money_value(value):,.2f}" for code, value in balances.items()
+                ) + "."
+            return self._result("balance", answer, [
+                {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a simple balance lookup."},
+                {"step": "OBSERVE", "status": "completed", "detail": "Read the configured demo-account balances."},
+                {"step": "SECURITY", "status": "completed", "detail": "Read-only lookup; no account state changed."},
+            ], {"balances": balances, "state_changed": False})
+
         # Route broad financial questions before any action/proposal handlers.
         # This guard intentionally uses intent signals rather than exact full prompts.
         read_only_financial_request = (

@@ -1978,6 +1978,10 @@ def test_fx_rate_lookup_does_not_substitute_pair_when_rate_unavailable(monkeypat
         ("convert PLN 1250 to USD", (Decimal("1250.00"), "PLN")),
         ("convert 300 South African rand to SGD", (Decimal("300.00"), "ZAR")),
         ("convert 25 Kuwaiti dinar to EUR", (Decimal("25.00"), "KWD")),
+        ("convert AFN 100 to SGD", (Decimal("100.00"), "AFN")),
+        ("convert 50 Bhutanese ngultrum to SGD", (Decimal("50.00"), "BTN")),
+        ("convert 100 Cuban peso to SGD", (Decimal("100.00"), "CUP")),
+        ("convert 300 ZWG to USD", (Decimal("300.00"), "ZWG")),
     ],
 )
 def test_generic_currency_amount_recognizes_names_and_symbols(prompt, expected):

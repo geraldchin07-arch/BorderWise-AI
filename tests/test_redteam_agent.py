@@ -356,6 +356,18 @@ def test_redteam_llm_proposal_rejects_conditional_incoming_money():
     )
 
 
+def test_redteam_local_planner_validates_grouped_amounts_and_decimals():
+    planner = LocalAgentPlanner(FinanceEngine())
+
+    assert planner._amount("Convert 1,200 MYR to SGD", "MYR") == 1200
+    assert planner._amount("Convert 12,34 MYR to SGD", "MYR") is None
+    assert planner._amount_after_need("I need to pay SGD 2.5k for fees", "SGD") == 2500
+    assert planner._extract_labeled_amount(
+        "Tuition is SGD 2,500 and I may transfer RM500 later.",
+        ["tuition"],
+    ) == (planner.engine.money_value(2500), "SGD")
+
+
 def test_redteam_local_planner_supports_uncommon_currency_amounts():
     planner = LocalAgentPlanner(FinanceEngine())
 

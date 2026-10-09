@@ -275,3 +275,24 @@ def test_redteam_future_family_support_is_not_fx_conversion():
     assert r["data"]["state_changed"] is False
     assert "conversion" not in r["data"]
     assert e.state["proposals"] == {}
+
+def test_redteam_transfer_without_explicit_amount_never_infers_forecast_shortfall():
+    e = FinanceEngine()
+    before = e.snapshot()
+    r = e.agent("Transfer money to Singapore.")
+
+    assert r["data"]["blocked_reason"] == "implicit_transaction_amount"
+    assert r["data"]["state_changed"] is False
+    assert r["data"]["proposal"] is None
+    assert e.state["proposals"] == {}
+    assert e.get_balance() == before["balances"]
+
+
+def test_redteam_transfer_with_only_destination_currency_needs_explicit_myr_amount():
+    e = FinanceEngine()
+    r = e.agent("Transfer 5000 SGD to Singapore.")
+
+    assert r["data"]["blocked_reason"] == "implicit_transaction_amount"
+    assert r["data"]["proposal"] is None
+    assert e.state["proposals"] == {}
+

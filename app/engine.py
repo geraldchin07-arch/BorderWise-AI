@@ -1644,7 +1644,7 @@ class FinanceEngine:
         currency = r"(?<![A-Za-z])(?:malaysian\s+ringgit|ringgit|rm|myr)(?![A-Za-z])"
         patterns = [
             rf"{currency}\s*{amount}",
-            rf"{amount}\s*{currency}\b",
+            rf"{amount}\s*{currency}",
         ]
         for pattern in patterns:
             match = re.search(pattern, text.lower())
@@ -1657,7 +1657,7 @@ class FinanceEngine:
         currency = r"(?<![A-Za-z])(?:s\$|sgd|singapore\s+dollars?)(?![A-Za-z])"
         patterns = [
             rf"{currency}\s*{amount}",
-            rf"{amount}\s*{currency}\b",
+            rf"{amount}\s*{currency}",
         ]
         for pattern in patterns:
             match = re.search(pattern, text.lower())

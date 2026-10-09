@@ -2134,3 +2134,17 @@ def test_agent_compares_hypothetical_rates_when_pair_is_written_as_to():
     assert r["data"]["state_changed"] is False
     assert r["data"]["proposal"] is None
     assert e.get_balance() == before
+
+
+def test_agent_tuition_affordability_identifies_amounts_by_label_not_order():
+    e = FinanceEngine()
+    r = e.agent(
+        "Tuition is SGD 18,000, while I have SGD 7,000 available. Can I afford tuition?"
+    )
+
+    assert r["intent"] == "affordability"
+    assert r["data"]["available_cash_sgd"] == 7000.0
+    assert r["data"]["tuition_due_sgd"] == 18000.0
+    assert r["data"]["shortfall_sgd"] == 11000.0
+    assert r["data"]["state_changed"] is False
+    assert r["data"]["proposal"] is None

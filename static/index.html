@@ -274,6 +274,11 @@ function toggleStudioRate(){
     if(mode!=='custom') rate.value='';
   }
 }
+function escapeFXHtml(value){
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  })[ch]);
+}
 async function calculateFXPair(){
   const amount=Number(document.getElementById('fxAmount')?.value);
   const from=(document.getElementById('fxFrom')?.value||'').trim().toUpperCase();
@@ -306,10 +311,10 @@ async function calculateFXPair(){
     const modeLabel=mode==='custom'?'custom quoted rate':'reference rate';
     result.innerHTML='<div class="fxrate-big">1 '+from+' = '+Number(data.rate).toFixed(6)+' '+to+'</div>'
       +'<div style="font-size:16px;font-weight:800;margin:5px 0 8px">'+Number(data.amount).toLocaleString(undefined,{maximumFractionDigits:2})+' '+from+' → '+Number(data.converted_amount).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' '+to+'</div>'
-      +'<div class="fxmeta-line">'+modeLabel+' · '+source+' · '+date+'</div>'
+      +'<div class="fxmeta-line">'+modeLabel+' · '+escapeFXHtml(source)+' · '+escapeFXHtml(date)+'</div>'
       +'<div class="fxhint">Indicative/mid-market conversion only. It is not a guaranteed bank or remittance settlement quote.</div>';
   }catch(err){
-    result.innerHTML='<div class="fxrate-big">Conversion unavailable</div><div class="fxmeta-line">'+(err.message||'The reference-rate provider may be unavailable.')+' No transaction was created.</div>';
+    result.innerHTML='<div class="fxrate-big">Conversion unavailable</div><div class="fxmeta-line">'+escapeFXHtml(err.message||'The reference-rate provider may be unavailable.')+' No transaction was created.</div>';
   }
 }
 async function refresh(){const s=await getState(); window.currentProfile=s.profile||{}; renderState(s); const p=s.profile||{}; const c=p.planning_currency||s.forecast?.planning_currency||'SGD'; const bal=p.balances||{}; const chips=[`Planning ${c}`,`Balance ${money(bal[c]||0,c+' ')}`,`Income ${money(p.monthly_income_amount||0,(p.monthly_income_currency||c)+' ')}/mo`,`Net tuition ${money(s.forecast?.tuition_net_planning||0,c+' ')}`,`Accommodation ${money(p.accommodation_amount||0,c+' ')}/mo`,`Monthly plan ${money(s.spending?.total_planning||0,c+' ')}`,`${Object.keys(bal).length} currencies`]; document.getElementById('profilechips').innerHTML=chips.map(x=>`<span class="profilechip">${x}</span>`).join('');}

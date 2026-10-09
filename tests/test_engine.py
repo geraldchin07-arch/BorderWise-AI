@@ -2116,3 +2116,21 @@ def test_agent_tuition_affordability_uses_only_explicit_amounts():
     assert r["data"]["state_changed"] is False
     assert r["data"]["proposal"] is None
     assert e.get_balance() == before
+
+
+def test_agent_compares_hypothetical_rates_when_pair_is_written_as_to():
+    e = FinanceEngine()
+    before = e.get_balance()
+    r = e.agent(
+        "Compare MYR 10,000 at 0.32 versus 0.33 MYR to SGD and calculate the difference."
+    )
+
+    assert r["intent"] == "fx_comparison"
+    assert r["data"]["base_currency"] == "MYR"
+    assert r["data"]["quote_currency"] == "SGD"
+    assert r["data"]["rates"] == [0.32, 0.33]
+    assert r["data"]["converted_amounts"] == [3200.0, 3300.0]
+    assert r["data"]["difference"] == 100.0
+    assert r["data"]["state_changed"] is False
+    assert r["data"]["proposal"] is None
+    assert e.get_balance() == before

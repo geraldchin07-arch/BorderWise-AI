@@ -3672,7 +3672,7 @@ class FinanceEngine:
                 # conversion, prefer the amount inside the conversion clause.
                 # Example: "I have SGD 1,200 available. Convert SGD 300 to MYR."
                 # A whole-message first-match parser would otherwise convert 1,200.
-                clauses = re.split(r"[;\\n]|(?<=[.!?])\\s+|\\b(?:and then|then|also)\\b", str(text or ""), flags=re.I)
+                clauses = re.split(r"[;\n]|(?<=[.!?])\s+|\b(?:and then|then|also)\b", str(text or ""), flags=re.I)
                 for clause in clauses:
                     clause_pair = self.extract_conversion_pair(clause)
                     if not clause_pair or tuple(code.upper() for code in clause_pair) != tuple(code.upper() for code in pair):

@@ -3123,6 +3123,32 @@ class FinanceEngine:
                 },
             )
 
+        # Bank-recipient transfers are not implemented in this demo. Enforce this
+        # before any LLM/local planner can reinterpret the amount as an internal
+        # MYR→SGD conversion proposal.
+        named_recipient_action = (
+            any(k in normalized for k in ["recipient", "beneficiary", "payee"])
+            and any(k in normalized for k in ["transfer", "send", "remit", "pay", "prepare"])
+        )
+        if named_recipient_action:
+            return self._result(
+                "agentic_local",
+                "This XKF5 sandbox does not support payments to named recipients or bank-account transfers yet. "
+                "Its supported transfer proposal is an internal MYR-to-SGD conversion, not sending money to a person such as Alice. "
+                "I cannot verify or address a recipient from this chat. No proposal or transaction was created, and no account state changed.",
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Detected a named-recipient payment request."},
+                    {"step": "SECURITY", "status": "blocked", "detail": "Named-recipient payment is not supported by the current sandbox."},
+                ],
+                {
+                    "blocked_reason": "unsupported_recipient_transfer",
+                    "requested_action": "named_recipient_transfer",
+                    "state_changed": False,
+                    "proposal": None,
+                    "agent_mode": "deterministic_unsupported_recipient_gate",
+                },
+            )
+
         # User-supplied hypothetical FX rates are arithmetic inputs, not live quotes.
         # Evaluate them directly so a reference-rate lookup cannot override the scenario.
         hypothetical_text = self.repair_user_text(text).lower()

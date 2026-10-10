@@ -353,7 +353,7 @@ function renderDecisionCard(data){
 }
 async function send(){
  const input=document.getElementById('input');const text=input.value.trim();if(!text)return null;
- const priorHistory=conversationHistory.slice(-12).map(turn=>({
+ const priorHistory=conversationHistory.slice(-50).map(turn=>({
    role:turn.role,content:turn.content,proposal_id:turn.proposal_id||null
  }));
  addMsg(text,'user');input.value='';

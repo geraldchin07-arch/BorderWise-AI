@@ -210,23 +210,29 @@ class LocalAgentPlanner:
         possession_segments = [m.group("segment") for m in possession_pattern.finditer(t)]
         possession_segments_raw = [m.group("segment") for m in possession_pattern.finditer(raw_text)]
 
-        for segment in possession_segments:
+        # Ambiguous ISO codes overlap with ordinary words (e.g. "try 500" or
+        # "all 250"). Parse the currency token against the original possession
+        # segment before normalizing; lowercase prose must not become a wallet asset.
+        ambiguous_codes = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
+        ambiguous_code_patterns: dict[str, str] = {}
+        for code in ambiguous_codes:
+            amount = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?![A-Za-z0-9]|,\d|\.\d)"
+            token = rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])"
+            ambiguous_code_patterns[code] = rf"(?:{token}\s*{amount}|{amount}\s*{token})"
+
+        for segment_norm, segment_raw in zip(possession_segments, possession_segments_raw):
             for code, pattern in patterns_by_code.items():
-                match = re.search(pattern, segment, re.I)
+                if code in ambiguous_codes:
+                    explicit = re.search(ambiguous_code_patterns[code], segment_raw)
+                    if explicit:
+                        values = re.search(r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[km]?)(?![A-Za-z0-9]|,\d|\.\d)", explicit.group(0))
+                        if values:
+                            balances[code] = self._parse_human_amount(values.group(1))
+                    continue
+                match = re.search(pattern, segment_norm, re.I)
                 if match:
                     raw_amount = match.group(1) or match.group(2)
                     balances[code] = self._parse_human_amount(raw_amount)
-
-        # Ambiguous word-shaped codes (ALL, TRY, MAD, PEN, TOP, GEL, COP, BOB,
-        # RON) are accepted only in uppercase, so ordinary prose is not mistaken
-        # for a wallet currency.
-        ambiguous_codes = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
-        for code in ambiguous_codes:
-            for segment in possession_segments_raw:
-                amount_value = self._explicit_ambiguous_code_amount(segment, code)
-                if amount_value is not None:
-                    balances[code] = amount_value
-                    break
 
         # Also support a standalone reverse form such as "2,000 SGD" when it is not
         # associated with an outgoing obligation. This is a fallback for short scenarios

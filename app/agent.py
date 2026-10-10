@@ -252,6 +252,13 @@ For complex student-finance situations, build a goal-aware plan: identify essent
             and any(term in normalized for term in ("tuition is", "tuition costs", "tuition fee is", "tuition amount"))
             and any(term in normalized for term in ("i have", "available", "saved", "cash"))
         )
+        affordability_advice = (
+            intent == "affordability"
+            and any(term in normalized for term in (
+                "should i", "should we", "tuition coming up", "tuition due",
+                "upcoming tuition", "can i afford", "afford tuition",
+            ))
+        )
         hypothetical_income = (
             any(term in normalized for term in (
                 "what if i receive", "what if i get", "what if my parents",
@@ -266,6 +273,7 @@ For complex student-finance situations, build a goal-aware plan: identify essent
             or hypothetical_rate_comparison
             or savings_projection
             or explicit_tuition_scenario
+            or affordability_advice
             or hypothetical_income
         )
 

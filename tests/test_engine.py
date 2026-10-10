@@ -2944,12 +2944,22 @@ def test_new_proposal_supersedes_old_pending():
         e.authorize(older["id"], True)
 
 
-def test_affordability_blocked_conversion_does_not_crash():
+def test_unaffordable_tuition_question_is_read_only_and_does_not_prepare_conversion():
     e = FinanceEngine()
     e.state["education"]["tuition_semester_sgd"] = Decimal("30000")
+    balances_before = copy.deepcopy(e.get_balance())
+    proposals_before = copy.deepcopy(e.state["proposals"])
+
     result = e.agent("Can I afford my tuition?")
-    assert result["data"]["risk"]["status"] == "BLOCKED"
-    assert "proposal" not in result["data"]
+
+    assert result["intent"] == "affordability"
+    assert result["data"]["goal"] == "configured_tuition_affordability"
+    assert result["data"]["affordable"] is False
+    assert result["data"]["shortfall_sgd"] > 0
+    assert result["data"]["proposal"] is None
+    assert result["data"]["state_changed"] is False
+    assert e.get_balance() == balances_before
+    assert e.state["proposals"] == proposals_before
 
 
 def test_read_only_fx_quote_with_do_not_transfer_instruction_is_not_blocked():

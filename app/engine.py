@@ -4313,7 +4313,7 @@ class FinanceEngine:
         # fallback and the authority for calculations, policy and execution.
         try:
             from .agent import AgentOrchestrator
-            llm_result = AgentOrchestrator(self).run(text)
+            llm_result = AgentOrchestrator(self).run(text, conversation_history=conversation_history)
             if llm_result is not None:
                 return llm_result
         except Exception:

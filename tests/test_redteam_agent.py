@@ -1331,3 +1331,47 @@ def test_redteam_myr_advice_uses_all_message_stated_wallet_balances():
     assert engine.state["balances"] == balances_before
     assert engine.state["proposals"] == {}
 
+
+
+def test_redteam_llm_receives_recent_bounded_chat_history():
+    from types import SimpleNamespace
+
+    class CapturingResponses:
+        def __init__(self):
+            self.inputs = []
+
+        def create(self, **kwargs):
+            self.inputs.append(kwargs["input"])
+            return SimpleNamespace(
+                output=[],
+                output_text="I can clarify the earlier answer using the recent conversation.",
+            )
+
+    engine = FinanceEngine()
+    planner = AgentOrchestrator(engine)
+    planner.enabled = True
+    responses = CapturingResponses()
+    planner.client = SimpleNamespace(responses=responses)
+
+    history = [
+        {"role": "user", "content": "outdated first question"},
+        {"role": "assistant", "content": "outdated first answer"},
+    ]
+    for index in range(11):
+        history.extend([
+            {"role": "user", "content": f"user turn {index}"},
+            {"role": "assistant", "content": f"assistant turn {index}"},
+        ])
+
+    prompt = "Could you clarify that earlier answer?"
+    result = planner.run(prompt, conversation_history=history)
+
+    assert result is not None
+    assert "clarify the earlier answer" in result["answer"]
+    assert len(responses.inputs) == 1
+    supplied = responses.inputs[0]
+    assert len(supplied) == 21  # last 20 history records + the current request
+    assert supplied[0] == {"role": "user", "content": "user turn 1"}
+    assert supplied[-2] == {"role": "assistant", "content": "assistant turn 10"}
+    assert supplied[-1] == {"role": "user", "content": prompt}
+    assert all(turn["content"] != "outdated first question" for turn in supplied)

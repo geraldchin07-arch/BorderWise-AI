@@ -405,10 +405,14 @@ function showProposal(p){
 async function authorize(approved){
  if(!latestProposal)return;
  const proposalId=latestProposal.id;
+ const acknowledgeReview = Boolean(approved && String(latestProposal.risk?.status||'').toUpperCase()==='REVIEW');
+ if(acknowledgeReview && !window.confirm(
+  'This is a high-value transfer requiring explicit review. Confirm that you have reviewed the amount, destination, quote and risk reasons before authorizing.'
+ ))return;
  let r;
  let p;
  try{
-  r=await fetch('/api/authorize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proposal_id:proposalId,approved})});
+  r=await fetch('/api/authorize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proposal_id:proposalId,approved,acknowledge_review:acknowledgeReview})});
   p=await r.json();
  }catch(error){
   addMsg('Authorization could not be verified because the request failed. No execution was requested.','bot');

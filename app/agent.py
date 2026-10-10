@@ -225,6 +225,18 @@ For complex student-finance situations, build a goal-aware plan: identify essent
             and any(term in normalized for term in ("convert", "exchange", "conversion", "calculate", "compare"))
         )
 
+        requested_pair = self.engine.extract_conversion_pair(user_text)
+        display_match = re.search(
+            r"\\b(?:show|display|express|present|give)\\b.{0,40}\\b(?:result|amount|conversion|value)\\b.{0,20}\\b(?:in|as)\\s+([A-Z]{3})\\b",
+            str(user_text or ""),
+            re.I,
+        )
+        display_currency_conversion = bool(
+            requested_pair
+            and display_match
+            and display_match.group(1).upper() != requested_pair[1].upper()
+        )
+
         hypothetical_rate_comparison = (
             intent == "general"
             and any(term in normalized for term in ("hypothetical", "assume", "assumed"))
@@ -250,6 +262,7 @@ For complex student-finance situations, build a goal-aware plan: identify essent
         )
         return (
             explicit_multi_pair_conversion
+            or display_currency_conversion
             or hypothetical_rate_comparison
             or savings_projection
             or explicit_tuition_scenario

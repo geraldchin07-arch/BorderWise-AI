@@ -776,6 +776,39 @@ def test_redteam_single_conversion_without_second_display_conversion_remains_eli
     ) is False
 
 
+def test_redteam_display_conversion_supports_additional_supported_currency_codes(monkeypatch):
+    engine = FinanceEngine()
+    rates = {
+        ("MYR", "SGD"): 0.32,
+        ("SGD", "KWD"): 0.0023,
+    }
+
+    def fake_quote(amount, base, quote):
+        rate = rates[(base, quote)]
+        return {
+            "amount": float(amount),
+            "from_currency": base,
+            "to_currency": quote,
+            "converted_amount": round(float(amount) * rate, 2),
+            "rate": rate,
+            "fx": {"source": "test-reference", "rate_date": "2026-10-10"},
+        }
+
+    monkeypatch.setattr(engine, "quote_conversion", fake_quote)
+    before = engine.get_balance()
+    result = engine.agent("Convert 500 MYR to SGD, but show the result in KWD.")
+
+    assert result["intent"] == "fx"
+    assert result["data"]["requested_target_currency"] == "SGD"
+    assert result["data"]["display_currency"] == "KWD"
+    assert result["data"]["conversion"]["converted_amount"] == 160.0
+    assert result["data"]["display_conversion"]["converted_amount"] == 0.37
+    assert result["data"]["state_changed"] is False
+    assert result["data"]["proposal"] is None
+    assert engine.get_balance() == before
+    assert "show the result in KWD" in result["answer"]
+
+
 def test_redteam_different_display_currency_routes_through_deterministic_conversion():
     planner = AgentOrchestrator(FinanceEngine())
     assert planner._prefer_deterministic_planner(

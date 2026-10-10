@@ -1,14 +1,23 @@
 # XKF5 AI Stress Test Plan
 
 Branch: `agent`  
-Baseline commit: `5d12f55d1cfbbf3a727c37458df5a686e6c41e30`  
+Verified baseline commit: `f6399f3a7d267af5c2f4f618374f5a013f815503`  
 Scope: deterministic engine, offline planner, LLM orchestration, chat API, and UI conversation context.
 
 ## Current automated baseline
 
-GitHub Actions run [38039201951](https://github.com/geraldchin07-arch/XKF5-AI/actions/runs/38039201951) passed after the concurrent-proposal test was corrected to compare against the seeded transaction baseline. The preceding run had 318 passing tests and one failure caused by incorrectly expecting a newly created engine to have zero seeded transactions.
+GitHub Actions run [38047892164](https://github.com/geraldchin07-arch/XKF5-AI/actions/runs/38047892164) passed on 2026-10-10 with **332 tests passing** after Python compilation succeeded.
 
-A green unit-test suite is evidence of tested behavior, not a guarantee that every live-app path or external FX integration behaves correctly.
+Recent regression coverage now includes:
+- The offline planner rebuilds hypothetical wallet and savings context from the supplied conversation history instead of sharing those scenarios across chat sessions.
+- Follow-up balances merge by currency, so adding MYR on a later turn does not discard an earlier SGD balance.
+- The optional LLM planner receives at most 20 recent user/assistant history records, followed by the current message; history is explicitly treated as untrusted context and cannot grant authorization.
+- Demo reset clears hypothetical planner memory.
+- The API returns HTTP 429 for rate-limit violations.
+- The engine is tested for duplicate core method definitions after a large redundant block was removed.
+- Tuition-conversion advice remains read-only and does not create a transfer proposal.
+
+A green unit-test suite is evidence of tested behavior, not a guarantee that every live-app path or external FX integration behaves correctly. The longer scenarios below remain a test plan unless a specific run/result is recorded.
 
 ## Test protocol
 

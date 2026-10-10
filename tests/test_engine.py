@@ -2122,6 +2122,10 @@ def test_generic_currency_amount_rejects_unknown_three_letter_words():
     assert e.extract_generic_currency_amount("CUP 500 to SGD") == (Decimal("500.00"), "CUP")
     assert e.extract_conversion_pair("convert cup to SGD") is None
     assert e.extract_conversion_pair("convert CUP to SGD") == ("CUP", "SGD")
+    assert e.extract_conversion_pair("CUP is a code, but convert cup to SGD") is None
+    assert e.extract_conversion_pair("convert cup to SGD; CUP is a code") is None
+    assert e.extract_conversion_pair("convert try to SGD") is None
+    assert e.extract_conversion_pair("convert TRY to SGD") == ("TRY", "SGD")
 
 
 @pytest.mark.parametrize(

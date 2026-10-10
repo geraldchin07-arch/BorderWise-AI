@@ -2142,6 +2142,24 @@ def test_financial_reasoning_intent_beats_incidental_fx_words(prompt, expected_i
     assert e.detect_intent(prompt) == expected_intent
 
 
+@pytest.mark.parametrize(
+    ("prompt", "expected"),
+    [
+        ("I have TRY 500 and SGD 1000.", {"TRY": 500.0, "SGD": 1000.0}),
+        ("I have try 500 and SGD 1000.", {"SGD": 1000.0}),
+        ("I have ALL 250 and MYR 100.", {"ALL": 250.0, "MYR": 100.0}),
+        ("I have all 250 and MYR 100.", {"MYR": 100.0}),
+        ("I have TRY 5k and CNY 1000.", {"TRY": 5000.0, "CNY": 1000.0}),
+    ],
+)
+def test_local_agent_wallet_balances_require_explicit_ambiguous_code_case(prompt, expected):
+    e = FinanceEngine()
+    from app.local_agent import LocalAgentPlanner
+    planner = LocalAgentPlanner(e)
+    balances = planner._extract_wallet_balances_from_text(prompt)
+    assert {key: float(value) for key, value in balances.items()} == expected
+
+
 def test_local_agent_calculates_savings_goal_from_explicit_inputs():
     e = FinanceEngine()
     before = e.get_balance()

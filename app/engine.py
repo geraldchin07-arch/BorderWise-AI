@@ -1533,7 +1533,7 @@ class FinanceEngine:
             "quoted_at": quoted_at.isoformat(),
             "expires_at": quote_expires_at.isoformat(),
         }
-        pid = "P-" + uuid.uuid4().hex[:8].upper()
+        pid = "P-" + uuid.uuid4().hex.upper()
         proposal = {
             "id": pid,
             "created_at": quoted_at.isoformat(),
@@ -1693,7 +1693,7 @@ class FinanceEngine:
         self.state["balances"]["SGD"] = money(before_sgd + amount_sgd)
 
         tx = Transaction(
-            "TX-" + uuid.uuid4().hex[:8].upper(),
+            "TX-" + uuid.uuid4().hex.upper(),
             datetime.now(timezone.utc).isoformat(),
             "conversion",
             "MYR",

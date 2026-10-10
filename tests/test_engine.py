@@ -3613,3 +3613,18 @@ def test_proposals_api_lists_pending_proposals():
     assert listed["status"] == "PENDING_AUTHORIZATION"
     assert listed["amount_myr"] == 250.0
     assert main_module.engine.get_transactions() == transactions_before
+
+
+def test_generated_proposal_and_transaction_ids_use_full_uuid_tokens():
+    engine = FinanceEngine()
+    proposal = engine.create_proposal(Decimal("250.00"), "UUID token regression")
+
+    proposal_token = proposal["id"].removeprefix("P-")
+    assert len(proposal_token) == 32
+    assert all(char in "0123456789ABCDEF" for char in proposal_token)
+
+    engine.authorize(proposal["id"], True)
+    result = engine.execute(proposal["id"])
+    transaction_token = result["transaction"]["id"].removeprefix("TX-")
+    assert len(transaction_token) == 32
+    assert all(char in "0123456789ABCDEF" for char in transaction_token)

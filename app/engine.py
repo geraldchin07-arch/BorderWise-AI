@@ -1678,49 +1678,55 @@ class FinanceEngine:
         return None
 
     def extract_generic_currency_amount(self, text: str) -> tuple[Decimal, str] | None:
-        """Extract an explicit amount and canonical currency code from codes or common names."""
+        """Extract one explicitly marked amount/currency pair, without guessing shared symbols."""
         if self.has_scientific_amount(text):
             return None
+
         raw_text = str(text or "").strip()
-        t = self.repair_user_text(raw_text).strip()
+        normalized = self.repair_user_text(raw_text)
         amount = r"(?<![\d,.\-+])((?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?[kKmM]?)(?![A-Za-z0-9]|,\d|\.\d)"
-        # ISO codes are the least ambiguous form and retain compatibility with existing inputs.
-        code_match = re.search(
-            rf"(?:^|\s)([A-Za-z]{{3}})\s*{amount}\b|(?:^|\s){amount}\s*([A-Za-z]{{3}})(?:\s|$)",
-            t,
-        )
-        if code_match:
-            code = (code_match.group(1) or code_match.group(4)).upper()
-            value = code_match.group(2) or code_match.group(3)
-            # A three-letter word is not automatically an ISO currency code.
-            # Without this allowlist, ordinary prose such as "the 500" could be
-            # misread as currency THE and incorrectly satisfy amount detection.
-            supported_codes = {
-                "SGD", "MYR", "USD", "CNY", "EUR", "GBP", "JPY", "KRW",
-                "THB", "AUD", "CAD", "HKD", "TWD", "INR", "AFN", "AOA", "BBD", "BMD", "BSD", "BTN", "BZD", "CUP", "CVE", "FKP", "GIP", "GMD", "GNF", "IRR", "KGS", "KPW", "KYD", "LRD", "LYD", "MRU", "NIO", "PGK", "SHP", "SLE", "STN", "SZL", "ZWG", "IDR", "PHP",
-                "VND", "NZD", "CHF", "SEK", "NOK", "DKK", "SAR", "AED",
-                "QAR", "BND", "BHD", "TRY", "BDT", "TND", "ALL", "AMD", "ARS", "AZN", "BAM", "BGN",
-                "BOB", "BRL", "BYN", "CLP", "COP", "CRC", "CZK", "DOP",
-                "DZD", "EGP", "GEL", "GHS", "GTQ", "HNL", "HUF", "ILS",
-                "IQD", "ISK", "JOD", "KES", "KWD", "KZT", "LBP", "LKR",
-                "MAD", "MDL", "MKD", "MMK", "MNT", "MOP", "MUR", "MVR",
-                "MXN", "NGN", "NPR", "OMR", "PEN", "PKR", "PLN", "PYG",
-                "RON", "RSD", "RUB", "RWF", "UAH", "UYU", "UZS", "VES",
-                "XAF", "XOF", "XPF", "ZAR", "ZMW", "ZWL", "ETB", "TZS",
-                "UGX", "XCD", "BWP", "BIF", "CDF", "DJF", "ERN", "FJD",
-                "GYD", "HTG", "JMD", "KHR", "KMF", "LAK", "LSL", "MGA",
-                "MWK", "MZN", "NAD", "PAB", "SBD", "SCR", "SDG", "SOS",
-                "SRD", "SSP", "SYP", "TJS", "TMT", "TOP", "TTD", "VUV",
-                "WST", "YER",
-            }
-            ambiguous_words = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
-            # Common English words/names that overlap ISO codes are accepted as
-            # codes only when the user clearly typed the uppercase code.
-            if code in supported_codes and (
-                code not in ambiguous_words
-                or re.search(rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", raw_text)
+
+        # Keep this allowlist local and explicit: a random three-letter word is
+        # not enough evidence that a number is denominated in a currency.
+        supported_codes = {
+            "SGD", "MYR", "USD", "CNY", "EUR", "GBP", "JPY", "KRW", "THB",
+            "AUD", "CAD", "HKD", "TWD", "INR", "IDR", "PHP", "VND", "NZD",
+            "CHF", "SEK", "NOK", "DKK", "SAR", "AED", "QAR", "BND", "BHD",
+            "TRY", "BDT", "TND", "ALL", "AMD", "ARS", "AZN", "BAM", "BGN",
+            "BOB", "BRL", "BYN", "CLP", "COP", "CRC", "CZK", "DOP", "DZD",
+            "EGP", "GEL", "GHS", "GTQ", "HNL", "HUF", "ILS", "IQD", "ISK",
+            "JOD", "KES", "KWD", "KZT", "LBP", "LKR", "MAD", "MDL", "MKD",
+            "MMK", "MNT", "MOP", "MUR", "MVR", "MXN", "NGN", "NPR", "OMR",
+            "PEN", "PKR", "PLN", "PYG", "RON", "RSD", "RUB", "RWF", "UAH",
+            "UYU", "UZS", "VES", "XAF", "XOF", "XPF", "ZAR", "ZMW", "ZWL",
+            "ETB", "TZS", "UGX", "XCD", "BWP", "BIF", "CDF", "DJF", "ERN",
+            "FJD", "GYD", "HTG", "JMD", "KHR", "KMF", "LAK", "LSL", "MGA",
+            "MWK", "MZN", "NAD", "PAB", "SBD", "SCR", "SDG", "SOS", "SRD",
+            "SSP", "SYP", "TJS", "TMT", "TOP", "TTD", "VUV", "WST", "YER",
+            "AFN", "AOA", "BBD", "BMD", "BSD", "BTN", "BZD", "CUP", "CVE",
+            "FKP", "GIP", "GMD", "GNF", "IRR", "KGS", "KPW", "KYD", "LRD",
+            "LYD", "MRU", "NIO", "PGK", "SHP", "SLE", "STN", "SZL", "ZWG",
+        }
+        ambiguous_codes = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
+        raw_upper = raw_text
+
+        # Unicode symbols are accepted only when their symbol identifies a
+        # single currency. Dollar and yen signs are deliberately excluded.
+        symbol_aliases = {
+            "R$": "BRL", "zł": "PLN", "€": "EUR", "£": "GBP", "₹": "INR",
+            "₩": "KRW", "฿": "THB", "₱": "PHP", "₦": "NGN", "₺": "TRY",
+            "₪": "ILS", "₫": "VND", "₴": "UAH", "₡": "CRC", "₲": "PYG",
+            "₵": "GHS", "₸": "KZT", "₭": "LAK", "₮": "MNT", "₼": "AZN",
+        }
+        for symbol in sorted(symbol_aliases, key=len, reverse=True):
+            symbol_pattern = re.escape(symbol)
+            for pattern in (
+                rf"(?<![A-Za-z]){symbol_pattern}\s*{amount}",
+                rf"{amount}\s*{symbol_pattern}(?![A-Za-z])",
             ):
-                return self.parse_amount_token(value), code
+                match = re.search(pattern, normalized, re.IGNORECASE)
+                if match:
+                    return self.parse_amount_token(match.group(1)), symbol_aliases[symbol]
 
         aliases = {
             "SINGAPORE DOLLARS": "SGD", "SINGAPORE DOLLAR": "SGD", "S$": "SGD",
@@ -1737,102 +1743,78 @@ class FinanceEngine:
             "SEK": "SEK", "NOK": "NOK", "DKK": "DKK", "SAR": "SAR",
             "AED": "AED", "QAR": "QAR", "BND": "BND", "BHD": "BHD",
             "TRY": "TRY", "BDT": "BDT", "TND": "TND",
-            "ALBANIAN LEK": "ALL", "LEK": "ALL",
-            "SOUTH AFRICAN RAND": "ZAR", "RAND": "ZAR",
-            "KUWAITI DINAR": "KWD", "POLISH ZLOTY": "PLN", "ZLOTY": "PLN",
-            "TURKISH LIRA": "TRY", "MEXICAN PESO": "MXN",
-            "MOROCCAN DIRHAM": "MAD", "PERUVIAN SOL": "PEN",
-            "TONGAN PAANGA": "TOP", "GEORGIAN LARI": "GEL", "LARI": "GEL",
-            "COLOMBIAN PESO": "COP", "BOLIVIAN BOLIVIANO": "BOB",
-            "ROMANIAN LEU": "RON", "ROMANIAN LEI": "RON",
-            "BRAZILIAN REAL": "BRL", "SWISS FRANC": "CHF",
-            "CANADIAN DOLLAR": "CAD", "AUSTRALIAN DOLLAR": "AUD",
-            "HONG KONG DOLLAR": "HKD", "NEW ZEALAND DOLLAR": "NZD",
-            "INDIAN RUPEE": "INR", "INDONESIAN RUPIAH": "IDR",
-            "PHILIPPINE PESO": "PHP", "VIETNAMESE DONG": "VND",
-            "THAI BAHT": "THB", "KOREAN WON": "KRW", "JAPANESE YEN": "JPY",
-            "CHINESE YUAN": "CNY", "SAUDI RIYAL": "SAR",
-            "UAE DIRHAM": "AED", "QATARI RIYAL": "QAR",
-            "PAKISTANI RUPEE": "PKR", "BANGLADESHI TAKA": "BDT",
-            "NIGERIAN NAIRA": "NGN", "EGYPTIAN POUND": "EGP",
-            "ISRAELI NEW SHEKEL": "ILS",
-            "AFGHAN AFGHANI": "AFN", "AFGHANI": "AFN",
-            "ANGOLAN KWANZA": "AOA", "BARBADIAN DOLLAR": "BBD",
-            "BERMUDIAN DOLLAR": "BMD", "BAHAMIAN DOLLAR": "BSD",
-            "BHUTANESE NGULTRUM": "BTN", "BELIZE DOLLAR": "BZD",
-            "CUBAN PESO": "CUP", "CAPE VERDE ESCUDO": "CVE",
-            "FALKLAND ISLANDS POUND": "FKP", "GIBRALTAR POUND": "GIP",
-            "GAMBIAN DALASI": "GMD", "GUINEAN FRANC": "GNF",
-            "IRANIAN RIAL": "IRR", "KYRGYZSTANI SOM": "KGS",
-            "NORTH KOREAN WON": "KPW", "CAYMAN ISLANDS DOLLAR": "KYD",
-            "LIBERIAN DOLLAR": "LRD", "LIBYAN DINAR": "LYD",
+            "ALBANIAN LEK": "ALL", "LEK": "ALL", "SOUTH AFRICAN RAND": "ZAR",
+            "RAND": "ZAR", "KUWAITI DINAR": "KWD", "POLISH ZLOTY": "PLN",
+            "ZLOTY": "PLN", "TURKISH LIRA": "TRY", "MEXICAN PESO": "MXN",
+            "MOROCCAN DIRHAM": "MAD", "PERUVIAN SOL": "PEN", "TONGAN PAANGA": "TOP",
+            "GEORGIAN LARI": "GEL", "LARI": "GEL", "COLOMBIAN PESO": "COP",
+            "BOLIVIAN BOLIVIANO": "BOB", "ROMANIAN LEU": "RON", "ROMANIAN LEI": "RON",
+            "BRAZILIAN REAL": "BRL", "SWISS FRANC": "CHF", "CANADIAN DOLLAR": "CAD",
+            "AUSTRALIAN DOLLAR": "AUD", "HONG KONG DOLLAR": "HKD",
+            "NEW ZEALAND DOLLAR": "NZD", "INDIAN RUPEE": "INR",
+            "INDONESIAN RUPIAH": "IDR", "PHILIPPINE PESO": "PHP",
+            "VIETNAMESE DONG": "VND", "THAI BAHT": "THB", "KOREAN WON": "KRW",
+            "JAPANESE YEN": "JPY", "CHINESE YUAN": "CNY", "SAUDI RIYAL": "SAR",
+            "UAE DIRHAM": "AED", "QATARI RIYAL": "QAR", "PAKISTANI RUPEE": "PKR",
+            "BANGLADESHI TAKA": "BDT", "NIGERIAN NAIRA": "NGN", "EGYPTIAN POUND": "EGP",
+            "ISRAELI NEW SHEKEL": "ILS", "AFGHAN AFGHANI": "AFN", "AFGHANI": "AFN",
+            "ANGOLAN KWANZA": "AOA", "BARBADIAN DOLLAR": "BBD", "BERMUDIAN DOLLAR": "BMD",
+            "BAHAMIAN DOLLAR": "BSD", "BHUTANESE NGULTRUM": "BTN", "BELIZE DOLLAR": "BZD",
+            "CUBAN PESO": "CUP", "CAPE VERDE ESCUDO": "CVE", "FALKLAND ISLANDS POUND": "FKP",
+            "GIBRALTAR POUND": "GIP", "GAMBIAN DALASI": "GMD", "GUINEAN FRANC": "GNF",
+            "IRANIAN RIAL": "IRR", "KYRGYZSTANI SOM": "KGS", "NORTH KOREAN WON": "KPW",
+            "CAYMAN ISLANDS DOLLAR": "KYD", "LIBERIAN DOLLAR": "LRD", "LIBYAN DINAR": "LYD",
             "MAURITANIAN OUGUIYA": "MRU", "NICARAGUAN CORDOBA": "NIO",
             "PAPUA NEW GUINEAN KINA": "PGK", "SAINT HELENA POUND": "SHP",
-            "SIERRA LEONEAN LEONE": "SLE", "SAO TOME DOBRA": "STN",
-            "SWAZI LILANGENI": "SZL", "ZIMBABWE GOLD": "ZWG",
-            "ALL": "ALL", "AMD": "AMD", "ARS": "ARS", "AZN": "AZN",
-            "AFN": "AFN", "AOA": "AOA", "BBD": "BBD", "BMD": "BMD", "BSD": "BSD", "BTN": "BTN", "BZD": "BZD", "CUP": "CUP", "CVE": "CVE", "FKP": "FKP", "GIP": "GIP", "GMD": "GMD", "GNF": "GNF", "IRR": "IRR", "KGS": "KGS", "KPW": "KPW", "KYD": "KYD", "LRD": "LRD", "LYD": "LYD", "MRU": "MRU", "NIO": "NIO", "PGK": "PGK", "SHP": "SHP", "SLE": "SLE", "STN": "STN", "SZL": "SZL", "ZWG": "ZWG",
-            "BAM": "BAM", "BGN": "BGN", "BOB": "BOB", "BRL": "BRL",
-            "BYN": "BYN", "CLP": "CLP", "COP": "COP", "CRC": "CRC",
-            "CZK": "CZK", "DOP": "DOP", "DZD": "DZD", "EGP": "EGP",
-            "GEL": "GEL", "GHS": "GHS", "GTQ": "GTQ", "HNL": "HNL",
-            "HUF": "HUF", "ILS": "ILS", "IQD": "IQD", "ISK": "ISK",
-            "JOD": "JOD", "KES": "KES", "KWD": "KWD", "KZT": "KZT",
-            "LBP": "LBP", "LKR": "LKR", "MAD": "MAD", "MDL": "MDL",
-            "MKD": "MKD", "MMK": "MMK", "MNT": "MNT", "MOP": "MOP",
-            "MUR": "MUR", "MVR": "MVR", "MXN": "MXN", "NGN": "NGN",
-            "NPR": "NPR", "OMR": "OMR", "PEN": "PEN", "PKR": "PKR",
-            "PLN": "PLN", "PYG": "PYG", "RON": "RON", "RSD": "RSD",
-            "RUB": "RUB", "RWF": "RWF", "UAH": "UAH", "UYU": "UYU",
-            "UZS": "UZS", "VES": "VES", "XAF": "XAF", "XOF": "XOF",
-            "XPF": "XPF", "ZAR": "ZAR", "ZMW": "ZMW", "ZWL": "ZWL",
-            "ETB": "ETB", "TZS": "TZS", "UGX": "UGX", "XCD": "XCD",
-            "BWP": "BWP", "BIF": "BIF", "CDF": "CDF", "DJF": "DJF",
-            "ERN": "ERN", "FJD": "FJD", "GYD": "GYD", "HTG": "HTG",
-            "JMD": "JMD", "KHR": "KHR", "KMF": "KMF", "LAK": "LAK",
-            "LSL": "LSL", "MGA": "MGA", "MWK": "MWK", "MZN": "MZN",
-            "NAD": "NAD", "PAB": "PAB", "SBD": "SBD", "SCR": "SCR",
-            "SDG": "SDG", "SOS": "SOS", "SRD": "SRD", "SSP": "SSP",
-            "SYP": "SYP", "TJS": "TJS", "TMT": "TMT", "TOP": "TOP",
-            "TTD": "TTD", "VUV": "VUV", "WST": "WST", "YER": "YER",
+            "SIERRA LEONEAN LEONE": "SLE", "SAO TOME DOBRA": "STN", "SWAZI LILANGENI": "SZL",
+            "ZIMBABWE GOLD": "ZWG",
         }
-        ambiguous_words = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
-        # Currency symbols are useful natural-language input, but only map symbols
-        # that identify one currency unambiguously. In particular, "$" and "¥"
-        # are intentionally excluded because they are shared by several currencies.
-        symbol_aliases = {
-            "R$": "BRL", "zł": "PLN", "€": "EUR", "£": "GBP", "₹": "INR",
-            "₩": "KRW", "฿": "THB", "₱": "PHP", "₦": "NGN", "₺": "TRY",
-            "₪": "ILS", "₫": "VND", "₴": "UAH", "₡": "CRC", "₲": "PYG",
-            "₵": "GHS", "₸": "KZT", "₭": "LAK", "₮": "MNT", "₼": "AZN",
-        }
-        for symbol in sorted(symbol_aliases, key=len, reverse=True):
-            symbol_pattern = re.escape(symbol)
-            for pattern in (rf"(?<![A-Za-z]){symbol_pattern}\s*{amount}",
-                            rf"{amount}\s*{symbol_pattern}(?![A-Za-z])"):
-                match = re.search(pattern, t, re.IGNORECASE)
-                if match:
-                    return self.parse_amount_token(match.group(1)), symbol_aliases[symbol]
-        for alias in sorted(aliases, key=len, reverse=True):
-            if alias in ambiguous_words and not re.search(
-                rf"(?<![A-Za-z]){re.escape(alias)}(?![A-Za-z])", raw_text
-            ):
-                continue
-            escaped = re.escape(alias)
-            if re.fullmatch(r"[A-Z]+", alias):
-                token = rf"(?<![A-Za-z]){escaped}(?![A-Za-z])"
+
+        candidates: list[tuple[int, int, str, Decimal]] = []
+        source = normalized.upper()
+        # Match longer currency names before shorter overlapping names.
+        patterns: list[tuple[str, str]] = [
+            (alias, code) for alias, code in aliases.items()
+        ]
+        patterns.extend((code, code) for code in supported_codes)
+        for alias, code in sorted(patterns, key=lambda item: len(item[0]), reverse=True):
+            if re.fullmatch(r"[A-Z]{3}", alias):
+                token = rf"(?<![A-Z]){re.escape(alias)}(?![A-Z])"
             else:
-                token = rf"(?<![A-Za-z]){escaped}(?![A-Za-z])"
-            patterns = [
-                (rf"{token}\s*{amount}", True),
-                (rf"{amount}\s*{token}", False),
-            ]
-            for pattern, amount_follows in patterns:
-                match = re.search(pattern, t, re.IGNORECASE)
-                if match:
-                    value = match.group(1) if amount_follows else match.group(1)
-                    return self.parse_amount_token(value), aliases[alias]
-        return None
+                token = rf"(?<![A-Z]){re.escape(alias)}(?![A-Z])"
+            # Require an amount adjacent to the currency marker. This prevents
+            # unrelated amounts in the same sentence (e.g. dates and budgets)
+            # from being attributed to a distant currency mention.
+            for pattern in (
+                rf"{token}\s*{amount}",
+                rf"{amount}\s*{token}",
+            ):
+                match = re.search(pattern, source)
+                if not match:
+                    continue
+                if code in ambiguous_codes and not re.search(
+                    rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", raw_upper
+                ):
+                    continue
+                numeric_match = re.search(amount, match.group(0))
+                if not numeric_match:
+                    continue
+                candidates.append((match.start(), -len(alias), code, self.parse_amount_token(numeric_match.group(1))))
+
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: (item[0], item[1]))
+        # Multiple explicit amount/currency pairs are ambiguous for this single-value
+        # helper. Do not silently pick the first/last; caller should use pair-specific
+        # parsing or ask the user to clarify.
+        if len(candidates) > 1:
+            first_pos, first_len, first_code, first_amount = candidates[0]
+            distinct = {(code, amount) for _, _, code, amount in candidates}
+            if len(distinct) > 1:
+                return None
+            # Repeated references to same pair (e.g. "SGD 100, exactly SGD 100") are safe.
+            return first_amount, first_code
+        return candidates[0][3], candidates[0][2]
 
     def extract_conversion_pair(self, text: str) -> tuple[str, str] | None:
         """Extract and canonicalize a user-requested FX pair from codes or currency names."""

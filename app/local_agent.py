@@ -809,11 +809,16 @@ class LocalAgentPlanner:
         should_convert_myr_for_tuition = (
             myr is not None
             and tuition_context
+            and not received
             and any(k in t for k in [
-                "should i convert", "should i exchange", "convert some",
-                "exchange some", "convert it to sgd", "convert to sgd",
+                "convert some", "exchange some", "convert it to sgd",
+                "convert to sgd",
             ])
             and any(k in t for k in ["i have", "have rm", "have myr", "myr"])
+            and not any(k in t for k in [
+                "what should i convert", "which currency should i use",
+                "how much should i convert", "i need sgd",
+            ])
         )
         if should_convert_myr_for_tuition:
             stated_myr = self.engine.money_value(myr)

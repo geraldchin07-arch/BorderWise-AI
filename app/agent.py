@@ -509,7 +509,7 @@ For complex student-finance situations, build a goal-aware plan: identify essent
                     instructions=self.SYSTEM,
                     input=input_items,
                     tools=self.tool_schemas(),
-                    max_output_tokens=700,
+                    max_output_tokens=2000,
                 )
 
                 # Preserve the model's response items, including reasoning items required

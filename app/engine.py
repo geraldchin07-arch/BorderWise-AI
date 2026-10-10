@@ -3464,7 +3464,7 @@ class FinanceEngine:
                         f"against about SGD {tuition_amount:,.2f} tuition, leaving roughly SGD {remaining:,.2f}."
                     )
                 return self._result(
-                    "agentic_local",
+                    "affordability",
                     answer + " This is an affordability simulation using only the amounts you supplied; no transaction was created or executed.",
                     [
                         {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an informal tuition-affordability question with explicit scenario amounts."},
@@ -5634,7 +5634,7 @@ class FinanceEngine:
                         f"against about SGD {tuition_amount:,.2f} tuition, leaving roughly SGD {remaining:,.2f}."
                     )
                 return self._result(
-                    "agentic_local",
+                    "affordability",
                     answer + " This is an affordability simulation using only the amounts you supplied; no transaction was created or executed.",
                     [
                         {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an informal tuition-affordability question with explicit scenario amounts."},
@@ -7804,7 +7804,7 @@ class FinanceEngine:
                         f"against about SGD {tuition_amount:,.2f} tuition, leaving roughly SGD {remaining:,.2f}."
                     )
                 return self._result(
-                    "agentic_local",
+                    "affordability",
                     answer + " This is an affordability simulation using only the amounts you supplied; no transaction was created or executed.",
                     [
                         {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an informal tuition-affordability question with explicit scenario amounts."},
@@ -9974,7 +9974,7 @@ class FinanceEngine:
                         f"against about SGD {tuition_amount:,.2f} tuition, leaving roughly SGD {remaining:,.2f}."
                     )
                 return self._result(
-                    "agentic_local",
+                    "affordability",
                     answer + " This is an affordability simulation using only the amounts you supplied; no transaction was created or executed.",
                     [
                         {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an informal tuition-affordability question with explicit scenario amounts."},
@@ -12144,7 +12144,7 @@ class FinanceEngine:
                         f"against about SGD {tuition_amount:,.2f} tuition, leaving roughly SGD {remaining:,.2f}."
                     )
                 return self._result(
-                    "agentic_local",
+                    "affordability",
                     answer + " This is an affordability simulation using only the amounts you supplied; no transaction was created or executed.",
                     [
                         {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an informal tuition-affordability question with explicit scenario amounts."},
@@ -14314,7 +14314,7 @@ class FinanceEngine:
                         f"against about SGD {tuition_amount:,.2f} tuition, leaving roughly SGD {remaining:,.2f}."
                     )
                 return self._result(
-                    "agentic_local",
+                    "affordability",
                     answer + " This is an affordability simulation using only the amounts you supplied; no transaction was created or executed.",
                     [
                         {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an informal tuition-affordability question with explicit scenario amounts."},
@@ -16484,7 +16484,7 @@ class FinanceEngine:
                         f"against about SGD {tuition_amount:,.2f} tuition, leaving roughly SGD {remaining:,.2f}."
                     )
                 return self._result(
-                    "agentic_local",
+                    "affordability",
                     answer + " This is an affordability simulation using only the amounts you supplied; no transaction was created or executed.",
                     [
                         {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an informal tuition-affordability question with explicit scenario amounts."},

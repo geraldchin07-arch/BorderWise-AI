@@ -1014,3 +1014,31 @@ def test_redteam_valid_fx_tool_result_overrides_hallucinated_llm_arithmetic():
     assert result["data"]["state_changed"] is False
     assert result["data"]["proposal"] is None
     assert planner.client.responses.calls == 2
+
+
+def test_redteam_incomplete_fx_tool_result_cannot_be_replaced_by_llm_arithmetic():
+    import json
+    from types import SimpleNamespace
+
+    class FakeResponses:
+        calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                call = SimpleNamespace(
+                    type="function_call",
+                    name="convert_currency",
+                    arguments=json.dumps({"amount": 100, "from_currency": "MYR", "to_currency": "SGD"}),
+                    call_id="incomplete-fx-result",
+                )
+                return SimpleNamespace(output=[call], output_text="")
+            return SimpleNamespace(output=[], output_text="100 MYR becomes 9999 SGD.")
+
+    planner = AgentOrchestrator(FinanceEngine())
+    planner.enabled = True
+    planner.client = SimpleNamespace(responses=FakeResponses())
+    planner.call_tool = lambda name, args: {"ok": True, "result": {"rate": 0.32}}
+
+    assert planner.run("Convert 100 MYR to SGD.") is None
+    assert planner.client.responses.calls == 2

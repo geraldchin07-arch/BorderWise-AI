@@ -3592,3 +3592,23 @@ def test_api_scenario_context_merges_wallet_balances_across_user_turns():
     assert result["data"]["state_changed"] is False
     assert result["data"].get("proposal") is None
     assert engine._agent_scenario_context == {}
+
+
+def test_proposals_api_lists_pending_proposals():
+    from fastapi.testclient import TestClient
+    import app.main as main_module
+
+    main_module.engine.reset()
+    client = TestClient(main_module.app)
+    proposal = main_module.engine.create_proposal(Decimal("250.00"), "proposal list API regression")
+
+    response = client.get("/api/proposals")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert isinstance(payload["proposals"], list)
+    listed = next((item for item in payload["proposals"] if item["id"] == proposal["id"]), None)
+    assert listed is not None
+    assert listed["status"] == "PENDING_AUTHORIZATION"
+    assert listed["amount_myr"] == 250.0
+    assert main_module.engine.get_transactions() == []

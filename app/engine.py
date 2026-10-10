@@ -937,6 +937,23 @@ class FinanceEngine:
 
         # ---------- read tools ----------
     @_state_locked
+    def list_proposals(self) -> list[dict[str, Any]]:
+        """Return a newest-first snapshot of proposals and expire stale quotes.
+
+        This is a read operation for the API/UI. It may transition a pending or
+        authorized proposal to EXPIRED when its server-side expiry metadata says
+        it is no longer valid; it never authorizes or executes a proposal.
+        """
+        proposals = self.state.get("proposals", {})
+        for proposal_id, proposal in proposals.items():
+            if proposal.get("status") not in {"PENDING_AUTHORIZATION", "AUTHORIZED"}:
+                continue
+            if self._expire_if_needed(proposal):
+                continue
+            self._expire_proposal_if_needed(str(proposal_id), proposal)
+        return [copy.deepcopy(item) for item in reversed(list(proposals.values()))]
+
+    @_state_locked
     def get_balance(self) -> dict[str, float]:
         return {k: float(v) for k, v in self.state["balances"].items()}
 

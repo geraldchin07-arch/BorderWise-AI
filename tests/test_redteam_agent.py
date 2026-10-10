@@ -805,3 +805,40 @@ def test_redteam_advice_about_transfer_does_not_require_proposal_creation():
     planner = AgentOrchestrator(FinanceEngine())
     result = planner._required_tool_names_for_request("Can I afford tuition if I transfer RM5000?")
     assert result is None or "create_transfer_proposal" not in result
+
+
+def test_redteam_obligations_only_cannot_substitute_for_affordability_forecast():
+    from types import SimpleNamespace
+
+    class FakeResponses:
+        calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                call = SimpleNamespace(
+                    type="function_call",
+                    name="get_obligations",
+                    arguments="{}",
+                    call_id="obligations-only",
+                )
+                return SimpleNamespace(output=[call], output_text="")
+            return SimpleNamespace(output=[], output_text="You can afford tuition.")
+
+    planner = AgentOrchestrator(FinanceEngine())
+    planner.enabled = True
+    planner.client = SimpleNamespace(responses=FakeResponses())
+
+    assert planner._required_tool_names_for_request("Can I afford tuition?") == {
+        "forecast_cashflow", "forecast_portfolio"
+    }
+    result = planner.run("Can I afford tuition?")
+    assert result is None
+    assert planner.client.responses.calls == 2
+
+
+def test_redteam_scenario_simulation_cannot_substitute_for_general_forecast():
+    planner = AgentOrchestrator(FinanceEngine())
+    required = planner._required_tool_names_for_request("Forecast my cash flow for the next 30 days.")
+    assert required == {"forecast_cashflow", "forecast_portfolio"}
+    assert "simulate_income_impact" not in required

@@ -1746,8 +1746,32 @@ class FinanceEngine:
         t = self.repair_user_text(text).lower()
         if any(k in t for k in ["help", "what can you do", "capabilities"]):
             return "help"
-        # Classify financial reasoning before FX: a tuition forecast that mentions
-        # MYR and SGD is still a forecast, not a request for a generic exchange quote.
+        # A concrete MYR/SGD/USD/etc. pair conversion is an FX task even when
+        # the user asks about fees or adds a safety instruction such as "do not
+        # execute". Only route it to FX when it is a quote/calculation, not a
+        # tuition-planning conversation or an explicit transfer command.
+        explicit_transfer_command = bool(re.search(
+            r"\b(?:prepare|create|make|set\s+up|initiate)\s+(?:(?:a|an|the)\s+)?(?:sandbox\s+)?(?:transfer|proposal)\b"
+            r"|\b(?:transfer|send|remit)\s+(?:rm|myr)\s*[0-9]",
+            t,
+            re.I,
+        ))
+        explicit_pair = self.extract_conversion_pair(text)
+        explicit_fx_language = any(k in t for k in [
+            "convert", "converting", "conversion", "exchange rate", "current rate", "rate of",
+        ])
+        advice_context = any(k in t for k in [
+            "can i afford", "affordability", "tuition", "school fees", "tuition fee",
+            "do i have enough funds", "what should i convert", "should i convert",
+        ])
+        if explicit_transfer_command:
+            return "transfer"
+        if explicit_fx_language and explicit_pair and not advice_context:
+            return "fx"
+
+        # Classify financial reasoning before generic FX fallbacks. A tuition
+        # funding plan remains a planning request unless a concrete quote pair
+        # is the clear primary task.
         if any(k in t for k in ["afford", "tuition", "fees", "enough money", "enough for"]):
             return "affordability"
         if any(k in t for k in [
@@ -2169,16 +2193,43 @@ class FinanceEngine:
         return False
 
     def user_negates_money_movement(self, text: str) -> bool:
-        """Detect explicit instructions against moving or preparing money.
+        """Detect a direct refusal to initiate a money-moving action.
 
-        This is a conservative, deterministic guard used before either planner.
-        It deliberately only detects clear negation near a money-moving verb;
-        ambiguous requests should be clarified rather than converted into actions.
+        A request to quote, calculate affordability, compare rates, or explicitly
+        keep a transaction unexecuted is not a refusal to answer the question.
+        It must remain read-only rather than being swallowed by a broad negation
+        match that happens to see the word "transfer" later in the prompt.
         """
         normalized = self.repair_user_text(str(text or "")).lower().replace("’", "'")
+
+        read_only_language = any(phrase in normalized for phrase in (
+            "only a quotation", "quotation request", "quote only", "quotation only",
+            "estimate the cost", "estimate a conversion", "current exchange rate",
+            "compare converting", "compare conversion", "can i afford",
+            "do i have enough funds", "tell me whether i have enough",
+            "how much would i receive", "how much myr should i receive",
+        ))
+        if read_only_language:
+            return False
+
+        # "Do not execute" limits the requested result; it does not mean the
+        # user refuses analysis or a pending proposal that must remain unexecuted.
+        if re.search(
+            r"\b(?:do\s+not|don't|dont|must\s+not|mustn't|mustnt|will\s+not|won't|wont)\s+execute\b",
+            normalized,
+            re.I,
+        ):
+            return False
+
         negation = r"(?:do\s+not|don't|dont|never|should\s+not|shouldn't|shouldnt|must\s+not|mustn't|mustnt|will\s+not|won't|wont|would\s+not|wouldn't|wouldnt|refuse\s+to|not\s+willing\s+to|cancel|stop)"
         action = r"(?:transfer|send|remit(?:tance)?|convert|exchange|move(?:\s+money)?|pay|prepare\s+(?:a\s+)?(?:transfer|proposal)|create\s+(?:a\s+)?proposal)"
-        return bool(re.search(rf"\b{negation}\b.{{0,80}}\b{action}\b", normalized, re.I))
+        # Keep negation close to the actual action. The old 80-character window
+        # confused a warning at the end of a long prompt with the user's intent.
+        return bool(re.search(
+            rf"\b{negation}\s+(?:(?:any|the|my|a|an|this|that)\s+)?{action}\b",
+            normalized,
+            re.I,
+        ))
 
     def agent(self, text: str) -> dict[str, Any]:
         # Safety-critical deterministic gate: uncertain family support must never
@@ -3442,6 +3493,13 @@ class FinanceEngine:
                     "agent_mode": "deterministic_amount_safety_gate",
                 },
             )
+
+        # Resolve an explicit balance-vs-payment affordability question deterministically
+        # before any LLM planner can drift into saved tuition/forecast context.
+        from .local_agent import LocalAgentPlanner
+        payment_affordability = LocalAgentPlanner(self).explicit_payment_affordability(text)
+        if payment_affordability is not None:
+            return payment_affordability
 
         # v5: optional LLM tool-calling planner. The deterministic engine remains the
         # fallback and the authority for calculations, policy and execution.

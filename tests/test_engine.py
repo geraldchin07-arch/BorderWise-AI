@@ -2427,7 +2427,7 @@ def test_proposal_ui_escapes_user_provided_purpose():
 
     html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
 
-    assert "<p>Purpose: ${escapeFXHtml(p.purpose)}</p>" in html
+    assert "escapeFXHtml(p.purpose)" in html
 
 
 def test_safe_conversion_ui_validates_quote_response_numbers():

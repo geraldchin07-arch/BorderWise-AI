@@ -515,3 +515,44 @@ def test_redteam_llm_proposal_guard_rejects_negated_action_language():
     assert not planner._proposal_request_is_explicit(
         "Never prepare a transfer of RM5000.", {"amount_myr": 5000}
     )
+
+
+def test_redteam_concurrent_execution_is_atomic_and_single_use(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    import time
+
+    e = FinanceEngine()
+    # Keep this regression deterministic and independent of external FX providers.
+    monkeypatch.setattr(e, "refresh_fx", lambda force=False: e.fx_quote())
+    proposal = e.create_proposal(e.money_value(1000), "tuition")
+    e.authorize(proposal["id"], True)
+    before_balances = e.get_balance()
+    before_transactions = len(e.state["transactions"])
+    amount_myr = proposal["amount_myr"]
+    amount_sgd = proposal["amount_sgd"]
+
+    original_risk_check = e.risk_check
+
+    def slow_risk_check(amount, purpose):
+        # Widen the race window: without a critical-section lock, concurrent
+        # calls can all observe AUTHORIZED before any marks the proposal EXECUTED.
+        time.sleep(0.03)
+        return original_risk_check(amount, purpose)
+
+    monkeypatch.setattr(e, "risk_check", slow_risk_check)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(e.execute, proposal["id"]) for _ in range(8)]
+        successes = []
+        failures = []
+        for future in futures:
+            try:
+                successes.append(future.result())
+            except ValueError as exc:
+                failures.append(str(exc))
+
+    assert len(successes) == 1
+    assert len(failures) == 7
+    assert e.get_balance()["MYR"] == before_balances["MYR"] - amount_myr
+    assert e.get_balance()["SGD"] == before_balances["SGD"] + amount_sgd
+    assert len(e.state["transactions"]) == before_transactions + 1
+    assert e.state["proposals"][proposal["id"]]["status"] == "EXECUTED"

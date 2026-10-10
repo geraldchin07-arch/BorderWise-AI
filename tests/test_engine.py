@@ -2759,3 +2759,11 @@ def test_generic_currency_amount_does_not_pick_one_of_conflicting_pairs():
         "Convert RM 1,200 to SGD 500"
     )
     assert result is None
+
+def test_extract_conversion_pair_rejects_lowercase_ambiguous_words_even_with_other_uppercase_code():
+    e = FinanceEngine()
+    assert e.extract_conversion_pair("TRY is valid, but convert try to SGD") is None
+    assert e.extract_conversion_pair("CUP is valid, but convert cup to SGD") is None
+    assert e.extract_conversion_pair("convert cup to SGD; CUP is a code") is None
+    assert e.extract_conversion_pair("convert CUP to SGD") == ("CUP", "SGD")
+    assert e.extract_conversion_pair("convert TRY to SGD") == ("TRY", "SGD")

@@ -396,14 +396,52 @@ function showProposal(p){
 }
 async function authorize(approved){
  if(!latestProposal)return;
- let r=await fetch('/api/authorize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proposal_id:latestProposal.id,approved})});
- let p=await r.json(); if(!approved){addMsg('Authorization rejected. No money was moved.','bot');setJourney(4,'Judge journey: authorization rejected','<b>No execution occurred.</b> The proposal remains outside the execution path.');document.getElementById('proposal').innerHTML='';return;}
- setJourney(4,'Judge journey: authorization confirmed','<b>Level 2 authorization accepted.</b> The engine may now execute this specific pending proposal once.'); r=await fetch('/api/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proposal_id:latestProposal.id})});
- const out=await r.json();
- if(out.detail){addMsg(out.detail,'bot');return;}
- addMsg(`✓ VERIFIED: ${out.transaction.id} completed. The planning-currency balance was updated in the sandbox.`,'bot'); setJourney(6,'Judge journey: verified + audited','<b>End-to-end proof:</b> the authorized proposal executed once, produced a transaction ID, was verified, and was recorded in the audit trail.');
- document.getElementById('proposal').innerHTML='';latestProposal=null;renderState(await getState());
- document.getElementById('trace').innerHTML+=`<div class="trace-item"><b>VERIFY</b><span class="pill">completed</span><div style="color:#637086">Transaction ${out.transaction.id} verified and recorded.</div></div>`;
+ const proposalId=latestProposal.id;
+ let r;
+ let p;
+ try{
+  r=await fetch('/api/authorize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proposal_id:proposalId,approved})});
+  p=await r.json();
+ }catch(error){
+  addMsg('Authorization could not be verified because the request failed. No execution was requested.','bot');
+  return;
+ }
+ const expectedStatus=approved?'AUTHORIZED':'REJECTED';
+ if(!r.ok || p.status!==expectedStatus){
+  addMsg('Authorization was not confirmed: '+String(p.detail||p.error||'the engine did not confirm the expected proposal status')+'.','bot');
+  return;
+ }
+ if(!approved){
+  addMsg('Authorization rejected. No money was moved.','bot');
+  setJourney(4,'Judge journey: authorization rejected','<b>No execution occurred.</b> The proposal remains outside the execution path.');
+  document.getElementById('proposal').innerHTML='';
+  latestProposal=null;
+  return;
+ }
+ latestProposal=null;
+ document.getElementById('proposal').innerHTML='<div class="proposal"><b>Authorization accepted by the engine</b><p>Checking the execution result. Do not retry until the transaction status is verified.</p></div>';
+ setJourney(4,'Judge journey: authorization confirmed','<b>Level 2 authorization accepted.</b> The engine is checking this specific pending proposal.');
+ let out;
+ try{
+  r=await fetch('/api/execute',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proposal_id:proposalId})});
+  out=await r.json();
+ }catch(error){
+  addMsg('The execution response could not be verified. Check transaction history before taking any further action.','bot');
+  setJourney(4,'Judge journey: execution not verified','<b>Execution status is unknown.</b> Check transaction history before retrying.',true);
+  renderState(await getState());
+  return;
+ }
+ if(!r.ok || out.detail || !out.transaction || !out.transaction.id || out.transaction.status!=='completed'){
+  addMsg(String(out.detail||'The engine did not return a verified completed transaction. Check transaction history before retrying.'),'bot');
+  setJourney(4,'Judge journey: execution not verified','<b>No verified completion was returned.</b> Check transaction history before retrying.',true);
+  renderState(await getState());
+  return;
+ }
+ addMsg('✓ VERIFIED: '+out.transaction.id+' completed. The planning-currency balance was updated in the sandbox.','bot');
+ setJourney(6,'Judge journey: verified + audited','<b>End-to-end proof:</b> the authorized proposal executed once, produced a transaction ID, was verified, and was recorded in the audit trail.');
+ document.getElementById('proposal').innerHTML='';
+ renderState(await getState());
+ document.getElementById('trace').innerHTML+='<div class="trace-item"><b>VERIFY</b><span class="pill">completed</span><div style="color:#637086">Transaction '+escapeFXHtml(out.transaction.id)+' verified and recorded.</div></div>';
 }
 function setJourney(stage, title, note, blocked=false){
  const names=['j1','j2','j3','j4','j5','j6'];

@@ -2974,49 +2974,53 @@ class FinanceEngine:
 
         # If the user names a conversion target and a different display currency,
         # calculate both explicitly instead of silently discarding either instruction.
+        # Match any supported ISO code (not only a short hard-coded subset), while
+        # validating it through the same currency-pair parser used by normal FX.
+        raw_user_text = str(text or "")
         display_currency_match = re.search(
-            r"\b(?:show|display|give|report)\s+(?:the\s+)?(?:result|answer|amount|value)\s+in\s+(sgd|singapore dollars?|myr|ringgit|usd|us dollars?|cny|rmb|yuan|eur|euros?|gbp|pounds?|jpy|yen)\b",
-            normalized,
+            r"\\b(?:show|display|give|report)\\s+(?:the\\s+)?(?:result|answer|amount|value)\\s+in\\s+(?P<display>singapore dollars?|malaysian ringgit|ringgit|us dollars?|euros?|euro|pounds?|pound|yuan|rmb|yen|[A-Za-z]{3})\\b",
+            raw_user_text,
+            re.IGNORECASE,
         )
-        explicit_conversion_match = re.search(
-            r"\b(?:convert|exchange)\s+(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?)\s*(?P<base>myr|rm|ringgit|malaysian ringgit|sgd|s\$|singapore dollars?|usd|us\$|us dollars?|cny|rmb|yuan|eur|euros?|gbp|pounds?|jpy|yen)\s+(?:to|into)\s+(?P<target>myr|rm|ringgit|malaysian ringgit|sgd|s\$|singapore dollars?|usd|us\$|us dollars?|cny|rmb|yuan|eur|euros?|gbp|pounds?|jpy|yen)\b",
-            normalized,
-        )
-        if display_currency_match and explicit_conversion_match:
-            display_aliases = {
-                "sgd": "SGD", "singapore dollar": "SGD", "singapore dollars": "SGD",
-                "myr": "MYR", "ringgit": "MYR", "usd": "USD", "us dollar": "USD", "us dollars": "USD",
-                "cny": "CNY", "rmb": "CNY", "yuan": "CNY", "eur": "EUR", "euro": "EUR", "euros": "EUR",
-                "gbp": "GBP", "pound": "GBP", "pounds": "GBP", "jpy": "JPY", "yen": "JPY",
-            }
-            base = display_aliases.get(explicit_conversion_match.group("base").lower(), explicit_conversion_match.group("base").upper())
-            target = display_aliases.get(explicit_conversion_match.group("target").lower(), explicit_conversion_match.group("target").upper())
-            display = display_aliases.get(display_currency_match.group(1).lower(), display_currency_match.group(1).upper())
-            amount = money(explicit_conversion_match.group("amount").replace(",", ""))
-            if display != target:
-                try:
-                    target_result = self.quote_conversion(amount, base, target)
-                    display_result = self.quote_conversion(target_result["converted_amount"], target, display)
-                    answer = (
-                        f"Your requested conversion is {amount:,.2f} {base} ≈ "
-                        f"{target_result['converted_amount']:,.2f} {target} at {target_result['rate']:.6f} {target} per {base}.\n"
-                        f"You also asked to show the result in {display}: that is approximately "
-                        f"{display_result['converted_amount']:,.2f} {display}, using a separate {target}/{display} reference rate of "
-                        f"{display_result['rate']:.6f}. These are indicative reference-rate estimates, not a transaction quote. No account state changed."
-                    )
-                    return self._result("fx", answer, [
-                        {"step": "UNDERSTAND", "status": "completed", "detail": "Preserved both the requested conversion target and the different display currency."},
-                        {"step": "CALCULATE", "status": "completed", "detail": "Calculated the requested conversion and then its equivalent in the display currency."},
-                        {"step": "SECURITY", "status": "completed", "detail": "Read-only reference estimates; no proposal or transaction was created."},
-                    ], {"conversion": target_result, "display_conversion": display_result,
-                        "requested_target_currency": target, "display_currency": display,
-                        "state_changed": False, "proposal": None})
-                except (ValueError, KeyError, HTTPError, URLError, TimeoutError, OSError) as exc:
-                    return self._result("fx", f"I understood that you want {base} converted to {target} and displayed in {display}, but I couldn't retrieve both reference rates reliably ({type(exc).__name__}). I won't substitute another pair or invent a result.", [
-                        {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized the requested target and display currencies."},
-                        {"step": "FX", "status": "blocked", "detail": "At least one required reference rate was unavailable."},
-                    ], {"requested_target_currency": target, "display_currency": display,
-                        "needs_clarification": True, "state_changed": False, "proposal": None})
+        if display_currency_match:
+            conversion_prefix = raw_user_text[:display_currency_match.start()]
+            action_match = re.search(r"\\b(?:convert|exchange)\\b", conversion_prefix, re.IGNORECASE)
+            if action_match:
+                conversion_text = conversion_prefix[action_match.start():]
+                requested_pair = self.extract_conversion_pair(conversion_text)
+                explicit_amount = self.extract_generic_currency_amount(conversion_text)
+                display_pair = self.extract_conversion_pair(f"MYR to {display_currency_match.group('display')}")
+                # Only combine one unambiguous conversion clause with its requested
+                # display currency. Multi-conversion requests are handled separately.
+                one_action = len(re.findall(r"\\b(?:convert|exchange)\\b", conversion_text, re.IGNORECASE)) == 1
+                if requested_pair and explicit_amount and display_pair and one_action:
+                    amount, amount_currency = explicit_amount
+                    base, target = requested_pair
+                    display = display_pair[1]
+                    if amount_currency == base and display != target:
+                        try:
+                            target_result = self.quote_conversion(amount, base, target)
+                            display_result = self.quote_conversion(target_result["converted_amount"], target, display)
+                            answer = (
+                                f"Your requested conversion is {amount:,.2f} {base} ≈ "
+                                f"{target_result['converted_amount']:,.2f} {target} at {target_result['rate']:.6f} {target} per {base}.\\n"
+                                f"You also asked to show the result in {display}: that is approximately "
+                                f"{display_result['converted_amount']:,.2f} {display}, using a separate {target}/{display} reference rate of "
+                                f"{display_result['rate']:.6f}. These are indicative reference-rate estimates, not a transaction quote. No account state changed."
+                            )
+                            return self._result("fx", answer, [
+                                {"step": "UNDERSTAND", "status": "completed", "detail": "Preserved both the requested conversion target and the different display currency."},
+                                {"step": "CALCULATE", "status": "completed", "detail": "Calculated the requested conversion and then its equivalent in the display currency."},
+                                {"step": "SECURITY", "status": "completed", "detail": "Read-only reference estimates; no proposal or transaction was created."},
+                            ], {"conversion": target_result, "display_conversion": display_result,
+                                "requested_target_currency": target, "display_currency": display,
+                                "state_changed": False, "proposal": None})
+                        except (ValueError, KeyError, HTTPError, URLError, TimeoutError, OSError) as exc:
+                            return self._result("fx", f"I understood that you want {base} converted to {target} and displayed in {display}, but I couldn't retrieve both reference rates reliably ({type(exc).__name__}). I won't substitute another pair or invent a result.", [
+                                {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized the requested target and display currencies."},
+                                {"step": "FX", "status": "blocked", "detail": "At least one required reference rate was unavailable."},
+                            ], {"requested_target_currency": target, "display_currency": display,
+                                "needs_clarification": True, "state_changed": False, "proposal": None})
 
         # Typo-tolerant FX fast path: simple exchange-rate questions should never depend
         # on the LLM understanding every word perfectly. Repair small typos, resolve the pair

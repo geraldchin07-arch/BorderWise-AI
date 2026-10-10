@@ -1234,3 +1234,51 @@ def test_redteam_source_currency_before_amount_is_parsed_for_conversion(monkeypa
     assert engine.state["proposals"] == {}
 
 
+
+
+
+def test_redteam_ambiguous_dollar_clarification_accepts_cad_and_resumes_original_conversion(monkeypatch):
+    engine = FinanceEngine()
+    calls = []
+
+    def fake_quote(amount, base, quote):
+        calls.append((float(amount), base, quote))
+        return {
+            "amount": float(amount),
+            "from_currency": base,
+            "to_currency": quote,
+            "rate": 0.74,
+            "converted_amount": round(float(amount) * 0.74, 2),
+            "fx": {"source": "test-reference", "rate_date": "2026-10-10", "live": False},
+        }
+
+    monkeypatch.setattr(engine, "quote_conversion", fake_quote)
+    first = engine.agent("Convert 500 dollars to SGD.")
+    assert first["data"]["needs_clarification"] is True
+
+    history = [
+        {"role": "user", "content": "Convert 500 dollars to SGD."},
+        {"role": "assistant", "content": first["answer"]},
+    ]
+    result = engine.agent("CAD", conversation_history=history)
+
+    assert result["intent"] == "fx"
+    assert result["data"]["conversion"]["amount"] == 500
+    assert result["data"]["conversion"]["from_currency"] == "CAD"
+    assert result["data"]["conversion"]["to_currency"] == "SGD"
+    assert result["data"]["conversion"]["converted_amount"] == 370
+    assert calls == [(500.0, "CAD", "SGD")]
+    assert result["data"]["state_changed"] is False
+    assert result["data"]["proposal"] is None
+    assert engine.state["proposals"] == {}
+
+
+def test_redteam_tuition_should_i_convert_is_classified_as_financial_advice():
+    engine = FinanceEngine()
+    prompt = "I have RM10000 and tuition coming up. Should I convert some to SGD?"
+    assert engine.detect_intent(prompt) == "affordability"
+    result = engine.agent(prompt)
+    assert result["intent"] == "affordability"
+    assert result["data"].get("proposal") is None
+    assert result["data"]["state_changed"] is False
+    assert engine.state["proposals"] == {}

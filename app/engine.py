@@ -2389,6 +2389,12 @@ class FinanceEngine:
 
         if execution_replay_request:
             if not contextual_proposal or not contextual_proposal_id:
+                # If the user supplied an explicit MYR amount, let the established
+                # deterministic execution guard handle it. That guard can match the
+                # exact amount to an executed proposal without trusting client history.
+                # Amount-less pronouns still must not select a global proposal.
+                if self.extract_myr_amount(current) is not None:
+                    return None
                 return self._result(
                     "agentic_local",
                     "I couldn't verify which earlier transaction you mean from the immediately preceding reply. "

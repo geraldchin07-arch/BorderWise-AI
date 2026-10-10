@@ -1903,8 +1903,9 @@ class FinanceEngine:
             "SYP": "SYP", "TJS": "TJS", "TMT": "TMT", "TOP": "TOP",
             "TTD": "TTD", "VUV": "VUV", "WST": "WST", "YER": "YER",
         }
-        # Ambiguous English words/names that overlap ISO codes are treated as
-        # currency codes only when the user typed the uppercase code explicitly.
+        # Currency codes that overlap ordinary words require an exact uppercase token.
+        # Keep this policy local to the matcher so normalization cannot turn "try",
+        # "all", "cup", etc. into a currency identifier.
         ambiguous_codes = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
         # Unique symbols can identify a currency in a pair even without an amount.
         # Shared "$" and "¥" symbols deliberately remain unsupported/ambiguous.

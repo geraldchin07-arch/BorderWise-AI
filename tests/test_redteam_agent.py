@@ -842,3 +842,34 @@ def test_redteam_scenario_simulation_cannot_substitute_for_general_forecast():
     required = planner._required_tool_names_for_request("Forecast my cash flow for the next 30 days.")
     assert required == {"forecast_cashflow", "forecast_portfolio"}
     assert "simulate_income_impact" not in required
+
+
+def test_redteam_reverse_fx_rate_requires_pair_specific_conversion_tool():
+    from types import SimpleNamespace
+
+    class FakeResponses:
+        calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                call = SimpleNamespace(
+                    type="function_call",
+                    name="get_fx_rate",
+                    arguments='{"force_refresh": false}',
+                    call_id="wrong-direction-rate",
+                )
+                return SimpleNamespace(output=[call], output_text="")
+            return SimpleNamespace(output=[], output_text="1 SGD = 3.1050 MYR.")
+
+    planner = AgentOrchestrator(FinanceEngine())
+    planner.enabled = True
+    planner.client = SimpleNamespace(responses=FakeResponses())
+    planner.call_tool = lambda name, args: {
+        "ok": True,
+        "result": {"rate": 0.322, "source": "test", "rate_date": "2026-10-10"},
+    }
+
+    assert planner._required_tool_names_for_request("What is the exchange rate from SGD to MYR?") == {"convert_currency"}
+    assert planner.run("What is the exchange rate from SGD to MYR?") is None
+    assert planner.client.responses.calls == 2

@@ -2491,12 +2491,15 @@ class FinanceEngine:
 
         # A short request to inspect a quote should use the already verified proposal,
         # never refresh a quote or choose another pending proposal from global state.
-        quote_followup_request = bool(re.search(
-            r"\b(?:show|display|give|tell me|what is|what's|what was|check|view|inspect)\b"
-            r".{0,40}\b(?:quote|rate|exchange rate|conversion details)\b",
-            current_lower,
-            re.I,
-        ))
+        quote_followup_request = bool(
+            re.search(
+                r"\b(?:show|display|give|tell me|check|view|inspect)\s+(?:me\s+)?(?:its|that|this|the|same|previous)\s+(?:quote|rate)\b"
+                r"|\b(?:what is|what's|what was)\s+(?:its|that|this|the)\s+(?:quote|rate)\b",
+                current_lower,
+                re.I,
+            )
+            and self.extract_conversion_pair(current) is None
+        )
         explicit_quote_amount = (
             self.extract_generic_currency_amount(current)
             or self.extract_myr_amount(current)

@@ -1956,6 +1956,22 @@ class FinanceEngine:
                 quote = canonical_codes[match.group("quote").strip()]
                 if base != quote:
                     return base, quote
+        # A same-currency pair is a no-op, not a conversion request. For an
+        # unambiguous symbol paired with its code, return the canonical pair.
+        explicit_codes = {code for code in aliases.values()}
+        for symbol, code in symbol_aliases.items():
+            if re.search(re.escape(symbol), t):
+                other_codes = [
+                    candidate for candidate in explicit_codes
+                    if re.search(rf"(?<![A-Z]){re.escape(candidate)}(?![A-Z])", t)
+                ]
+                if len(other_codes) == 1 and other_codes[0] != code:
+                    if re.search(rf"\\bFROM\\s+{re.escape(symbol)}\\s+TO\\b", t):
+                        return code, other_codes[0]
+                    if re.search(rf"\\b{re.escape(symbol)}\\s*(?:TO|→|->|INTO|IN)\\s+{re.escape(other_codes[0])}\\b", t):
+                        return code, other_codes[0]
+                    if re.search(rf"\\b{other_codes[0]}\\s*(?:TO|→|->|INTO|IN)\\s*{re.escape(symbol)}", t):
+                        return other_codes[0], code
         return None
 
     def agent(self, text: str) -> dict[str, Any]:

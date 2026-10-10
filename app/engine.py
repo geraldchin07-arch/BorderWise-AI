@@ -253,6 +253,7 @@ class FinanceEngine:
             self.state = previous_state
             raise
 
+    @_state_locked
     def _update_profile_unchecked(self, myr_balance: Any, sgd_balance: Any, monthly_income_sgd: Any,
                        emergency_reserve_myr: Any, tuition_semester_sgd: Any,
                        scholarship_semester_sgd: Any, loan_semester_sgd: Any,
@@ -378,6 +379,7 @@ class FinanceEngine:
         self.audit("PROFILE_UPDATED", {"profile": self.get_profile(), "source": "manual user input"})
         return {"ok": True, "profile": self.get_profile(), "state": self.snapshot()}
 
+    @_state_locked
     def _profile_rate_to_sgd(self, currency: str) -> Decimal:
         code = str(currency or "SGD").strip().upper()
         if code == "SGD":
@@ -411,6 +413,7 @@ class FinanceEngine:
             self.state = previous_state
             raise
 
+    @_state_locked
     def _update_profile_general_unchecked(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Validate and apply a currency-first profile update.
 
@@ -600,6 +603,7 @@ class FinanceEngine:
         return obligations
 
 
+    @_state_locked
     def recommend_funding(self, target_amount: float | Decimal, target_currency: str, balances_override: dict[str, Any] | None = None) -> dict[str, Any]:
         """Recommend a minimum-conversion funding plan from the saved multi-currency wallet.
 
@@ -743,6 +747,7 @@ class FinanceEngine:
             "note": "Indicative FX scenario only; no balances are mutated and no transaction is created.",
         }
 
+    @_state_locked
     def convert_currency(self, amount: float | Decimal, from_currency: str, to_currency: str) -> dict[str, Any]:
         """Scenario conversion using the selected wallet rates when available, otherwise a direct reference pair."""
         base = from_currency.upper().strip()
@@ -770,6 +775,7 @@ class FinanceEngine:
         return self.quote_conversion(amount, base, quote)
 
 
+    @_state_locked
     def _fetch_reference_pair(self, from_currency: str, to_currency: str, force: bool = False) -> dict[str, Any]:
         """Fetch/cache a direct reference FX quote for any 3-letter currency pair."""
         base = from_currency.upper().strip()
@@ -850,6 +856,7 @@ class FinanceEngine:
 
         raise ValueError(f"Reference FX for {base}→{quote} is currently unavailable. Try again or enter a quoted rate.")
 
+    @_state_locked
     def quote_conversion(self, amount: float | Decimal, from_currency: str, to_currency: str,
                          custom_rate: float | Decimal | None = None, force: bool = False) -> dict[str, Any]:
         amount_d = money(amount)
@@ -896,6 +903,7 @@ class FinanceEngine:
             },
         }
 
+    @_state_locked
     def simulate_income_impact(self, amount: float | Decimal, currency: str) -> dict[str, Any]:
         amount_d = money(amount)
         currency = currency.upper().strip()
@@ -1216,12 +1224,14 @@ class FinanceEngine:
         }
 
 
+    @_state_locked
     def _selected_myrsgd_rate(self) -> Decimal:
         prefs = self.state.get("fx_preferences", {})
         if prefs.get("myr_mode") == "custom" and prefs.get("custom_myrsgd") is not None:
             return fxrate(prefs["custom_myrsgd"])
         return fxrate(self.state["fx"]["MYRSGD"])
 
+    @_state_locked
     def _currency_rate_to_sgd(self, currency: str) -> tuple[Decimal, dict[str, Any]]:
         code = currency.upper().strip()
         if code == "SGD":
@@ -1291,6 +1301,7 @@ class FinanceEngine:
             "note": "Indicative scenario valuation only; actual bank/remittance settlement rates and fees may differ.",
         }
 
+    @_state_locked
     def refresh_fx(self, force: bool = False) -> dict[str, Any]:
         """Refresh MYR→SGD reference rate from Frankfurter when cache is stale."""
         fx = self.state["fx"]
@@ -1341,6 +1352,7 @@ class FinanceEngine:
         return self.fx_quote()
 
 
+    @_state_locked
     def refresh_auto_fx(self, force: bool = False, codes: list[str] | None = None) -> dict[str, Any]:
         """Fetch current reference rates for additional auto currencies in one batch.
 
@@ -1392,6 +1404,7 @@ class FinanceEngine:
             return {"ok":True,"rates":{c:float(prefs.get("auto_fx_rates_to_sgd",{}).get(c,0)) for c in targets if c in prefs.get("auto_fx_rates_to_sgd",{})},"source":"last known reference rate","live":False,"error":type(exc).__name__}
 
 
+    @_state_locked
     def fx_quote(self, amount_myr: Decimal | None = None) -> dict[str, Any]:
         prefs = self.state.get("fx_preferences", {})
         rate = self._selected_myrsgd_rate()
@@ -1418,6 +1431,7 @@ class FinanceEngine:
         }
 
         # ---------- safety / transaction tools ----------
+    @_state_locked
     def risk_check(self, amount_myr: Decimal, purpose: str) -> dict[str, Any]:
         amount_myr = money(amount_myr)
         # A multi-currency wallet may legitimately contain no MYR balance.
@@ -1534,6 +1548,7 @@ class FinanceEngine:
         self.audit("EXECUTED", {"proposal_id": proposal_id, "transaction_id": tx.id})
         return {"proposal": proposal, "transaction": asdict(tx), "balances": self.get_balance()}
 
+    @_state_locked
     def audit(self, event: str, details: dict[str, Any]) -> None:
         self.state["audit"].append({
             "timestamp": datetime.now(timezone.utc).isoformat(),

@@ -2767,3 +2767,42 @@ def test_extract_conversion_pair_rejects_lowercase_ambiguous_words_even_with_oth
     assert e.extract_conversion_pair("convert cup to SGD; CUP is a code") is None
     assert e.extract_conversion_pair("convert CUP to SGD") == ("CUP", "SGD")
     assert e.extract_conversion_pair("convert TRY to SGD") == ("TRY", "SGD")
+
+
+def test_proposal_quote_exposes_source_date_live_status_and_expiry(monkeypatch):
+    from datetime import datetime
+
+    e = FinanceEngine()
+    monkeypatch.setattr(e, "refresh_fx", lambda force=False: {
+        "source": "Test quote source", "rate_date": "2026-10-10",
+        "live": True, "updated_at": "2026-10-10T02:00:00+00:00",
+    })
+    proposal = e.create_proposal(Decimal("1000"), "tuition")
+    quote = proposal["fx_quote"]
+    assert proposal["quote_expires_at"] == quote["expires_at"]
+    assert quote["source"] == "Test quote source"
+    assert quote["rate_date"] == "2026-10-10"
+    assert quote["live"] is True
+    assert datetime.fromisoformat(quote["expires_at"]) > datetime.fromisoformat(quote["quoted_at"])
+
+
+def test_expired_authorized_proposal_cannot_execute_or_move_money(monkeypatch):
+    import copy
+    from datetime import datetime, timedelta, timezone
+
+    e = FinanceEngine()
+    monkeypatch.setattr(e, "refresh_fx", lambda force=False: e.fx_quote())
+    proposal = e.create_proposal(Decimal("1000"), "tuition")
+    e.authorize(proposal["id"], True)
+    proposal["quote_expires_at"] = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+    proposal["fx_quote"]["expires_at"] = proposal["quote_expires_at"]
+    before_balances = copy.deepcopy(e.state["balances"])
+    before_transactions = copy.deepcopy(e.state["transactions"])
+
+    with pytest.raises(ValueError, match="expired"):
+        e.execute(proposal["id"])
+
+    assert e.state["balances"] == before_balances
+    assert e.state["transactions"] == before_transactions
+    assert proposal["status"] == "EXPIRED"
+    assert any(item["event"] == "PROPOSAL_EXPIRED" for item in e.state["audit"])

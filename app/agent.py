@@ -215,7 +215,7 @@ For complex student-finance situations, build a goal-aware plan: identify essent
         # Multi-operation conversions must not be compressed by the LLM into a
         # single successful conversion. Split on explicit conjunctions and parse
         # each side independently with the same deterministic currency grammar.
-        segments = re.split(r";|\\n|\\b(?:and then|and|then|also)\\b", str(user_text or ""), flags=re.I)
+        segments = re.split(r";|\n|\b(?:and then|and|then|also)\b", str(user_text or ""), flags=re.I)
         requested_pairs = [
             pair for segment in segments
             if (pair := self.engine.extract_conversion_pair(segment)) is not None
@@ -275,7 +275,19 @@ For complex student-finance situations, build a goal-aware plan: identify essent
         if intent == "affordability":
             return {"forecast_cashflow", "forecast_portfolio", "get_obligations", "recommend_funding"}
         if intent == "transfer":
-            return {"assess_transfer_risk", "create_transfer_proposal", "recommend_funding"}
+            normalized = self.engine.repair_user_text(user_text).lower()
+            advice_or_scenario = any(term in normalized for term in (
+                "should i", "should we", "recommend", "what if", "hypothetical",
+                "compare", "can i afford", "is it safe", "safe to send",
+            ))
+            amount_myr = self.engine.extract_myr_amount(user_text)
+            if advice_or_scenario:
+                return {"assess_transfer_risk", "recommend_funding"}
+            if amount_myr is None:
+                return {"__explicit_transfer_amount_required__"}
+            if self._proposal_request_is_explicit(user_text, {"amount_myr": float(amount_myr)}):
+                return {"create_transfer_proposal"}
+            return {"assess_transfer_risk", "recommend_funding"}
         if intent == "fx":
             pair = self.engine.extract_conversion_pair(user_text)
             if not pair:

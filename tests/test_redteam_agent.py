@@ -969,3 +969,48 @@ def test_redteam_llm_tool_limit_falls_back_for_unanswered_financial_request():
     result = planner.run("What is my current account balance?")
     assert result is None
     assert planner.client.responses.calls == 2
+
+
+def test_redteam_valid_fx_tool_result_overrides_hallucinated_llm_arithmetic():
+    import json
+    from types import SimpleNamespace
+
+    class FakeResponses:
+        calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                call = SimpleNamespace(
+                    type="function_call",
+                    name="convert_currency",
+                    arguments=json.dumps({"amount": 100, "from_currency": "MYR", "to_currency": "SGD"}),
+                    call_id="correct-fx-call",
+                )
+                return SimpleNamespace(output=[call], output_text="")
+            return SimpleNamespace(output=[], output_text="100 MYR becomes 9999 SGD at rate 99.99.")
+
+    planner = AgentOrchestrator(FinanceEngine())
+    planner.enabled = True
+    planner.client = SimpleNamespace(responses=FakeResponses())
+    planner.call_tool = lambda name, args: {
+        "ok": True,
+        "result": {
+            "amount": 100.0,
+            "from_currency": "MYR",
+            "to_currency": "SGD",
+            "rate": 0.32,
+            "converted_amount": 32.0,
+            "fx": {"source": "Test reference source", "rate_date": "2026-10-10", "live": True},
+        },
+    }
+
+    result = planner.run("Convert 100 MYR to SGD.")
+    assert result is not None
+    assert result["intent"] == "fx"
+    assert result["data"]["conversion"]["converted_amount"] == 32.0
+    assert "32.00 SGD" in result["answer"]
+    assert "9999" not in result["answer"]
+    assert result["data"]["state_changed"] is False
+    assert result["data"]["proposal"] is None
+    assert planner.client.responses.calls == 2

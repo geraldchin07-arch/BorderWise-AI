@@ -2012,6 +2012,7 @@ class FinanceEngine:
         fx_context = any(term in normalized for term in [
             "convert", "conversion", "exchange", "exchange rate", " rate", "rate ",
             "fx", "how much", "what is", "what's", "whats", "compare", "currency",
+            "transfer", "send", "remit", "remittance", "pay", "payment", "move money",
         ])
         if not fx_context:
             return False

@@ -556,3 +556,76 @@ def test_redteam_concurrent_execution_is_atomic_and_single_use(monkeypatch):
     assert e.get_balance()["SGD"] == before_balances["SGD"] + amount_sgd
     assert len(e.state["transactions"]) == before_transactions + 1
     assert e.state["proposals"][proposal["id"]]["status"] == "EXECUTED"
+
+
+def test_redteam_llm_failure_after_proposal_returns_actual_proposal_without_fallback(monkeypatch):
+    from types import SimpleNamespace
+
+    e = FinanceEngine()
+    monkeypatch.setattr(e, "refresh_fx", lambda force=False: e.fx_quote())
+
+    class FakeResponses:
+        calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                proposal_call = SimpleNamespace(
+                    type="function_call",
+                    name="create_transfer_proposal",
+                    arguments='{"amount_myr": 5000, "purpose": "tuition"}',
+                    call_id="proposal-call-1",
+                )
+                return SimpleNamespace(output=[proposal_call], output_text="")
+            raise RuntimeError("simulated response failure after proposal creation")
+
+    planner = AgentOrchestrator(e)
+    planner.enabled = True
+    planner.client = SimpleNamespace(responses=FakeResponses())
+    before_balances = e.get_balance()
+    result = planner.run("Prepare the RM5000 conversion to SGD.")
+
+    assert result is not None
+    proposal = result["data"]["proposal"]
+    assert proposal["status"] == "PENDING_AUTHORIZATION"
+    assert result["data"]["proposal_created"] is True
+    assert result["data"]["transaction_created"] is False
+    assert result["data"]["completion_status"] == "generation_error:RuntimeError"
+    assert "No transaction has been executed" in result["answer"]
+    assert e.get_balance() == before_balances
+    assert len(e.state["proposals"]) == 1
+    assert len(e.state["transactions"]) == 15
+    assert [item["event"] for item in e.state["audit"]].count("PROPOSAL_CREATED") == 1
+    assert not any(item["event"] == "EXECUTED" for item in e.state["audit"])
+
+
+def test_redteam_llm_cannot_create_two_proposals_in_one_turn(monkeypatch):
+    from types import SimpleNamespace
+
+    e = FinanceEngine()
+    monkeypatch.setattr(e, "refresh_fx", lambda force=False: e.fx_quote())
+
+    class FakeResponses:
+        calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                calls = [
+                    SimpleNamespace(type="function_call", name="create_transfer_proposal",
+                                    arguments='{"amount_myr": 5000, "purpose": "tuition"}', call_id="proposal-1"),
+                    SimpleNamespace(type="function_call", name="create_transfer_proposal",
+                                    arguments='{"amount_myr": 6000, "purpose": "tuition"}', call_id="proposal-2"),
+                ]
+                return SimpleNamespace(output=calls, output_text="")
+            return SimpleNamespace(output=[], output_text="Proposal prepared.")
+
+    planner = AgentOrchestrator(e)
+    planner.enabled = True
+    planner.client = SimpleNamespace(responses=FakeResponses())
+    result = planner.run("Prepare a transfer of RM5000 to SGD.")
+    assert result is not None
+    assert len(e.state["proposals"]) == 1
+    assert result["data"]["proposal"]["status"] == "PENDING_AUTHORIZATION"
+    assert result["data"]["transaction_created"] is False
+    assert "No transaction has been executed" in result["answer"]

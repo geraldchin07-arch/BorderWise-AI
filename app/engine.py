@@ -4074,7 +4074,7 @@ class FinanceEngine:
                     if isinstance(exc, ValueError) and "conversion amount must be positive" in str(exc).lower():
                         return self._result(
                             "fx",
-                            "The conversion amount must be greater than zero. No quote, proposal, or transaction was created.",
+                            "The conversion amount must be positive (greater than zero). No quote, proposal, or transaction was created.",
                             [
                                 {"step": "UNDERSTAND", "status": "completed", "detail": f"Recognized FX request {failed_base}→{failed_quote}."},
                                 {"step": "CALCULATE", "status": "blocked", "detail": "A conversion amount must be positive."},

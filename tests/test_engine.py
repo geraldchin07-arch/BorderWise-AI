@@ -2856,6 +2856,8 @@ def test_execute_without_authorization_is_denied():
 
 
 def test_vague_authorization_does_nothing():
+    from app.local_agent import LocalAgentPlanner
+
     e = FinanceEngine()
     e.create_proposal(Decimal("5000"), "test")
     result = LocalAgentPlanner(e).run("I authorize this")

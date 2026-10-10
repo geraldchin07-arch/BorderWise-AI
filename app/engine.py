@@ -999,6 +999,7 @@ class FinanceEngine:
             "calculation": f"starting {planning} balance + expected 30-day income − 30-day spending − obligations due within 30 days, normalized for arithmetic.",
         }
 
+    @_state_locked
     def forecast_portfolio(self, horizon_days: int = 30, balances_override: dict[str, Any] | None = None) -> dict[str, Any]:
         """Forecast liquidity using the full multi-currency wallet, not only the planning-currency balance."""
         horizon = int(horizon_days)

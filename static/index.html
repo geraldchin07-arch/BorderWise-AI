@@ -578,7 +578,28 @@ async function runScenario(kind){
  const stage=blocked?3:(hasProposal?4:3);
  setJourney(stage,copy.title,copy.note,Boolean(blocked));
 }
-async function resetDemo(){await fetch('/api/reset',{method:'POST'});document.getElementById('chat').innerHTML='<div class="msg bot">Demo reset. Demo scenario restored. Open ‘Set my balances’ to choose your planning currency, balances, tuition, accommodation and monthly spending.</div>';document.getElementById('proposal').innerHTML='';document.getElementById('trace').innerHTML='<div class="trace-item">Reset complete.</div>';latestProposal=null;currentScenario=null;conversationHistory=[];try{sessionStorage.removeItem(CHAT_STORAGE_KEY)}catch(e){};try{sessionStorage.removeItem(PROPOSAL_STORAGE_KEY)}catch(e){};setJourney(0,'Judge journey: ready','<b>Demo tip:</b> Start with Tuition check. It produces the clearest end-to-end story while keeping execution behind explicit authorization.');await refresh()}
+async function resetDemo(){
+ try{
+  const resetResponse=await fetch('/api/reset',{method:'POST'});
+  if(!resetResponse.ok)throw new Error('Reset failed ('+resetResponse.status+').');
+  const resetState=await resetResponse.json();
+  if(!resetState||typeof resetState!=='object'||!resetState.balances||!resetState.profile)
+   throw new Error('The server did not return a verifiable reset state.');
+ }catch(error){
+  addMsg('Demo reset was not confirmed. The current conversation and proposal display were preserved. Check server state before continuing.','bot');
+  return;
+ }
+ document.getElementById('chat').innerHTML='<div class="msg bot">Demo reset confirmed. Demo scenario restored. Open “Set my balances” to choose your planning currency, balances, tuition, accommodation and monthly spending.</div>';
+ document.getElementById('proposal').innerHTML='';
+ document.getElementById('trace').innerHTML='<div class="trace-item">Reset complete.</div>';
+ latestProposal=null;currentScenario=null;conversationHistory=[];
+ try{sessionStorage.removeItem(CHAT_STORAGE_KEY)}catch(e){}
+ try{sessionStorage.removeItem(PROPOSAL_STORAGE_KEY)}catch(e){}
+ setJourney(0,'Judge journey: ready','<b>Demo tip:</b> Start with Tuition check. It produces the clearest end-to-end story while keeping execution behind explicit authorization.');
+ try{await refresh()}catch(error){
+  addMsg('The demo reset was confirmed, but the dashboard could not refresh. Use Retry before continuing.','bot');
+ }
+}
 async function bootstrap(){
  try{
    await refresh();

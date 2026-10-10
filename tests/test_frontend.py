@@ -121,3 +121,18 @@ def test_pending_proposal_card_is_restored_only_after_server_verification():
     reset_end = html.index("async function bootstrap()", reset_start)
     reset_function = html[reset_start:reset_end]
     assert "sessionStorage.removeItem(PROPOSAL_STORAGE_KEY)" in reset_function
+
+
+def test_reset_demo_preserves_local_context_until_server_confirms_reset():
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+    start = html.index("async function resetDemo()")
+    end = html.index("async function bootstrap()", start)
+    reset_function = html[start:end]
+    assert "const resetResponse=await fetch('/api/reset'" in reset_function
+    assert "if(!resetResponse.ok)throw new Error" in reset_function
+    assert "resetState.balances" in reset_function
+    assert "resetState.profile" in reset_function
+    assert "Demo reset was not confirmed." in reset_function
+    assert "The current conversation and proposal display were preserved." in reset_function
+    assert reset_function.index("if(!resetResponse.ok)throw new Error") < reset_function.index("conversationHistory=[]")
+    assert "The demo reset was confirmed, but the dashboard could not refresh." in reset_function

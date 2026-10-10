@@ -1932,10 +1932,35 @@ class FinanceEngine:
             rf"(?P<base>{token})\s*(?:TO|→|->|INTO|IN)\s*(?P<quote>{token})",
         ]
         for pattern in patterns:
+            # Prefer the original input so ambiguous code casing remains meaningful.
+            # Iterate all matches: a lowercase ordinary word must not be legitimized
+            # by an unrelated uppercase occurrence elsewhere in the same message.
+            for raw_match in re.finditer(pattern, raw_text, re.IGNORECASE):
+                raw_base = raw_match.group("base").strip()
+                raw_quote = raw_match.group("quote").strip()
+                base_key = raw_base.upper()
+                quote_key = raw_quote.upper()
+                if base_key not in canonical_codes or quote_key not in canonical_codes:
+                    continue
+                if base_key in ambiguous_codes and raw_base != base_key:
+                    continue
+                if quote_key in ambiguous_codes and raw_quote != quote_key:
+                    continue
+                base = canonical_codes[base_key]
+                quote = canonical_codes[quote_key]
+                if base != quote:
+                    return base, quote
+
+            # Typo normalization can repair ordinary currency names/codes. Keep that
+            # fallback for unambiguous currencies only; ambiguous words fail closed.
             match = re.search(pattern, t)
             if match:
-                base = canonical_codes[match.group("base").strip()]
-                quote = canonical_codes[match.group("quote").strip()]
+                base_key = match.group("base").strip()
+                quote_key = match.group("quote").strip()
+                if base_key in ambiguous_codes or quote_key in ambiguous_codes:
+                    continue
+                base = canonical_codes[base_key]
+                quote = canonical_codes[quote_key]
                 if base != quote:
                     return base, quote
         return None

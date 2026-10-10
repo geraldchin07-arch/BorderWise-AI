@@ -2978,13 +2978,13 @@ class FinanceEngine:
         # validating it through the same currency-pair parser used by normal FX.
         raw_user_text = str(text or "")
         display_currency_match = re.search(
-            r"\\b(?:show|display|give|report)\\s+(?:the\\s+)?(?:result|answer|amount|value)\\s+in\\s+(?P<display>singapore dollars?|malaysian ringgit|ringgit|us dollars?|euros?|euro|pounds?|pound|yuan|rmb|yen|[A-Za-z]{3})\\b",
+            r"\b(?:show|display|give|report)\s+(?:the\s+)?(?:result|answer|amount|value)\s+in\s+(?P<display>singapore dollars?|malaysian ringgit|ringgit|us dollars?|euros?|euro|pounds?|pound|yuan|rmb|yen|[A-Za-z]{3})\b",
             raw_user_text,
             re.IGNORECASE,
         )
         if display_currency_match:
             conversion_prefix = raw_user_text[:display_currency_match.start()]
-            action_match = re.search(r"\\b(?:convert|exchange)\\b", conversion_prefix, re.IGNORECASE)
+            action_match = re.search(r"\b(?:convert|exchange)\b", conversion_prefix, re.IGNORECASE)
             if action_match:
                 conversion_text = conversion_prefix[action_match.start():]
                 requested_pair = self.extract_conversion_pair(conversion_text)
@@ -2992,7 +2992,7 @@ class FinanceEngine:
                 display_pair = self.extract_conversion_pair(f"MYR to {display_currency_match.group('display')}")
                 # Only combine one unambiguous conversion clause with its requested
                 # display currency. Multi-conversion requests are handled separately.
-                one_action = len(re.findall(r"\\b(?:convert|exchange)\\b", conversion_text, re.IGNORECASE)) == 1
+                one_action = len(re.findall(r"\b(?:convert|exchange)\b", conversion_text, re.IGNORECASE)) == 1
                 if requested_pair and explicit_amount and display_pair and one_action:
                     amount, amount_currency = explicit_amount
                     base, target = requested_pair
@@ -3003,7 +3003,7 @@ class FinanceEngine:
                             display_result = self.quote_conversion(target_result["converted_amount"], target, display)
                             answer = (
                                 f"Your requested conversion is {amount:,.2f} {base} ≈ "
-                                f"{target_result['converted_amount']:,.2f} {target} at {target_result['rate']:.6f} {target} per {base}.\\n"
+                                f"{target_result['converted_amount']:,.2f} {target} at {target_result['rate']:.6f} {target} per {base}.\n"
                                 f"You also asked to show the result in {display}: that is approximately "
                                 f"{display_result['converted_amount']:,.2f} {display}, using a separate {target}/{display} reference rate of "
                                 f"{display_result['rate']:.6f}. These are indicative reference-rate estimates, not a transaction quote. No account state changed."

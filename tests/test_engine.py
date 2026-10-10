@@ -3628,3 +3628,23 @@ def test_generated_proposal_and_transaction_ids_use_full_uuid_tokens():
     transaction_token = result["transaction"]["id"].removeprefix("TX-")
     assert len(transaction_token) == 32
     assert all(char in "0123456789ABCDEF" for char in transaction_token)
+
+
+def test_chat_api_rejects_history_outside_schema_limits(monkeypatch):
+    from fastapi.testclient import TestClient
+    import app.main as main_module
+
+    monkeypatch.setattr(main_module, "rate_limiter", main_module.SimpleRateLimiter())
+    client = TestClient(main_module.app)
+
+    too_many_turns = client.post("/api/chat", json={
+        "message": "Hello",
+        "history": [{"role": "user", "content": "Earlier message"} for _ in range(51)],
+    })
+    assert too_many_turns.status_code == 422
+
+    oversized_history_message = client.post("/api/chat", json={
+        "message": "Hello",
+        "history": [{"role": "assistant", "content": "x" * 2001}],
+    })
+    assert oversized_history_message.status_code == 422

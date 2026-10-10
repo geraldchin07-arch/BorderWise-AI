@@ -136,3 +136,59 @@ def test_reset_demo_preserves_local_context_until_server_confirms_reset():
     assert "The current conversation and proposal display were preserved." in reset_function
     assert reset_function.index("if(!resetResponse.ok)throw new Error") < reset_function.index("conversationHistory=[]")
     assert "The demo reset was confirmed, but the dashboard could not refresh." in reset_function
+
+
+def test_chat_history_storage_helper_bounds_and_restores_the_transcript(tmp_path):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node.js is not installed in this test environment.")
+
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+    start = html.index("function addMsg(")
+    end = html.index("function savePendingProposalId(", start)
+    helpers = html[start:end]
+    prelude = r"""
+const CHAT_STORAGE_KEY='xkf5-ai.chat-history.v1';
+let conversationHistory=[];
+const store=new Map();
+global.sessionStorage={
+  getItem(key){return store.has(key)?store.get(key):null;},
+  setItem(key,value){store.set(key,String(value));},
+  removeItem(key){store.delete(key);}
+};
+const chat={
+  children:[],scrollTop:0,scrollHeight:77,
+  appendChild(node){this.children.push(node);},
+  replaceChildren(){this.children=[];}
+};
+global.document={
+  getElementById(id){if(id!=='chat')throw new Error('Unexpected element '+id);return chat;},
+  createElement(tag){return {tag,className:'',textContent:''};}
+};
+"""
+    exercise = r"""
+conversationHistory=Array.from({length:60},(_,i)=>({
+  role:i%2?'assistant':'user',
+  content:'c'.repeat(2050)+String(i),
+  proposal_id:'P'.repeat(80)
+}));
+persistConversationHistory();
+const saved=JSON.parse(sessionStorage.getItem(CHAT_STORAGE_KEY));
+if(saved.length!==50)throw new Error('Expected 50 saved turns.');
+if(saved.some(turn=>turn.content.length!==2000))throw new Error('Saved content was not capped at 2,000 chars.');
+if(saved.some(turn=>turn.proposal_id.length!==64))throw new Error('Proposal references were not bounded.');
+conversationHistory=[];
+restoreConversationHistory();
+if(conversationHistory.length!==50||chat.children.length!==50)throw new Error('Transcript/history did not restore.');
+if(chat.scrollTop!==chat.scrollHeight)throw new Error('Restored chat did not scroll to the latest message.');
+if(chat.children[0].textContent!=='c'.repeat(2000))throw new Error('Restored message text was altered unexpectedly.');
+if(chat.children[0].className!=='msg user')throw new Error('User message styling was not restored.');
+sessionStorage.setItem(CHAT_STORAGE_KEY,'{invalid JSON');
+restoreConversationHistory();
+if(sessionStorage.getItem(CHAT_STORAGE_KEY)!==null)throw new Error('Invalid persisted data was not cleared.');
+process.stdout.write('session history behavior ok');
+"""
+    script = prelude + "\n" + helpers + "\n" + exercise
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    assert "session history behavior ok" in result.stdout

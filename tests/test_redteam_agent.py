@@ -1276,9 +1276,18 @@ def test_redteam_ambiguous_dollar_clarification_accepts_cad_and_resumes_original
 def test_redteam_tuition_should_i_convert_is_classified_as_financial_advice():
     engine = FinanceEngine()
     prompt = "I have RM10000 and tuition coming up. Should I convert some to SGD?"
+    balances_before = dict(engine.state["balances"])
+
     assert engine.detect_intent(prompt) == "affordability"
     result = engine.agent(prompt)
+
     assert result["intent"] == "affordability"
+    assert "tuition and currency affordability check" in result["answer"].lower()
+    assert "reference rate" in result["answer"].lower()
+    assert result["data"]["scenario_inputs"]["myr_balance"] == 10000.0
+    assert result["data"]["fx_conversion"]["from_currency"] == "MYR"
+    assert result["data"]["fx_conversion"]["to_currency"] == "SGD"
     assert result["data"].get("proposal") is None
     assert result["data"]["state_changed"] is False
+    assert engine.state["balances"] == balances_before
     assert engine.state["proposals"] == {}

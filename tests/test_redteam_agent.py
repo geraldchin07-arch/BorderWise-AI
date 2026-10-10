@@ -715,7 +715,10 @@ def test_redteam_hypothetical_fx_calculation_uses_deterministic_planner(monkeypa
     from types import SimpleNamespace
 
     class UnexpectedLLMCall:
+        calls = 0
+
         def create(self, **kwargs):
+            self.calls += 1
             raise AssertionError("A live LLM tool turn must not replace hypothetical-rate arithmetic.")
 
     planner = AgentOrchestrator(FinanceEngine())
@@ -723,9 +726,10 @@ def test_redteam_hypothetical_fx_calculation_uses_deterministic_planner(monkeypa
     planner.client = SimpleNamespace(responses=UnexpectedLLMCall())
 
     result = planner.run(
-        "Compare MYR 10,000 at hypothetical rates 0.32 and 0.33 SGD per MYR and calculate the difference."
+        "Compare MYR 10,000 at hypothetical rates 0.32 and 0.33 MYR to SGD and calculate the difference."
     )
     assert result is None
+    assert planner.client.responses.calls == 0
 
 
 def test_redteam_general_nonfinancial_question_can_use_llm_without_finance_tools(monkeypatch):

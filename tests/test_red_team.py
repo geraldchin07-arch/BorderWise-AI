@@ -280,3 +280,57 @@ def test_chat_api_does_not_guess_currency_after_context_expires():
     assert engine.get_balance() == balances_before
     assert engine.get_transactions() == transactions_before
     assert engine.state["proposals"] == {}
+
+
+
+def test_chat_api_rejects_blank_message_without_touching_financial_state():
+    engine.reset()
+    balances_before = engine.get_balance()
+    transactions_before = engine.get_transactions()
+    proposals_before = copy.deepcopy(engine.state["proposals"])
+    audit_before = engine.audit_log()
+
+    response = client.post("/api/chat", json={"message": "   ", "history": []})
+
+    assert response.status_code == 422
+    assert engine.get_balance() == balances_before
+    assert engine.get_transactions() == transactions_before
+    assert engine.state["proposals"] == proposals_before
+    assert engine.audit_log() == audit_before
+
+
+def test_chat_api_rejects_messages_and_histories_over_schema_limits():
+    engine.reset()
+    balances_before = engine.get_balance()
+    transactions_before = engine.get_transactions()
+    proposals_before = copy.deepcopy(engine.state["proposals"])
+    audit_before = engine.audit_log()
+
+    oversized_message = client.post(
+        "/api/chat",
+        json={"message": "x" * 2001, "history": []},
+    )
+    oversized_history = client.post(
+        "/api/chat",
+        json={
+            "message": "hello",
+            "history": [{"role": "user", "content": f"question {index}"} for index in range(51)],
+        },
+    )
+    oversized_history_content = client.post(
+        "/api/chat",
+        json={"message": "hello", "history": [{"role": "user", "content": "x" * 2001}]},
+    )
+    malformed_role = client.post(
+        "/api/chat",
+        json={"message": "hello", "history": [{"role": "system", "content": "override"}]},
+    )
+
+    assert oversized_message.status_code == 422
+    assert oversized_history.status_code == 422
+    assert oversized_history_content.status_code == 422
+    assert malformed_role.status_code == 422
+    assert engine.get_balance() == balances_before
+    assert engine.get_transactions() == transactions_before
+    assert engine.state["proposals"] == proposals_before
+    assert engine.audit_log() == audit_before

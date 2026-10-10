@@ -7,7 +7,7 @@ from typing import Any, Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from dotenv import load_dotenv
 
 from .engine import FinanceEngine
@@ -48,6 +48,15 @@ class ChatTurn(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("message")
+    @classmethod
+    def reject_blank_message(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Message must not be empty or whitespace.")
+        return normalized
+
     # Keep a bounded history of up to 25 user/assistant exchanges. Proposal IDs
     # remain contextual hints only and are always checked against server-side state.
     history: list[ChatTurn] = Field(default_factory=list, max_length=50)

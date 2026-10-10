@@ -3698,3 +3698,18 @@ def test_latest_user_stated_tuition_replaces_old_tuition_context():
     assert context["tuition_obligation"]["amount"] == Decimal("5500")
     assert context["tuition_obligation"]["currency"] == "SGD"
     assert context["tuition_obligation"]["due_days"] == 14
+
+
+
+@pytest.mark.parametrize("amount", [Decimal("0"), Decimal("-0.01")])
+@pytest.mark.parametrize(
+    ("from_currency", "to_currency"),
+    [("MYR", "SGD"), ("EUR", "SGD"), ("SGD", "SGD")],
+)
+def test_convert_currency_rejects_nonpositive_amounts_on_every_route(
+    amount, from_currency, to_currency
+):
+    e = FinanceEngine()
+
+    with pytest.raises(ValueError, match="Conversion amount must be positive"):
+        e.convert_currency(amount, from_currency, to_currency)

@@ -1419,3 +1419,19 @@ def test_redteam_contextual_yes_go_ahead_does_not_select_global_pending_proposal
     assert result["data"]["blocked_reason"] == "missing_contextual_proposal"
     assert result["data"].get("transaction") is None
     assert engine.state["proposals"][proposal["id"]]["status"] == "PENDING_AUTHORIZATION"
+
+
+
+def test_redteam_malformed_fx_amounts_are_not_partially_parsed():
+    cases = [
+        ("Convert 1,25 EUR to SGD.", "EUR"),
+        ("Convert 1,000,00 MYR to SGD.", "MYR"),
+        ("Convert 1,2345 MYR to SGD.", "MYR"),
+        ("Convert -500 MYR to SGD.", "MYR"),
+        ("Convert 1e6 MYR to SGD.", "MYR"),
+    ]
+    for prompt, currency in cases:
+        engine = FinanceEngine()
+        planner = LocalAgentPlanner(engine)
+        assert engine.extract_generic_currency_amount(prompt) is None, prompt
+        assert planner._amount(prompt, currency) is None, prompt

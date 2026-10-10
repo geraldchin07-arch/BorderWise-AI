@@ -756,15 +756,17 @@ class FinanceEngine:
         """Scenario conversion using the selected wallet rates when available, otherwise a direct reference pair."""
         base = from_currency.upper().strip()
         quote = to_currency.upper().strip()
+        amount_d = money(amount)
+        if amount_d <= 0:
+            raise ValueError("Conversion amount must be positive.")
         if base == quote:
-            return self.quote_conversion(amount, base, quote, custom_rate=1)
+            return self.quote_conversion(amount_d, base, quote, custom_rate=1)
         # Prefer user-selected/custom wallet rates whenever both currencies are in the
         # user's wallet. This keeps scenario conversions consistent with the profile.
         if base in self.state["balances"] and quote in self.state["balances"]:
             from_rate, from_meta = self._currency_rate_to_sgd(base)
             to_rate, to_meta = self._currency_rate_to_sgd(quote)
             rate = fxrate(from_rate / to_rate)
-            amount_d = money(amount)
             return {
                 "amount": float(amount_d), "from_currency": base, "to_currency": quote,
                 "converted_amount": float(money(amount_d * rate)), "rate": float(rate),
@@ -776,7 +778,7 @@ class FinanceEngine:
             }
         # Otherwise fetch the exact pair directly; this allows requests such as CNY → MYR
         # even when the user has not added CNY to their wallet yet.
-        return self.quote_conversion(amount, base, quote)
+        return self.quote_conversion(amount_d, base, quote)
 
 
     @_state_locked

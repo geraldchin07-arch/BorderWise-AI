@@ -1191,6 +1191,7 @@ class LocalAgentPlanner:
                 matches = [p for p in pending if abs(float(p["amount_myr"]) - float(requested_amount)) < 0.005]
             else:
                 # Authorization must identify the exact amount; a lone pending proposal is not consent.
+                matches = []
 
             # Never pick the first proposal when more than one proposal matches.
             # Ambiguous authorization must stop rather than silently authorizing

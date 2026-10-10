@@ -3019,3 +3019,14 @@ def test_typo_tolerant_balance_query_asks_for_the_requested_currency():
     assert r["data"]["state_changed"] is False
     assert "USD" in r["answer"]
     assert e.state["proposals"] == {}
+
+
+def test_myr_amount_does_not_enable_unsupported_named_recipient_transfer():
+    e = FinanceEngine()
+    r = e.agent(
+        "Prepare a transfer of RM 5,000 to my configured test recipient Alice. Do not execute it."
+    )
+    assert r["data"].get("proposal") is None
+    assert r["data"].get("blocked_reason") == "unsupported_recipient_transfer"
+    assert "named recipients" in r["answer"].lower()
+    assert e.state["proposals"] == {}

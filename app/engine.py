@@ -3718,6 +3718,24 @@ class FinanceEngine:
 
         if intent == "transfer":
             amount = self.extract_myr_amount(text)
+            named_recipient_action = (
+                any(k in normalized_request for k in ["recipient", "beneficiary", "payee"])
+                and any(k in normalized_request for k in ["transfer", "send", "remit", "pay", "prepare"])
+            )
+            if amount is None and named_recipient_action:
+                return self._result(
+                    intent,
+                    "This XKF5 sandbox does not support payments to named recipients or bank-account transfers yet. "
+                    "Its supported transfer proposal is an internal MYR-to-SGD conversion, not sending SGD to a person such as Alice. "
+                    "I cannot verify or address a recipient from this chat. No proposal or transaction was created, and no account state changed.",
+                    trace + [{"step": "SECURITY", "status": "blocked", "detail": "Named-recipient payment is not a supported action in this sandbox."}],
+                    {
+                        "blocked_reason": "unsupported_recipient_transfer",
+                        "requested_action": "named_recipient_transfer",
+                        "state_changed": False,
+                        "proposal": None,
+                    },
+                )
             if amount is None:
                 return self._result(
                     intent,

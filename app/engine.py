@@ -2544,6 +2544,100 @@ class FinanceEngine:
                  "authorization_granted": False, "transaction_created": False},
             )
 
+        # Short "why did you authorize?" questions should explain the verified
+        # last action rather than fall through to generic help. This is strictly
+        # read-only: a proposal ID from the transcript is accepted only after it
+        # resolves to the authoritative server-side proposal above.
+        why_action_question = (
+            bool(re.search(r"\bwhy\b", current_lower))
+            and bool(re.search(
+                r"\b(?:authori[sz](?:e|ed|ation)|approv(?:e|ed|al)|execut(?:e|ed|ion)|"
+                r"transfer|transaction|send|process|move|payment)\b",
+                current_lower,
+            ))
+        )
+        if why_action_question and contextual_proposal and contextual_proposal_id:
+            proposal_status = str(contextual_proposal.get("status", "unknown")).upper()
+            amount_myr = float(contextual_proposal.get("amount_myr", 0.0) or 0.0)
+            review_required = str(contextual_proposal.get("risk", {}).get("status", "")).upper() == "REVIEW"
+            review_acknowledged = bool(contextual_proposal.get("review_acknowledged"))
+            transaction_id = contextual_proposal.get("transaction_id")
+            if proposal_status == "EXECUTED":
+                if not transaction_id:
+                    transaction = next(
+                        (
+                            item for item in reversed(self.state.get("transactions", []))
+                            if item.get("proposal_id") == contextual_proposal_id
+                        ),
+                        None,
+                    )
+                    transaction_id = (transaction or {}).get("id", "the recorded transaction")
+                trigger = previous_user.strip() or "your prior authorization message"
+                if review_required:
+                    explanation = (
+                        "The high-value acknowledgement and authorization are separate steps. "
+                        "Your acknowledgement recorded that you reviewed the amount, destination, quote and risk reasons; "
+                        "it did not itself authorize the conversion. After the proposal remained pending, your next message "
+                        f"({trigger!r}) was an explicit instruction to authorize that same proposal. "
+                        "The application matched it to the verified pending proposal and then enforced the stored review acknowledgement "
+                        "and transaction policy before executing it."
+                    )
+                else:
+                    explanation = (
+                        "I did not authorize it on my own. The application had a verified pending proposal, and your subsequent "
+                        f"message ({trigger!r}) was interpreted as the explicit authorization to proceed. "
+                        "The application checked that proposal against its authorization and transaction rules before executing it."
+                    )
+                answer = (
+                    f"{explanation} Proposal {contextual_proposal_id} for RM{amount_myr:,.2f} "
+                    f"was recorded as executed under transaction {transaction_id}. "
+                    "This was a sandbox conversion; no real money moved. This explanation did not change balances, proposals or transactions."
+                )
+                return self._result(
+                    "agentic_local",
+                    answer,
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Resolved a contextual question about the immediately preceding authorization/execution."},
+                        {"step": "OBSERVE", "status": "completed", "detail": f"Verified proposal {contextual_proposal_id} is already EXECUTED in the server-side store."},
+                        {"step": "REASON", "status": "completed", "detail": "Explained the separate review acknowledgement and explicit authorization steps."},
+                        {"step": "SECURITY", "status": "completed", "detail": "Read-only explanation; no replay or state mutation was performed."},
+                    ],
+                    {
+                        "goal": "explain_prior_authorization",
+                        "proposal": contextual_proposal,
+                        "transaction_id": transaction_id,
+                        "state_changed": False,
+                        "explanation_only": True,
+                    },
+                )
+
+            if proposal_status == "PENDING_AUTHORIZATION":
+                if review_required and not review_acknowledged:
+                    explanation = (
+                        "I did not authorize or execute it because the proposal requires high-value review, and the required review acknowledgement "
+                        "has not been recorded for this proposal. You must review the amount, destination, quote and risk reasons first."
+                    )
+                elif review_required and review_acknowledged:
+                    explanation = (
+                        "The high-value review was acknowledged, but that acknowledgement is not authorization. "
+                        "The proposal remains pending until you separately authorize this exact proposal."
+                    )
+                else:
+                    explanation = (
+                        "I have not authorized or executed the proposal. Preparing it only creates a pending proposal; "
+                        "a separate explicit authorization is required before sandbox execution."
+                    )
+                return self._result(
+                    "agentic_local",
+                    f"{explanation} Proposal {contextual_proposal_id} remains pending. No balances or transactions changed.",
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Resolved a contextual question about a pending proposal."},
+                        {"step": "SECURITY", "status": "completed", "detail": "No authorization or execution was triggered by the question."},
+                    ],
+                    {"goal": "explain_pending_authorization", "proposal": contextual_proposal,
+                     "state_changed": False, "explanation_only": True},
+                )
+
         repeat_proposal_request = bool(re.search(
             r"\b(?:prepare|create|show|repeat)\b.*\b(?:exactly\s+the\s+same|same|again|repeat)\b.*"
             r"\b(?:transfer|proposal|conversion)\b|\bprepare\s+exactly\s+the\s+same\s+"

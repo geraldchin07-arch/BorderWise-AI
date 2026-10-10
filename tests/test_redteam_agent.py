@@ -638,6 +638,9 @@ def test_redteam_bare_dollar_words_and_symbols_require_currency_clarification():
         "What is the current rate from dollars to Malaysian ringgit?",
         "Convert $500 to SGD.",
         "How much is 200 dollars in MYR?",
+        "Can you send $500 to Singapore?",
+        "Can you remit 200 dollars to Malaysia?",
+        "Prepare a transfer of 200 dollars to my family.",
     ]
     for prompt in prompts:
         e = FinanceEngine()

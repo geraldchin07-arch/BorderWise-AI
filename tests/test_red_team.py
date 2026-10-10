@@ -306,8 +306,21 @@ def test_chat_api_quote_followup_reuses_pending_proposal_read_only(monkeypatch):
     assert engine.get_transactions() == transactions_before
 
 
-def test_chat_api_quote_followup_never_selects_global_proposal_without_history_reference():
+def test_chat_api_quote_followup_never_selects_global_proposal_without_history_reference(monkeypatch):
     """An orphaned quote follow-up cannot pick an unrelated pending proposal."""
+    import app.engine as engine_module
+
+    class FakeFXResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"date":"2026-10-02","base":"MYR","quote":"SGD","rate":0.3220}'
+
+    monkeypatch.setattr(engine_module, "urlopen", lambda *args, **kwargs: FakeFXResponse())
     engine.reset()
     proposal = engine.create_proposal(engine.money_value(5000), "test")
     history = [

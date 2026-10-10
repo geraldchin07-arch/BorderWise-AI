@@ -1,19 +1,20 @@
 # XKF5 AI Stress Test Plan
 
 Branch: `agent`  
-Verified baseline commit: `f6399f3a7d267af5c2f4f618374f5a013f815503`  
+Verified baseline commit: `d469ddadd4323a3c7890540caab6ddd00ad5769e`  
 Scope: deterministic engine, offline planner, LLM orchestration, chat API, and UI conversation context.
 
 ## Current automated baseline
 
-GitHub Actions run [38047892164](https://github.com/geraldchin07-arch/XKF5-AI/actions/runs/38047892164) passed on 2026-10-10 with **332 tests passing** after Python compilation succeeded.
+GitHub Actions run [38048276701](https://github.com/geraldchin07-arch/XKF5-AI/actions/runs/38048276701) passed on 2026-10-10 with **334 tests passing** after Python compilation succeeded.
 
 Recent regression coverage now includes:
 - The offline planner rebuilds hypothetical wallet and savings context from the supplied conversation history instead of sharing those scenarios across chat sessions.
 - Follow-up balances merge by currency, so adding MYR on a later turn does not discard an earlier SGD balance.
 - The optional LLM planner receives up to the API maximum of 50 recent user/assistant history records (25 exchanges), followed by the current message; history is explicitly treated as untrusted context and cannot grant authorization.
-- Demo reset clears hypothetical planner memory.
-- The API returns HTTP 429 for rate-limit violations.
+- Demo reset clears hypothetical planner memory, and the UI clears the displayed chat history at the same time.
+- The API returns HTTP 429 for rate-limit violations, and the in-memory limiter’s read/check/write operation is tested under concurrent calls.
+- If a browser request returns an ambiguous error, the UI tells the user to verify transaction/audit state before retrying rather than claiming no transaction happened.
 - The engine is tested for duplicate core method definitions after a large redundant block was removed.
 - Tuition-conversion advice remains read-only and does not create a transfer proposal.
 

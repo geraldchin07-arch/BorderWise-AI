@@ -32,7 +32,7 @@
 
 ## Known limitations
 
-This is a competition sandbox, not a production banking system. A production deployment would require bank-grade authentication, secure secrets management, KYC/AML controls, transaction signing, rate-limit controls, immutable external audit storage, real-time FX sources, model monitoring, human escalation and formal security review.
+This is a competition sandbox, not a production banking system. The current rate limiter is atomic within one process, but its counters are in-memory and are not shared across workers or hosts. A production deployment would require bank-grade authentication, secure secrets management, KYC/AML controls, transaction signing, a shared rate-limit backend, trusted proxy/IP configuration, immutable external audit storage, real-time FX sources, model monitoring, human escalation and formal security review.
 
 
 ## v5 LLM boundary

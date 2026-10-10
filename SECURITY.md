@@ -41,3 +41,10 @@ Run automated security tests with `pytest`:
 
 ```cmd
 python -m pytest tests/test_red_team.py
+```
+
+## Operational limits
+
+The current rate limiter and audit trail are in-memory and process-local. The limiter uses an atomic lock within one process, but its counters are not shared across multiple workers or hosts. This is appropriate for a single-process competition sandbox, not a production deployment. A production service needs a shared rate-limit store, trusted proxy/IP handling, authenticated user/session boundaries, and durable audit storage.
+
+A passing test suite demonstrates only the automated cases executed by CI. It is not a formal security assessment and does not verify live banking or settlement integrations.

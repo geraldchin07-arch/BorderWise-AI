@@ -1789,19 +1789,24 @@ class FinanceEngine:
                 match = re.search(pattern, source)
                 if not match:
                     continue
-                # Ambiguous ISO codes that are also common words should only
-                # match when the user explicitly typed the uppercase code. Match
-                # the currency marker and amount together against raw input so
-                # normalization cannot turn "all" into the currency code "ALL".
+                # Ambiguous ISO codes overlap with ordinary words. Match each
+                # currency marker next to its amount in the original input, preserving
+                # case, so an unrelated uppercase token cannot legitimize a lowercase word.
                 if is_code and code in ambiguous_codes:
                     explicit_code_amount = (
                         rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])\s*{amount}",
                         rf"{amount}\s*(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])",
                     )
-                    if not any(
-                        re.search(explicit_pattern, raw_text)
-                        for explicit_pattern in explicit_code_amount
-                    ):
+                    explicit_matches = [
+                        re.search(pattern, raw_text)
+                        for pattern in explicit_code_amount
+                    ]
+                    explicit_matches = [
+                        match for match in explicit_matches
+                        if match is not None
+                        and match.group(0).upper() == match.group(0)
+                    ]
+                    if not explicit_matches:
                         continue
                 numeric_match = re.search(amount, match.group(0))
                 if not numeric_match:

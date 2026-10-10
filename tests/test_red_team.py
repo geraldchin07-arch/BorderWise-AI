@@ -267,6 +267,70 @@ def test_chat_api_yes_go_ahead_authorizes_only_the_displayed_proposal(monkeypatc
     assert engine.get_balance() != balances_before
 
 
+def test_chat_api_quote_followup_reuses_pending_proposal_read_only(monkeypatch):
+    """A quote follow-up must inspect the stored proposal instead of creating a new one."""
+    import app.engine as engine_module
+
+    class FakeFXResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"date":"2026-10-02","base":"MYR","quote":"SGD","rate":0.3220}'
+
+    monkeypatch.setattr(engine_module, "urlopen", lambda *args, **kwargs: FakeFXResponse())
+    engine.reset()
+    history = []
+    balances_before = engine.get_balance()
+    transactions_before = engine.get_transactions()
+    created = _post_chat_with_frontend_history("Prepare a transfer of RM5,000 to SGD.", history)
+    proposal = created["data"]["proposal"]
+    proposal_id = proposal["id"]
+    proposals_before = copy.deepcopy(engine.state["proposals"])
+    audit_before = engine.audit_log()
+
+    quote_view = _post_chat_with_frontend_history("Show its quote.", history)
+
+    assert quote_view["data"]["goal"] == "inspect_proposal_quote"
+    assert quote_view["data"]["proposal"]["id"] == proposal_id
+    assert quote_view["data"]["proposal"]["status"] == "PENDING_AUTHORIZATION"
+    assert quote_view["data"]["quote"]["rate"] == proposal["rate"]
+    assert "stored quote" in quote_view["answer"].lower()
+    assert quote_view["data"]["state_changed"] is False
+    assert engine.state["proposals"] == proposals_before
+    assert engine.audit_log() == audit_before
+    assert engine.get_balance() == balances_before
+    assert engine.get_transactions() == transactions_before
+
+
+def test_chat_api_quote_followup_never_selects_global_proposal_without_history_reference():
+    """An orphaned quote follow-up cannot pick an unrelated pending proposal."""
+    engine.reset()
+    proposal = engine.create_proposal(engine.money_value(5000), "test")
+    history = [
+        {"role": "user", "content": "Prepare a transfer of RM5,000 to SGD."},
+        {"role": "assistant", "content": "A transfer proposal was prepared, but its reference is absent."},
+    ]
+    balances_before = engine.get_balance()
+    transactions_before = engine.get_transactions()
+    proposals_before = copy.deepcopy(engine.state["proposals"])
+    audit_before = engine.audit_log()
+
+    result = _post_chat_with_frontend_history("Show its quote.", history)
+
+    assert result["data"]["blocked_reason"] == "missing_contextual_proposal"
+    assert result["data"].get("proposal") is None
+    assert result["data"]["state_changed"] is False
+    assert engine.state["proposals"] == proposals_before
+    assert engine.audit_log() == audit_before
+    assert engine.get_balance() == balances_before
+    assert engine.get_transactions() == transactions_before
+    assert proposal["status"] == "PENDING_AUTHORIZATION"
+
+
 def test_chat_api_rejects_zero_amount_conversion_without_state_changes(monkeypatch):
     """A zero-value request must be rejected clearly rather than quoted as a conversion."""
     import app.engine as engine_module

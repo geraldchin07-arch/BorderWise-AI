@@ -2489,6 +2489,94 @@ class FinanceEngine:
                 contextual_proposal_id = candidate_id
                 contextual_proposal = candidate
 
+        # A short request to inspect a quote should use the already verified proposal,
+        # never refresh a quote or choose another pending proposal from global state.
+        quote_followup_request = bool(re.search(
+            r"\b(?:show|display|give|tell me|what is|what's|what was|check|view|inspect)\b"
+            r".{0,40}\b(?:quote|rate|exchange rate|conversion details)\b",
+            current_lower,
+            re.I,
+        ))
+        explicit_quote_amount = (
+            self.extract_generic_currency_amount(current)
+            or self.extract_myr_amount(current)
+            or self.extract_sgd_amount(current)
+        )
+        if quote_followup_request and explicit_quote_amount is None:
+            if not contextual_proposal or not contextual_proposal_id:
+                return self._result(
+                    "agentic_local",
+                    "I couldn't match that quote request to a proposal shown in the immediately preceding reply. "
+                    "Please reopen the proposal or specify the exact amount and currency pair for a fresh reference quote. "
+                    "I did not select another pending proposal or create a transaction.",
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Detected a contextual quote follow-up."},
+                        {"step": "SECURITY", "status": "blocked", "detail": "No immediately referenced proposal was available to verify."},
+                    ],
+                    {"goal": "inspect_proposal_quote", "blocked_reason": "missing_contextual_proposal",
+                     "state_changed": False, "proposal": None, "conversion": None},
+                )
+
+            proposal_status = str(contextual_proposal.get("status", "unknown")).upper()
+            expired_now = False
+            if proposal_status == "PENDING_AUTHORIZATION":
+                expired_now = (
+                    self._expire_if_needed(contextual_proposal)
+                    or self._expire_proposal_if_needed(contextual_proposal_id, contextual_proposal)
+                )
+                proposal_status = str(contextual_proposal.get("status", "unknown")).upper()
+            if expired_now:
+                return self._result(
+                    "agentic_local",
+                    f"The stored quote for proposal {contextual_proposal_id} has expired. I did not refresh it or create another proposal. "
+                    "Request a fresh proposal explicitly if you still want to proceed.",
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Matched the quote request to the referenced proposal."},
+                        {"step": "OBSERVE", "status": "completed", "detail": f"Verified proposal {contextual_proposal_id} has expired."},
+                        {"step": "SECURITY", "status": "blocked", "detail": "An expired quote cannot be reused for authorization or execution."},
+                    ],
+                    {"goal": "inspect_proposal_quote", "blocked_reason": "proposal_expired",
+                     "proposal": contextual_proposal, "state_changed": True, "conversion": None},
+                )
+
+            quote_meta = contextual_proposal.get("fx_quote") or {}
+            amount_myr = float(contextual_proposal.get("amount_myr", 0.0) or 0.0)
+            amount_sgd = float(contextual_proposal.get("amount_sgd", 0.0) or 0.0)
+            rate = float(contextual_proposal.get("rate", 0.0) or 0.0)
+            quote_expiry = contextual_proposal.get("quote_expires_at") or quote_meta.get("expires_at") or "unavailable"
+            quote_date = quote_meta.get("rate_date") or "unavailable"
+            quote_source = quote_meta.get("source") or "unknown reference source"
+            answer = (
+                f"Stored quote for proposal {contextual_proposal_id}: RM{amount_myr:,.2f} is approximately "
+                f"S${amount_sgd:,.2f} at 1 MYR = SGD {rate:.6f}. "
+                f"Source: {quote_source}; rate date: {quote_date}; quote expiry: {quote_expiry}. "
+                f"Current proposal status: {proposal_status}. This displays the existing quote only; "
+                "no new quote or proposal was created and no transaction was executed."
+            )
+            return self._result(
+                "agentic_local",
+                answer,
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Matched the quote follow-up to the immediately referenced proposal."},
+                    {"step": "OBSERVE", "status": "completed", "detail": f"Read the stored {quote_source} quote and verified current proposal status {proposal_status}."},
+                    {"step": "SECURITY", "status": "completed", "detail": "Read-only quote inspection; no proposal or transaction was created."},
+                ],
+                {
+                    "goal": "inspect_proposal_quote",
+                    "proposal": contextual_proposal,
+                    "quote": {
+                        "amount_myr": amount_myr,
+                        "amount_sgd": amount_sgd,
+                        "rate": rate,
+                        "source": quote_source,
+                        "rate_date": quote_date,
+                        "expires_at": quote_expiry,
+                    },
+                    "state_changed": False,
+                    "explanation_only": True,
+                },
+            )
+
         # A direct replay request must be resolved against the immediately shown
         # proposal before the generic planner asks for an amount or considers any
         # transaction action. The proposal store, not client history, is authoritative.

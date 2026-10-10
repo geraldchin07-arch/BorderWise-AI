@@ -2408,6 +2408,32 @@ class FinanceEngine:
                         "This is a quotation only; do not create or execute a transfer."
                     )
 
+        # A currency-only reply is valid only when its matching clarification is
+        # still in the recent exchange. If the original request has aged out of the
+        # bounded history, never bind the currency to a stale amount or target.
+        if currency_reply:
+            raw_currency = currency_reply.group(1).strip().lower()
+            resolved_currency = source_aliases.get(raw_currency)
+            if resolved_currency:
+                return self._result(
+                    "fx",
+                    f"I only have the currency code {resolved_currency}; the original conversion request is not available in the recent chat context. "
+                    "Please restate the amount and target currency. I have not created a proposal or transaction.",
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Received a currency-only message without a matching recent clarification."},
+                        {"step": "OBSERVE", "status": "needs_input", "detail": "The original conversion request is not present in the retained chat history."},
+                        {"step": "SECURITY", "status": "completed", "detail": "Did not infer a stale amount or target currency; no state change occurred."},
+                    ],
+                    {
+                        "needs_clarification": True,
+                        "missing_context": True,
+                        "currency_mentioned": resolved_currency,
+                        "state_changed": False,
+                        "proposal": None,
+                        "agent_mode": "deterministic_missing_context_gate",
+                    },
+                )
+
         # Resolve "how about in USD?" as a balance follow-up only when the previous
         # exchange was itself a balance lookup. This prevents a bare currency mention
         # from being mistaken for an FX-rate question in unrelated contexts.

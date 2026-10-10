@@ -246,3 +246,37 @@ def test_chat_api_prompt_injection_cannot_force_high_value_execution(monkeypatch
     assert engine.state["proposals"] == {}
     assert engine.get_balance() == balances_before
     assert engine.get_transactions() == transactions_before
+
+
+
+def test_chat_api_does_not_guess_currency_after_context_expires():
+    """Ask again rather than reuse a source-currency clarification outside retained history."""
+    engine.reset()
+    history = []
+    first = _post_chat_with_frontend_history("Convert 250 dollars to SGD.", history)
+    assert first["data"]["needs_clarification"] is True
+
+    # Match the browser's bounded 50-message history after 25 exchanges.
+    for index in range(25):
+        history.extend([
+            {"role": "user", "content": f"Unrelated question {index}", "proposal_id": None},
+            {"role": "assistant", "content": f"Unrelated answer {index}", "proposal_id": None},
+        ])
+        del history[:-50]
+
+    assert all("Convert 250 dollars to SGD." not in turn.get("content", "") for turn in history)
+    balances_before = engine.get_balance()
+    transactions_before = engine.get_transactions()
+
+    result = _post_chat_with_frontend_history("CAD", history)
+
+    assert result["intent"] == "fx"
+    assert result["data"]["needs_clarification"] is True
+    assert result["data"]["missing_context"] is True
+    assert "restate the amount and target currency" in result["answer"].lower()
+    assert result["data"].get("conversion") is None
+    assert result["data"].get("proposal") is None
+    assert result["data"]["state_changed"] is False
+    assert engine.get_balance() == balances_before
+    assert engine.get_transactions() == transactions_before
+    assert engine.state["proposals"] == {}

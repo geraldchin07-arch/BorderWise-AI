@@ -2061,6 +2061,22 @@ def test_conversion_pair_recognizes_additional_iso_codes():
     assert e.extract_conversion_pair("South African rand to SGD") == ("ZAR", "SGD")
     assert e.extract_conversion_pair("Kuwaiti dinar into EUR") == ("KWD", "EUR")
 
+ 
+@pytest.mark.parametrize(
+    ("prompt", "expected"),
+    [
+        ("convert € to SGD", ("EUR", "SGD")),
+        ("Convert GBP to ₹", ("GBP", "INR")),
+        ("convert R$ into EUR", ("BRL", "EUR")),
+        ("convert zł to USD", ("PLN", "USD")),
+        ("convert $ to SGD", None),
+        ("convert ¥ to SGD", None),
+        ("convert EUR to €", None),
+    ],
+)
+def test_conversion_pair_recognizes_unique_symbols_and_rejects_ambiguous_symbols(prompt, expected):
+    assert FinanceEngine().extract_conversion_pair(prompt) == expected
+
 
 def test_amount_extractors_support_shorthand_and_ringgit_names():
     e = FinanceEngine()

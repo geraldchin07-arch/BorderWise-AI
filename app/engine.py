@@ -3180,9 +3180,11 @@ class FinanceEngine:
                         {"conversions": results, "state_changed": False, "proposal": None},
                     )
             requested_pair = self.extract_conversion_pair(text)
-            if not requested_pair:
+            if not requested_pair and not self.extract_generic_currency_amount(text):
                 # Do not default a source-less amount such as "convert 250 to SGD"
-                # to the application's MYR/SGD demo quote.
+                # to the application's MYR/SGD demo quote. An explicitly labeled
+                # amount such as "RM3,000" is enough source-currency evidence for
+                # existing transfer/proposal logic even if the pair is phrased as a noun.
                 destination_only = re.search(
                     r"\b(?:to|into)\s+(?P<target>singapore\s+dollars?|malaysian\s+ringgit|ringgit|us\s+dollars?|australian\s+dollars?|canadian\s+dollars?|euros?|euro|pounds?|pound|yuan|rmb|renminbi|yen|kuwaiti\s+dinar|south\s+african\s+rand|[A-Za-z]{3})\b",
                     str(text or ""),
@@ -3238,7 +3240,7 @@ class FinanceEngine:
                     failed_base, failed_quote = pair
                     return self._result(
                         "fx",
-                        f"I recognized {failed_base} to {failed_quote}, but a reliable reference rate is currently unavailable ({type(exc).__name__}). "
+                        f"I recognized {failed_base} to {failed_quote}, but couldn't retrieve a reliable reference rate for that pair ({type(exc).__name__}); the rate is currently unavailable. "
                         "I won't substitute a different currency pair or invent a result. Please retry later or provide a trusted quote.",
                         [
                             {"step": "UNDERSTAND", "status": "completed", "detail": f"Recognized the requested {failed_base}/{failed_quote} pair."},

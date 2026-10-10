@@ -48,7 +48,9 @@ class ChatTurn(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
-    history: list[ChatTurn] = Field(default_factory=list, max_length=12)
+    # Keep a bounded history of up to 25 user/assistant exchanges. Proposal IDs
+    # remain contextual hints only and are always checked against server-side state.
+    history: list[ChatTurn] = Field(default_factory=list, max_length=50)
 
 
 class AuthRequest(BaseModel):

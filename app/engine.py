@@ -192,6 +192,9 @@ class FinanceEngine:
             "proposals": {},
             "audit": [],
         }
+        # The demo reset must also clear hypothetical planner memory; otherwise
+        # a prior scenario can influence later questions after a reset.
+        self._agent_scenario_context = {}
 
     def money_value(self, value: Any) -> Decimal:
         return money(value)

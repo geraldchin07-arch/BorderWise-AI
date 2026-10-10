@@ -3534,3 +3534,14 @@ def test_finance_engine_core_methods_are_defined_once():
     assert source.count("\n    def agent(") == 1
     assert source.count("\n    def _result(") == 1
     assert source.count("\n    def snapshot(") == 1
+
+
+
+def test_reset_clears_local_agent_hypothetical_context():
+    engine = FinanceEngine()
+    engine.agent("I have RM10000 and SGD 500. Should I convert some to SGD?")
+    assert engine._agent_scenario_context.get("wallet_balances")
+
+    engine.reset()
+
+    assert engine._agent_scenario_context == {}

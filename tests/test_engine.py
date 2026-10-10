@@ -3475,6 +3475,7 @@ def test_contextual_high_value_acknowledgement_alone_does_not_authorize():
 def test_concurrent_identical_proposal_requests_are_idempotent():
     """Concurrent duplicate preparation must resolve to one pending proposal."""
     e = FinanceEngine()
+    transactions_before = copy.deepcopy(e.get_transactions())
     requested_amount = Decimal("1000.00")
 
     def create_same_proposal(_):
@@ -3493,7 +3494,7 @@ def test_concurrent_identical_proposal_requests_are_idempotent():
     ]
     assert len(pending) == 1
     assert pending[0]["id"] == proposal_id
-    assert not e.get_transactions()
+    assert e.get_transactions() == transactions_before
 
 
 def test_concurrent_execution_requests_commit_exactly_one_transaction():

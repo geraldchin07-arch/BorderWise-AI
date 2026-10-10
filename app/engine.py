@@ -1966,11 +1966,11 @@ class FinanceEngine:
                     if re.search(rf"(?<![A-Z]){re.escape(candidate)}(?![A-Z])", t)
                 ]
                 if len(other_codes) == 1 and other_codes[0] != code:
-                    if re.search(rf"\\bFROM\\s+{re.escape(symbol)}\\s+TO\\b", t):
+                    if re.search(rf"\bFROM\s+{re.escape(symbol)}\s+TO\b", t):
                         return code, other_codes[0]
-                    if re.search(rf"\\b{re.escape(symbol)}\\s*(?:TO|→|->|INTO|IN)\\s+{re.escape(other_codes[0])}\\b", t):
+                    if re.search(rf"\b{re.escape(symbol)}\s*(?:TO|→|->|INTO|IN)\s+{re.escape(other_codes[0])}\b", t):
                         return code, other_codes[0]
-                    if re.search(rf"\\b{other_codes[0]}\\s*(?:TO|→|->|INTO|IN)\\s*{re.escape(symbol)}", t):
+                    if re.search(rf"\b{other_codes[0]}\s*(?:TO|→|->|INTO|IN)\s*{re.escape(symbol)}", t):
                         return other_codes[0], code
         return None
 

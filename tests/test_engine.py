@@ -2946,11 +2946,15 @@ def test_affordability_blocked_conversion_does_not_crash():
 def test_read_only_fx_quote_with_do_not_transfer_instruction_is_not_blocked():
     e = FinanceEngine()
     before = copy.deepcopy(e.get_balance())
-    r = e.agent(
+    prompt = (
         "I have SGD 1,200 available. If I convert SGD 300 to MYR at the current exchange rate, "
         "how much MYR should I receive after fees? Show the exchange rate, fees and quote timestamp "
         "if available. This is only a quotation request. Do not create or execute a transfer."
     )
+    assert e.extract_conversion_pair(prompt) == ("SGD", "MYR")
+    assert e.detect_intent(prompt) == "fx"
+    assert not e.user_negates_money_movement(prompt)
+    r = e.agent(prompt)
     assert r["intent"] == "fx"
     assert r["data"].get("proposal") is None
     assert e.state["proposals"] == {}

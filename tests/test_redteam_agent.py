@@ -876,6 +876,7 @@ def test_redteam_reverse_fx_rate_requires_pair_specific_conversion_tool():
 
 
 def test_redteam_fx_tool_success_with_wrong_pair_or_amount_is_not_authoritative():
+    import json
     from types import SimpleNamespace
 
     scenarios = [

@@ -1186,6 +1186,7 @@ def test_redteam_single_pair_fx_unavailable_does_not_substitute_default_rate(mon
     )
     monkeypatch.setattr(engine, "refresh_fx", lambda force=False: engine.fx_quote())
 
+    before_transactions = len(engine.state["transactions"])
     result = engine.agent("Convert 200 KWD to MXN.")
 
     assert result["intent"] == "fx"
@@ -1196,5 +1197,5 @@ def test_redteam_single_pair_fx_unavailable_does_not_substitute_default_rate(mon
     assert result["data"].get("proposal") is None
     assert engine.get_balance() == before_balances
     assert engine.state["proposals"] == {}
-    assert engine.state["transactions"] == []
+    assert len(engine.state["transactions"]) == before_transactions
 

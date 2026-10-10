@@ -2021,7 +2021,7 @@ class FinanceEngine:
         # forms (US$, S$, A$, C$, HK$, NT$, R$) but reject a bare symbol in FX questions.
         for match in re.finditer(r"\$", normalized):
             prefix = normalized[max(0, match.start() - 4):match.start()]
-            if re.search(r"(?:us|sg|a|c|hk|nt|r)$", prefix, re.I):
+            if re.search(r"(?:us|s|sg|a|c|hk|nt|r)$", prefix, re.I):
                 continue
             return True
         return False

@@ -170,7 +170,7 @@ h1{font-size:40px;margin:0 0 8px}.sub{color:var(--muted);font-size:16px;margin-b
 </div>
 
 <script>
-let latestProposal=null; let currentScenario=null;
+let latestProposal=null; let currentScenario=null; conversationHistory=[];
 const money=(n,c)=>`${c}${Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 async function getState(){
  const controller=new AbortController();
@@ -353,14 +353,26 @@ function renderDecisionCard(data){
 }
 async function send(){
  const input=document.getElementById('input');const text=input.value.trim();if(!text)return null;
+ const priorHistory=conversationHistory.slice(-12).map(turn=>({
+   role:turn.role,content:turn.content,proposal_id:turn.proposal_id||null
+ }));
  addMsg(text,'user');input.value='';
  try{
-   const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text})});
+   const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,history:priorHistory})});
    const data=await r.json();
    if(!r.ok) throw new Error(data.detail||data.answer||'Request failed');
-   addMsg(data.answer||data.detail,'bot'); renderDecisionCard(data.data); renderTrace(data.trace); renderState(data.state);
-   latestProposal=data.data?.proposal||null;
-   if(latestProposal) showProposal(latestProposal);
+   const answer=data.answer||data.detail||'';
+   conversationHistory.push({role:'user',content:text});
+   conversationHistory.push({role:'assistant',content:answer,proposal_id:data.data?.proposal?.id||null});
+   conversationHistory=conversationHistory.slice(-12);
+   addMsg(answer,'bot'); renderDecisionCard(data.data); renderTrace(data.trace); renderState(data.state);
+   // Keep a pending proposal available across ordinary questions, but clear it
+   // once the engine reports a terminal proposal status such as EXECUTED/EXPIRED.
+   if(data.data?.proposal){
+     latestProposal=data.data.proposal;
+     if(String(latestProposal.status||'').toUpperCase()==='PENDING_AUTHORIZATION') showProposal(latestProposal);
+     else { latestProposal=null; document.getElementById('proposal').innerHTML=''; }
+   }
    return data;
  }catch(err){
    addMsg('I could not complete that request. No transaction was created. Please try again.','bot');
@@ -490,7 +502,7 @@ async function runScenario(kind){
  const stage=blocked?3:(hasProposal?4:3);
  setJourney(stage,copy.title,copy.note,Boolean(blocked));
 }
-async function resetDemo(){await fetch('/api/reset',{method:'POST'});document.getElementById('chat').innerHTML='<div class="msg bot">Demo reset. Demo scenario restored. Open ‘Set my balances’ to choose your planning currency, balances, tuition, accommodation and monthly spending.</div>';document.getElementById('proposal').innerHTML='';document.getElementById('trace').innerHTML='<div class="trace-item">Reset complete.</div>';latestProposal=null;currentScenario=null;setJourney(0,'Judge journey: ready','<b>Demo tip:</b> Start with Tuition check. It produces the clearest end-to-end story while keeping execution behind explicit authorization.');await refresh()}
+async function resetDemo(){await fetch('/api/reset',{method:'POST'});document.getElementById('chat').innerHTML='<div class="msg bot">Demo reset. Demo scenario restored. Open ‘Set my balances’ to choose your planning currency, balances, tuition, accommodation and monthly spending.</div>';document.getElementById('proposal').innerHTML='';document.getElementById('trace').innerHTML='<div class="trace-item">Reset complete.</div>';latestProposal=null;currentScenario=null;conversationHistory=[];setJourney(0,'Judge journey: ready','<b>Demo tip:</b> Start with Tuition check. It produces the clearest end-to-end story while keeping execution behind explicit authorization.');await refresh()}
 async function bootstrap(){
  try{
    await refresh();

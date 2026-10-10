@@ -1357,7 +1357,7 @@ def test_redteam_llm_receives_recent_bounded_chat_history():
         {"role": "user", "content": "outdated first question"},
         {"role": "assistant", "content": "outdated first answer"},
     ]
-    for index in range(11):
+    for index in range(31):
         history.extend([
             {"role": "user", "content": f"user turn {index}"},
             {"role": "assistant", "content": f"assistant turn {index}"},
@@ -1370,8 +1370,9 @@ def test_redteam_llm_receives_recent_bounded_chat_history():
     assert "clarify the earlier answer" in result["answer"]
     assert len(responses.inputs) == 1
     supplied = responses.inputs[0]
-    assert len(supplied) == 21  # last 20 history records + the current request
-    assert supplied[0] == {"role": "user", "content": "user turn 1"}
-    assert supplied[-2] == {"role": "assistant", "content": "assistant turn 10"}
+    assert len(supplied) == 51  # API maximum of 50 history records + current request
+    assert supplied[0] == {"role": "user", "content": "user turn 6"}
+    assert supplied[-2] == {"role": "assistant", "content": "assistant turn 30"}
     assert supplied[-1] == {"role": "user", "content": prompt}
     assert all(turn["content"] != "outdated first question" for turn in supplied)
+    assert all(turn["content"] != "user turn 5" for turn in supplied)

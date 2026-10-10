@@ -11,7 +11,7 @@ GitHub Actions run [38047892164](https://github.com/geraldchin07-arch/XKF5-AI/ac
 Recent regression coverage now includes:
 - The offline planner rebuilds hypothetical wallet and savings context from the supplied conversation history instead of sharing those scenarios across chat sessions.
 - Follow-up balances merge by currency, so adding MYR on a later turn does not discard an earlier SGD balance.
-- The optional LLM planner receives at most 20 recent user/assistant history records, followed by the current message; history is explicitly treated as untrusted context and cannot grant authorization.
+- The optional LLM planner receives up to the API maximum of 50 recent user/assistant history records (25 exchanges), followed by the current message; history is explicitly treated as untrusted context and cannot grant authorization.
 - Demo reset clears hypothetical planner memory.
 - The API returns HTTP 429 for rate-limit violations.
 - The engine is tested for duplicate core method definitions after a large redundant block was removed.

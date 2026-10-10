@@ -515,7 +515,7 @@ CHAT CONTEXT RULES:
         # authority. The current message is appended last and remains the sole input
         # to proposal/transfer explicitness and financial-evidence gates.
         history_items: list[dict[str, str]] = []
-        for turn in (conversation_history or [])[-20:]:
+        for turn in (conversation_history or [])[-50:]:
             if not isinstance(turn, dict):
                 continue
             role = turn.get("role")

@@ -2952,8 +2952,8 @@ def test_read_only_fx_quote_with_do_not_transfer_instruction_is_not_blocked():
         "if available. This is only a quotation request. Do not create or execute a transfer."
     )
     assert e.extract_conversion_pair(prompt) == ("SGD", "MYR")
-    assert e.detect_intent(prompt) == "fx"
     assert not e.user_negates_money_movement(prompt)
+    assert e.detect_intent(prompt) == "fx"
     r = e.agent(prompt)
     assert r["intent"] == "fx"
     assert r["data"].get("proposal") is None

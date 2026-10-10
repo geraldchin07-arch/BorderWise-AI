@@ -583,6 +583,7 @@ def test_redteam_llm_failure_after_proposal_returns_actual_proposal_without_fall
     planner.enabled = True
     planner.client = SimpleNamespace(responses=FakeResponses())
     before_balances = e.get_balance()
+    before_transactions = len(e.state["transactions"])
     result = planner.run("Prepare the RM5000 conversion to SGD.")
 
     assert result is not None
@@ -594,7 +595,7 @@ def test_redteam_llm_failure_after_proposal_returns_actual_proposal_without_fall
     assert "No transaction has been executed" in result["answer"]
     assert e.get_balance() == before_balances
     assert len(e.state["proposals"]) == 1
-    assert len(e.state["transactions"]) == 15
+    assert len(e.state["transactions"]) == before_transactions
     assert [item["event"] for item in e.state["audit"]].count("PROPOSAL_CREATED") == 1
     assert not any(item["event"] == "EXECUTED" for item in e.state["audit"])
 

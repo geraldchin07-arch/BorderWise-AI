@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, asdict
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 import copy
 import re
@@ -1476,18 +1476,30 @@ class FinanceEngine:
         risk = self.risk_check(amount_myr, purpose)
         if risk["status"] == "BLOCKED":
             raise ValueError("; ".join(risk["reasons"]))
-        self.refresh_fx()
+        quote = self.refresh_fx()
         rate = self.state["fx"]["MYRSGD"]
         amount_sgd = money(amount_myr * rate)
+        quoted_at = datetime.now(timezone.utc)
+        quote_expires_at = quoted_at + timedelta(seconds=self.FX_TTL_SECONDS)
+        fx_quote = {
+            "source": str((quote or {}).get("source", self.state["fx"].get("source", "unknown reference source"))),
+            "rate_date": (quote or {}).get("rate_date", self.state["fx"].get("rate_date")),
+            "live": bool((quote or {}).get("live", self.state["fx"].get("live", False))),
+            "updated_at": (quote or {}).get("updated_at", self.state["fx"].get("updated_at")),
+            "quoted_at": quoted_at.isoformat(),
+            "expires_at": quote_expires_at.isoformat(),
+        }
         pid = "P-" + uuid.uuid4().hex[:8].upper()
         proposal = {
             "id": pid,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": quoted_at.isoformat(),
             "from": "MYR",
             "to": "SGD",
             "amount_myr": float(amount_myr),
             "amount_sgd": float(amount_sgd),
             "rate": float(rate),
+            "fx_quote": fx_quote,
+            "quote_expires_at": quote_expires_at.isoformat(),
             "purpose": purpose,
             "risk": risk,
             "permission_level": 2,
@@ -1521,6 +1533,29 @@ class FinanceEngine:
         balances = self.state.get("balances", {})
         if "MYR" not in balances or "SGD" not in balances:
             raise ValueError("Execution requires both MYR and SGD wallet balances; no funds were changed.")
+
+        # A quote reviewed indefinitely ago is not sufficient authorization for execution.
+        # Missing or malformed expiry metadata fails closed as well.
+        raw_expiry = proposal.get("quote_expires_at") or (proposal.get("fx_quote") or {}).get("expires_at")
+        try:
+            if not raw_expiry:
+                raise ValueError("Proposal is missing quote-expiry metadata.")
+            quote_expiry = datetime.fromisoformat(str(raw_expiry).replace("Z", "+00:00"))
+            if quote_expiry.tzinfo is None:
+                quote_expiry = quote_expiry.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            proposal["status"] = "EXPIRED"
+            self.audit("PROPOSAL_EXPIRED", {"proposal_id": proposal_id, "reason": "missing_or_invalid_quote_expiry"})
+            raise ValueError("Proposal quote is missing valid expiry metadata; prepare a fresh proposal before execution.")
+        if datetime.now(timezone.utc) >= quote_expiry:
+            proposal["status"] = "EXPIRED"
+            self.audit("PROPOSAL_EXPIRED", {
+                "proposal_id": proposal_id,
+                "reason": "quote_expired",
+                "quote_expires_at": str(raw_expiry),
+            })
+            raise ValueError("Proposal quote has expired; prepare and review a fresh proposal before execution.")
+
         amount_myr = money(proposal["amount_myr"])
         amount_sgd = money(proposal["amount_sgd"])
         risk = self.risk_check(amount_myr, proposal["purpose"])

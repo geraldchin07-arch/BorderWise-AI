@@ -1760,14 +1760,24 @@ class FinanceEngine:
         explicit_fx_language = any(k in t for k in [
             "convert", "converting", "conversion", "exchange rate", "current rate", "rate of",
         ])
+        explicit_quote_request = any(k in t for k in [
+            "quotation request", "only a quotation", "quote only", "quotation only",
+            "compare converting", "compare conversion", "estimate the cost",
+            "how much myr should i receive", "how much would i receive",
+        ])
         advice_context = any(k in t for k in [
             "can i afford", "affordability", "tuition", "school fees", "tuition fee",
             "do i have enough funds", "what should i convert", "should i convert",
         ])
+        # A negative clause such as "Do not create or execute a transfer" may
+        # contain words that resemble an action command. An explicit quote or
+        # comparison with a source/target pair remains informational.
+        if explicit_fx_language and explicit_pair and not advice_context and (
+            not explicit_transfer_command or explicit_quote_request
+        ):
+            return "fx"
         if explicit_transfer_command:
             return "transfer"
-        if explicit_fx_language and explicit_pair and not advice_context:
-            return "fx"
 
         # Classify financial reasoning before generic FX fallbacks. A tuition
         # funding plan remains a planning request unless a concrete quote pair
@@ -2221,7 +2231,7 @@ class FinanceEngine:
         ):
             return False
 
-        negation = r"(?:do\s+not|don't|dont|never|should\s+not|shouldn't|shouldnt|must\s+not|mustn't|mustnt|will\s+not|won't|wont|would\s+not|wouldn't|wouldnt|refuse\s+to|not\s+willing\s+to|cancel|stop)"
+        negation = r"(?:do\s+not\s+want\s+to|don't\s+want\s+to|dont\s+want\s+to|do\s+not\s+wish\s+to|don't\s+wish\s+to|would\s+prefer\s+not\s+to|prefer\s+not\s+to|do\s+not|don't|dont|never|should\s+not|shouldn't|shouldnt|must\s+not|mustn't|mustnt|will\s+not|won't|wont|would\s+not|wouldn't|wouldnt|refuse\s+to|not\s+willing\s+to|cancel|stop)"
         action = r"(?:transfer|send|remit(?:tance)?|convert|exchange|move(?:\s+money)?|pay|prepare\s+(?:a\s+)?(?:transfer|proposal)|create\s+(?:a\s+)?proposal)"
         # Keep negation close to the actual action. The old 80-character window
         # confused a warning at the end of a long prompt with the user's intent.

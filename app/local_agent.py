@@ -1287,7 +1287,7 @@ class LocalAgentPlanner:
         # If a single message asks to authorize while also attempting to alter the
         # amount or destination, require a fresh explicit proposal instead.
         authorization_conflict = (
-            any(k in t for k in ["i authorize", "authorize the", "authorize this", "i approve", "confirm the", "confirm this"])
+            any(k in t for k in ["i authorize", "authorize the", "authorize this", "i authorise", "authorise the", "authorise this", "i authorised", "i approve", "confirm the", "confirm this"])
             and any(k in t for k in ["change it to", "instead", "actually", "make it", "transfer the rest", "whatever is left"])
         )
         if authorization_conflict:
@@ -1306,8 +1306,10 @@ class LocalAgentPlanner:
         # informational FX questions. Authorization is a state-changing command:
         # it must match a pending proposal, and only then may the sandbox execute.
         authorize_request = any(k in t for k in [
-            "i authorize", "authorize the", "authorize this", "approve the",
-            "approve this", "i approve", "confirm the", "confirm this",
+            "i authorize", "authorize the", "authorize this", "authorize it",
+            "i authorise", "authorise the", "authorise this", "authorise it",
+            "i authorised", "approve the", "approve this", "i approve",
+            "confirm the", "confirm this",
         ])
         if authorize_request:
             pending = [p for p in self.engine.state["proposals"].values() if p.get("status") == "PENDING_AUTHORIZATION"]

@@ -2703,3 +2703,27 @@ def test_generic_currency_amount_symbol_recognition(message, expected_currency, 
         assert result is not None
         assert result[1] == expected_currency
         assert result[0] == expected_amount
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("The budget is 500 next month; tuition is SGD 1,200", (Decimal("1200"), "SGD")),
+        ("I have RM 1,200 and SGD 500", None),
+        ("The 500 was paid yesterday", None),
+        ("Please save 2k MYR for rent", (Decimal("2000"), "MYR")),
+        ("My tuition is 900,000 yen", (Decimal("900000"), "JPY")),
+        ("The total is €1.5m", (Decimal("1500000"), "EUR")),
+        ("I have $500", None),
+        ("I have ¥500", None),
+    ],
+)
+def test_generic_currency_amount_requires_local_unambiguous_amount(message, expected):
+    result = FinanceEngine().extract_generic_currency_amount(message)
+    assert result == expected
+
+
+def test_generic_currency_amount_does_not_pick_one_of_conflicting_pairs():
+    result = FinanceEngine().extract_generic_currency_amount(
+        "Convert RM 1,200 to SGD 500"
+    )
+    assert result is None

@@ -230,6 +230,43 @@ def test_chat_api_preserves_high_value_review_context_and_blocks_replay(monkeypa
     assert engine.state["proposals"] == proposals_after
 
 
+def test_chat_api_yes_go_ahead_authorizes_only_the_displayed_proposal(monkeypatch):
+    """Reproduce the browser conversation where 'Yes, go ahead' follows a pending quote."""
+    import app.engine as engine_module
+
+    class FakeFXResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"date":"2026-10-02","base":"MYR","quote":"SGD","rate":0.3220}'
+
+    monkeypatch.setattr(engine_module, "urlopen", lambda *args, **kwargs: FakeFXResponse())
+    engine.reset()
+    history = []
+    balances_before = engine.get_balance()
+    transactions_before = engine.get_transactions()
+
+    created = _post_chat_with_frontend_history(
+        "Prepare the RM3,141.94 conversion to SGD.",
+        history,
+    )
+    proposal = created["data"]["proposal"]
+    proposal_id = proposal["id"]
+    assert proposal["status"] == "PENDING_AUTHORIZATION"
+
+    authorized = _post_chat_with_frontend_history("Yes, go ahead.", history)
+
+    assert authorized["data"]["proposal"]["id"] == proposal_id
+    assert authorized["data"]["proposal"]["status"] == "EXECUTED"
+    assert authorized["data"]["transaction"]["status"] == "completed"
+    assert len(engine.get_transactions()) == len(transactions_before) + 1
+    assert engine.get_balance() != balances_before
+
+
 def test_chat_api_currency_clarification_resumes_original_conversion(monkeypatch):
     """Verify that the HTTP contract preserves the amount during a one-word reply."""
     import app.engine as engine_module

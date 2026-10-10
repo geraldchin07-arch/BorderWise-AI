@@ -207,6 +207,83 @@ For complex student-finance situations, build a goal-aware plan: identify essent
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    def _prefer_deterministic_planner(self, user_text: str) -> bool:
+        """Route known scenario arithmetic to deterministic handlers instead of LLM guessing."""
+        normalized = self.engine.repair_user_text(str(user_text or "")).lower()
+        intent = self.engine.detect_intent(user_text)
+
+        hypothetical_rate_comparison = (
+            intent == "general"
+            and any(term in normalized for term in ("hypothetical", "assume", "assumed"))
+            and any(term in normalized for term in ("compare", "difference", "calculate"))
+            and bool(self.engine.extract_conversion_pair(user_text))
+        )
+        savings_projection = (
+            any(term in normalized for term in ("save enough", "savings goal", "projected savings", "how much can i save"))
+            and any(term in normalized for term in ("month", "months", "week", "weeks"))
+        )
+        explicit_tuition_scenario = (
+            intent == "affordability"
+            and any(term in normalized for term in ("tuition is", "tuition costs", "tuition fee is", "tuition amount"))
+            and any(term in normalized for term in ("i have", "available", "saved", "cash"))
+        )
+        hypothetical_income = (
+            any(term in normalized for term in (
+                "what if i receive", "what if i get", "what if my parents",
+                "my parents might send", "my parents may send", "my family may send",
+                "might receive", "may receive",
+            ))
+            and bool(re.search(r"\b(?:sgd|myr|usd|cny|eur|gbp|aud|cad|rm|s\$|us\$)\s*\d|\d[\d,.]*\s*(?:sgd|myr|usd|cny|eur|gbp|aud|cad)\b", normalized))
+        )
+        return hypothetical_rate_comparison or savings_projection or explicit_tuition_scenario or hypothetical_income
+
+    def _required_tool_names_for_request(self, user_text: str) -> set[str] | None:
+        """Require evidence from a tool that can answer the detected financial intent.
+
+        None means the request is general enough to permit an LLM-only response.
+        A synthetic marker intentionally has no matching tool and therefore forces a
+        deterministic fallback when the request needs clarification first.
+        """
+        intent = self.engine.detect_intent(user_text)
+        if intent == "balance":
+            return {"get_balance"}
+        if intent == "transactions":
+            return {"get_transactions"}
+        if intent == "spending":
+            return {"analyze_spending"}
+        if intent == "forecast":
+            return {"forecast_cashflow", "forecast_portfolio", "simulate_income_impact"}
+        if intent == "affordability":
+            return {"forecast_cashflow", "forecast_portfolio", "get_obligations", "recommend_funding"}
+        if intent == "transfer":
+            return {"assess_transfer_risk", "create_transfer_proposal", "recommend_funding"}
+        if intent == "fx":
+            pair = self.engine.extract_conversion_pair(user_text)
+            if not pair:
+                return {"__clarify_currency_pair__"}
+            has_amount = bool(
+                self.engine.extract_generic_currency_amount(user_text)
+                or self.engine.extract_myr_amount(user_text)
+                or self.engine.extract_sgd_amount(user_text)
+            )
+            if has_amount:
+                return {"convert_currency"}
+            if set(pair) <= {"MYR", "SGD"}:
+                return {"convert_currency", "get_fx_rate"}
+            return {"convert_currency"}
+
+        normalized = self.engine.repair_user_text(str(user_text or "")).lower()
+        has_currency = bool(self.engine.extract_conversion_pair(user_text)) or any(
+            term in normalized for term in ("myr", "sgd", "usd", "cny", "eur", "gbp", "aud", "cad", "ringgit", "dollar", "yuan")
+        )
+        math_or_finance_request = any(term in normalized for term in (
+            "calculate", "compare", "difference", "how much", "can i afford", "should i",
+            "what if", "forecast", "funding", "tuition", "balance", "exchange",
+        ))
+        if has_currency and math_or_finance_request:
+            return {"convert_currency", "forecast_portfolio", "recommend_funding", "simulate_income_impact"}
+        return None
+
     def _proposal_result(
         self,
         trace: list[dict[str, Any]],
@@ -259,12 +336,15 @@ For complex student-finance situations, build a goal-aware plan: identify essent
     def run(self, text: str) -> dict[str, Any] | None:
         if not self.enabled:
             return None
+        if self._prefer_deterministic_planner(text):
+            return None
 
         trace: list[dict[str, Any]] = [
             {"step": "UNDERSTAND", "status": "completed", "detail": "LLM agent enabled; selecting deterministic finance tools."}
         ]
         input_items: list[Any] = [{"role": "user", "content": text}]
         created_proposal: dict[str, Any] | None = None
+        successful_tool_names: set[str] = set()
 
         try:
             for _ in range(self.max_rounds):
@@ -283,6 +363,14 @@ For complex student-finance situations, build a goal-aware plan: identify essent
                 if not calls:
                     if created_proposal is not None:
                         return self._proposal_result(trace, created_proposal, "completed")
+                    required_tools = self._required_tool_names_for_request(text)
+                    if required_tools and not required_tools.intersection(successful_tool_names):
+                        trace.append({
+                            "step": "AGENT_FALLBACK",
+                            "status": "completed",
+                            "detail": "The LLM did not return a successful result from a tool appropriate to the detected financial intent; deterministic handling will be used.",
+                        })
+                        return None
                     answer = response.output_text.strip() if response.output_text else "I could not produce a response."
                     trace.append({"step": "RESPOND", "status": "completed", "detail": f"LLM synthesized final answer using {len(trace)-1} tool/agent steps."})
                     return {"intent": "agentic", "answer": answer, "trace": trace, "data": {"agent_mode": "llm_tool_calling", "model": self.model}, "state": self.engine.snapshot()}
@@ -314,6 +402,7 @@ For complex student-finance situations, build a goal-aware plan: identify essent
                         if isinstance(candidate, dict):
                             created_proposal = candidate
                     if result.get("ok"):
+                        successful_tool_names.add(name)
                         trace.append({"step": "TOOL_RESULT", "status": "completed", "detail": f"{name} returned deterministic financial data."})
                     else:
                         trace.append({"step": "TOOL_RESULT", "status": "blocked", "detail": f"{name} returned an error; no unsafe fallback was used."})

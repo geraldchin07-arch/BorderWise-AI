@@ -907,11 +907,11 @@ class LocalAgentPlanner:
         tuition_context_fact = remembered_context.get("tuition_obligation")
         wallet_context_facts = remembered_context.get("wallet_balances") or {}
         affordability_followup = bool(re.fullmatch(
-            r"(?:can\\s+i\\s+afford(?:\\s+(?:it|that|this|tuition|my\\s+tuition|the\\s+tuition))?"
-            r"|do\\s+i\\s+have\\s+enough(?:\\s+money)?(?:\\s+for\\s+(?:it|tuition|the\\s+tuition))?"
-            r"|will\\s+i\\s+have\\s+enough(?:\\s+money)?(?:\\s+for\\s+(?:it|tuition|the\\s+tuition))?"
-            r"|would\\s+(?:that|it)\\s+be\\s+enough|is\\s+(?:that|it)\\s+enough"
-            r"|will\\s+(?:that|it)\\s+cover\\s+(?:it|tuition|the\\s+tuition))\\s*[?.!]*",
+            r"(?:can\s+i\s+afford(?:\s+(?:it|that|this|tuition|my\s+tuition|the\s+tuition))?"
+            r"|do\s+i\s+have\s+enough(?:\s+money)?(?:\s+for\s+(?:it|tuition|the\s+tuition))?"
+            r"|will\s+i\s+have\s+enough(?:\s+money)?(?:\s+for\s+(?:it|tuition|the\s+tuition))?"
+            r"|would\s+(?:that|it)\s+be\s+enough|is\s+(?:that|it)\s+enough"
+            r"|will\s+(?:that|it)\s+cover\s+(?:it|tuition|the\s+tuition))\s*[?.!]*",
             t,
             re.I,
         ))

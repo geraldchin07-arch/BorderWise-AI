@@ -212,6 +212,19 @@ For complex student-finance situations, build a goal-aware plan: identify essent
         normalized = self.engine.repair_user_text(str(user_text or "")).lower()
         intent = self.engine.detect_intent(user_text)
 
+        # Multi-operation conversions must not be compressed by the LLM into a
+        # single successful conversion. Split on explicit conjunctions and parse
+        # each side independently with the same deterministic currency grammar.
+        segments = re.split(r";|\\n|\\b(?:and then|and|then|also)\\b", str(user_text or ""), flags=re.I)
+        requested_pairs = [
+            pair for segment in segments
+            if (pair := self.engine.extract_conversion_pair(segment)) is not None
+        ]
+        explicit_multi_pair_conversion = (
+            len(requested_pairs) >= 2
+            and any(term in normalized for term in ("convert", "exchange", "conversion", "calculate", "compare"))
+        )
+
         hypothetical_rate_comparison = (
             intent == "general"
             and any(term in normalized for term in ("hypothetical", "assume", "assumed"))
@@ -235,7 +248,13 @@ For complex student-finance situations, build a goal-aware plan: identify essent
             ))
             and bool(re.search(r"\b(?:sgd|myr|usd|cny|eur|gbp|aud|cad|rm|s\$|us\$)\s*\d|\d[\d,.]*\s*(?:sgd|myr|usd|cny|eur|gbp|aud|cad)\b", normalized))
         )
-        return hypothetical_rate_comparison or savings_projection or explicit_tuition_scenario or hypothetical_income
+        return (
+            explicit_multi_pair_conversion
+            or hypothetical_rate_comparison
+            or savings_projection
+            or explicit_tuition_scenario
+            or hypothetical_income
+        )
 
     def _required_tool_names_for_request(self, user_text: str) -> set[str] | None:
         """Require evidence from a tool that can answer the detected financial intent.

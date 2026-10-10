@@ -769,11 +769,18 @@ def test_redteam_multi_pair_conversion_bypasses_llm_and_preserves_all_pairs():
     assert planner.client.responses.calls == 0
 
 
-def test_redteam_multi_pair_detection_does_not_capture_single_conversion_with_display_currency():
+def test_redteam_single_conversion_without_second_display_conversion_remains_eligible_for_llm():
+    planner = AgentOrchestrator(FinanceEngine())
+    assert planner._prefer_deterministic_planner(
+        "Convert 500 MYR to SGD and tell me whether the quoted rate is live."
+    ) is False
+
+
+def test_redteam_different_display_currency_routes_through_deterministic_conversion():
     planner = AgentOrchestrator(FinanceEngine())
     assert planner._prefer_deterministic_planner(
         "Convert 500 MYR to SGD, but show the result in USD."
-    ) is False
+    ) is True
 
 
 def test_redteam_multi_pair_conversion_split_uses_real_conjunction_boundaries():

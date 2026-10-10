@@ -1200,3 +1200,37 @@ def test_redteam_single_pair_fx_unavailable_does_not_substitute_default_rate(mon
     assert engine.state["proposals"] == {}
     assert len(engine.state["transactions"]) == before_transactions
 
+
+
+def test_redteam_source_currency_before_amount_is_parsed_for_conversion(monkeypatch):
+    engine = FinanceEngine()
+    calls = []
+
+    def fake_quote(amount, base, quote):
+        calls.append((float(amount), base, quote))
+        return {
+            "amount": float(amount),
+            "from_currency": base,
+            "to_currency": quote,
+            "rate": 3.1,
+            "converted_amount": round(float(amount) * 3.1, 2),
+            "fx": {"source": "test-reference", "rate_date": "2026-10-10", "live": False},
+        }
+
+    monkeypatch.setattr(engine, "quote_conversion", fake_quote)
+    before_balances = engine.get_balance()
+
+    result = engine.agent("Convert SGD 500 to MYR.")
+
+    assert result["intent"] == "fx"
+    assert result["data"]["conversion"]["from_currency"] == "SGD"
+    assert result["data"]["conversion"]["to_currency"] == "MYR"
+    assert result["data"]["conversion"]["amount"] == 500
+    assert result["data"]["conversion"]["converted_amount"] == 1550
+    assert calls == [(500.0, "SGD", "MYR")]
+    assert result["data"]["state_changed"] is False
+    assert result["data"]["proposal"] is None
+    assert engine.get_balance() == before_balances
+    assert engine.state["proposals"] == {}
+
+

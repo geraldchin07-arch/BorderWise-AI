@@ -2855,11 +2855,33 @@ class LocalAgentPlanner:
                 trace.append({"step": "AUTHORIZE", "status": "required", "detail": "Level 2 explicit user authorization is required; the request to skip confirmation is ignored."})
                 answer = f"I prepared a sandbox conversion of RM{myr:,.2f} to approximately S${proposal['amount_sgd']:,.2f}. I will not execute it until you explicitly authorize it."
                 return self._result("agentic_local", answer, trace, {"proposal": proposal, "risk": risk})
+            named_recipient_action = (
+                any(k in t for k in ["recipient", "beneficiary", "payee"])
+                and any(k in t for k in ["transfer", "send", "remit", "pay", "prepare"])
+            )
+            if named_recipient_action:
+                return self._result(
+                    "agentic_local",
+                    "This XKF5 sandbox does not support payments to named recipients or bank-account transfers yet. "
+                    "Its supported transfer proposal is an internal MYR-to-SGD conversion, not sending SGD to a person such as Alice. "
+                    "I cannot verify or address a recipient from this chat. No proposal or transaction was created, and no account state changed.",
+                    trace + [
+                        {"step": "SECURITY", "status": "blocked", "detail": "Named-recipient payment is not a supported action in this sandbox."},
+                    ],
+                    {
+                        "blocked_reason": "unsupported_recipient_transfer",
+                        "requested_action": "named_recipient_transfer",
+                        "state_changed": False,
+                        "proposal": None,
+                    },
+                )
             return self._result(
                 "agentic_local",
-                "I need an exact MYR amount before I can prepare a transfer. I will not infer an amount from your forecast or balances.",
+                "I need an explicit MYR amount for the supported internal MYR-to-SGD conversion proposal. "
+                "The amount in another currency cannot be silently reinterpreted as MYR. "
+                "No proposal or transaction was created.",
                 trace,
-                {"blocked_reason": "missing_explicit_amount"},
+                {"blocked_reason": "missing_explicit_myr_amount", "state_changed": False, "proposal": None},
             )
 
         # Generic multi-currency reasoning: handle currencies beyond MYR/SGD before

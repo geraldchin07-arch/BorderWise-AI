@@ -364,7 +364,7 @@ async function send(){
    const answer=data.answer||data.detail||'';
    conversationHistory.push({role:'user',content:text});
    conversationHistory.push({role:'assistant',content:answer,proposal_id:data.data?.proposal?.id||null});
-   conversationHistory=conversationHistory.slice(-12);
+   conversationHistory=conversationHistory.slice(-50);
    addMsg(answer,'bot'); renderDecisionCard(data.data); renderTrace(data.trace); renderState(data.state);
    // Keep a pending proposal available across ordinary questions, but clear it
    // once the engine reports a terminal proposal status such as EXECUTED/EXPIRED.

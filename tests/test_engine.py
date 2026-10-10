@@ -2941,3 +2941,76 @@ def test_affordability_blocked_conversion_does_not_crash():
     result = e.agent("Can I afford my tuition?")
     assert result["data"]["risk"]["status"] == "BLOCKED"
     assert "proposal" not in result["data"]
+
+
+def test_read_only_fx_quote_with_do_not_transfer_instruction_is_not_blocked():
+    e = FinanceEngine()
+    before = copy.deepcopy(e.get_balance())
+    r = e.agent(
+        "I have SGD 1,200 available. If I convert SGD 300 to MYR at the current exchange rate, "
+        "how much MYR should I receive after fees? Show the exchange rate, fees and quote timestamp "
+        "if available. This is only a quotation request. Do not create or execute a transfer."
+    )
+    assert r["intent"] == "fx"
+    assert r["data"].get("proposal") is None
+    assert e.state["proposals"] == {}
+    assert e.get_balance() == before
+    assert "300.00 SGD" in r["answer"] or "300.00 SGD" in str(r["data"])
+
+
+def test_multi_pair_fx_with_fees_does_not_fall_into_saved_tuition_forecast():
+    e = FinanceEngine()
+    before = copy.deepcopy(e.get_balance())
+    r = e.agent(
+        "Compare converting USD 100 to SGD and MYR 500 to SGD. Present each conversion separately, "
+        "with the source amount, target currency, verified rate, fees and quote timestamp where available. "
+        "Do not execute any transaction."
+    )
+    assert r["intent"] == "fx"
+    assert len(r["data"]["conversions"]) == 2
+    assert r["data"].get("proposal") is None
+    assert "USD" in r["answer"] and "MYR" in r["answer"]
+    assert e.state["proposals"] == {}
+    assert e.get_balance() == before
+
+
+def test_explicit_payment_affordability_uses_prompt_amounts_and_stays_read_only():
+    e = FinanceEngine()
+    before = copy.deepcopy(e.get_balance())
+    r = e.agent(
+        "I have SGD 900 and need to pay MYR 1,000. Can I afford it? Estimate the cost using "
+        "a verified current exchange rate, include applicable fees, and tell me whether I have enough funds. "
+        "Do not create or execute a transfer."
+    )
+    assert r["intent"] == "affordability"
+    assert r["data"]["goal"] == "payment_affordability"
+    assert r["data"]["balance_currency"] == "SGD"
+    assert r["data"]["balance_amount"] == 900.0
+    assert r["data"]["payment_currency"] == "MYR"
+    assert r["data"]["payment_amount"] == 1000.0
+    assert r["data"].get("proposal") is None
+    assert r["data"]["state_changed"] is False
+    assert "fee amount" in r["answer"].lower()
+    assert e.state["proposals"] == {}
+    assert e.get_balance() == before
+
+
+def test_explicit_sgd_recipient_transfer_does_not_create_tuition_proposal():
+    e = FinanceEngine()
+    r = e.agent(
+        "My available balance is SGD 100. Prepare a transfer of SGD 500 to my configured test recipient Alice. "
+        "Check affordability before creating a proposal. Do not execute anything."
+    )
+    assert r["intent"] == "transfer"
+    assert r["data"].get("proposal") is None
+    assert e.state["proposals"] == {}
+    assert "myr" in r["answer"].lower() or "source" in r["answer"].lower()
+
+
+def test_typo_tolerant_balance_query_asks_for_the_requested_currency():
+    e = FinanceEngine()
+    r = e.agent("how do i have in usd")
+    assert r["intent"] == "balance"
+    assert r["data"]["state_changed"] is False
+    assert "USD" in r["answer"]
+    assert e.state["proposals"] == {}

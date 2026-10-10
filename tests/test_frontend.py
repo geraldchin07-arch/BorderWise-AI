@@ -28,3 +28,18 @@ def test_inline_frontend_javascript_has_valid_syntax(tmp_path):
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_proposal_card_discloses_risk_status_and_escaped_reasons():
+    html_path = Path(__file__).resolve().parents[1] / "static" / "index.html"
+    html = html_path.read_text(encoding="utf-8")
+    start = html.index("function showProposal(p)")
+    end = html.index("\\nasync function authorize", start)
+    proposal_ui = html[start:end]
+
+    assert "risk.status" in proposal_ui
+    assert "risk.reasons" in proposal_ui
+    assert "escapeFXHtml(reason)" in proposal_ui
+    assert "Review required:" in proposal_ui
+    assert "const canAuthorize=riskStatus==='LOW'||riskStatus==='REVIEW'" in proposal_ui
+    assert "disabled title=" in proposal_ui

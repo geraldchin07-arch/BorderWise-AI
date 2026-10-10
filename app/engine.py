@@ -1792,7 +1792,12 @@ class FinanceEngine:
                 match = re.search(pattern, source)
                 if not match:
                     continue
-                if code in ambiguous_codes and not re.search(
+                if code in ambiguous_codes and alias not in {
+                    "CUBAN PESO", "ALBANIAN LEK", "TURKISH LIRA",
+                    "MOROCCAN DIRHAM", "PERUVIAN SOL", "TONGAN PAANGA",
+                    "GEORGIAN LARI", "COLOMBIAN PESO", "BOLIVIAN BOLIVIANO",
+                    "ROMANIAN LEU", "ROMANIAN LEI",
+                } and not re.search(
                     rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", raw_upper
                 ):
                     continue

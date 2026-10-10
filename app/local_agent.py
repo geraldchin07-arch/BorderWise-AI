@@ -39,7 +39,7 @@ class LocalAgentPlanner:
             "ALL": ["albanian lek", "lek"],
             "MYR": ["myr", "rm", "ringgit", "malaysian ringgit"],
             "SGD": ["sgd", "s$", "singapore dollar", "singapore dollars"],
-            "USD": ["usd", "us$", "$", "dollar", "dollars", "us dollar", "us dollars"],
+            "USD": ["usd", "us$", "us dollar", "us dollars"],
             "CNY": ["cny", "rmb", "yuan", "renminbi", "chinese yuan"],
             "JPY": ["jpy", "yen", "japanese yen"],
             "KRW": ["krw", "won", "₩", "korean won"],

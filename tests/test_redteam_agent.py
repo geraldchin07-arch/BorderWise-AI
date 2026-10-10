@@ -1075,3 +1075,126 @@ def test_redteam_incomplete_fx_tool_result_cannot_be_replaced_by_llm_arithmetic(
 
     assert planner.run("Convert 100 MYR to SGD.") is None
     assert planner.client.responses.calls == 2
+
+
+def test_redteam_multi_pair_fx_supports_less_common_currency_codes_and_names(monkeypatch):
+    engine = FinanceEngine()
+    rates = {("KWD", "MYR"): 12.34, ("ZAR", "SGD"): 0.075}
+    calls = []
+
+    def fake_quote(amount, base, quote):
+        calls.append((float(amount), base, quote))
+        rate = rates[(base, quote)]
+        converted = round(float(amount) * rate, 2)
+        return {
+            "amount": float(amount),
+            "from_currency": base,
+            "to_currency": quote,
+            "rate": rate,
+            "converted_amount": converted,
+            "fx": {"source": "test-reference", "rate_date": "2026-10-10", "live": False},
+        }
+
+    monkeypatch.setattr(engine, "quote_conversion", fake_quote)
+    before_balances = engine.get_balance()
+
+    result = engine.agent(
+        "Convert 25 Kuwaiti dinar to MYR and 300 South African rand to SGD."
+    )
+
+    assert result["intent"] == "fx"
+    assert len(result["data"]["conversions"]) == 2
+    assert [(x["from_currency"], x["to_currency"]) for x in result["data"]["conversions"]] == [
+        ("KWD", "MYR"),
+        ("ZAR", "SGD"),
+    ]
+    assert [x["converted_amount"] for x in result["data"]["conversions"]] == [308.5, 22.5]
+    assert calls == [(25.0, "KWD", "MYR"), (300.0, "ZAR", "SGD")]
+    assert result["data"]["state_changed"] is False
+    assert result["data"]["proposal"] is None
+    assert engine.get_balance() == before_balances
+    assert engine.state["proposals"] == {}
+
+
+def test_redteam_multi_pair_fx_fails_closed_when_any_quote_is_unavailable(monkeypatch):
+    engine = FinanceEngine()
+    before_balances = engine.get_balance()
+    before_transactions = len(engine.state["transactions"])
+
+    def fake_quote(amount, base, quote):
+        if (base, quote) == ("SGD", "MYR"):
+            raise ValueError("Reference FX for SGD→MYR is currently unavailable.")
+        return {
+            "amount": float(amount),
+            "from_currency": base,
+            "to_currency": quote,
+            "rate": 0.32,
+            "converted_amount": round(float(amount) * 0.32, 2),
+            "fx": {"source": "test-reference", "rate_date": "2026-10-10"},
+        }
+
+    monkeypatch.setattr(engine, "quote_conversion", fake_quote)
+
+    result = engine.agent("Convert 100 MYR to SGD and 100 SGD to MYR.")
+
+    assert result["intent"] == "fx"
+    assert result["data"]["needs_clarification"] is True
+    assert result["data"]["state_changed"] is False
+    assert result["data"]["proposal"] is None
+    assert "couldn't retrieve a reliable quote for every pair" in result["answer"]
+    assert "100.00 MYR" not in result["answer"]
+    assert "conversions" not in result["data"]
+    assert engine.get_balance() == before_balances
+    assert len(engine.state["transactions"]) == before_transactions
+    assert engine.state["proposals"] == {}
+
+
+def test_redteam_ambiguous_source_amounts_never_create_fx_results_or_mutate_state():
+    prompts = [
+        "Convert 250 bucks to SGD.",
+        "Convert 250 dollars to SGD.",
+        "Convert $250 to MYR.",
+        "Convert 250 to SGD.",
+    ]
+
+    for prompt in prompts:
+        engine = FinanceEngine()
+        before_balances = engine.get_balance()
+        before_transactions = len(engine.state["transactions"])
+
+        result = engine.agent(prompt)
+
+        assert result["data"].get("proposal") is None, prompt
+        assert "conversion" not in result["data"], prompt
+        assert "conversions" not in result["data"], prompt
+        assert engine.get_balance() == before_balances, prompt
+        assert len(engine.state["transactions"]) == before_transactions, prompt
+        assert engine.state["proposals"] == {}, prompt
+        assert engine.state["audit"] == [], prompt
+
+
+def test_redteam_single_pair_fx_unavailable_does_not_substitute_default_rate(monkeypatch):
+    engine = FinanceEngine()
+    before_balances = engine.get_balance()
+
+    monkeypatch.setattr(
+        engine,
+        "_fetch_reference_pair",
+        lambda base, quote, force=False: (_ for _ in ()).throw(
+            ValueError(f"Reference FX for {base}→{quote} is currently unavailable.")
+        ),
+    )
+    monkeypatch.setattr(engine, "refresh_fx", lambda force=False: engine.fx_quote())
+
+    result = engine.agent("Convert 200 KWD to MXN.")
+
+    assert result["intent"] == "fx"
+    assert "KWD" in result["answer"] or "currently unavailable" in result["answer"]
+    assert "MYR to SGD" not in result["answer"]
+    assert "conversion" not in result["data"]
+    assert "conversions" not in result["data"]
+    assert result["data"].get("proposal") is None
+    assert engine.get_balance() == before_balances
+    assert engine.state["proposals"] == {}
+    assert engine.state["transactions"] == []
+

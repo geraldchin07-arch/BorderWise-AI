@@ -778,6 +778,21 @@ class LocalAgentPlanner:
                 context["wallet_balances"] = merged_wallet
 
             normalized = self.engine.repair_user_text(raw_text).lower().strip()
+            # Remember explicit tuition facts across the full bounded conversation,
+            # but only from user turns. Assistant text and browser-supplied proposal
+            # references are never treated as financial facts or authorization.
+            tuition_labels = [
+                "tuition amount", "tuition fee", "tuition fees", "tuition",
+                "school fee", "school fees", "semester fee",
+            ]
+            if any(term in normalized for term in ["tuition", "school fee", "semester fee"]):
+                labeled_tuition = self._extract_labeled_amount(raw_text, tuition_labels)
+                if labeled_tuition:
+                    context["tuition_obligation"] = {
+                        "amount": labeled_tuition[0],
+                        "currency": labeled_tuition[1],
+                        "due_days": self._extract_horizon_days(raw_text),
+                    }
             savings_start = re.search(
                 r'\b(?:have|currently have|start with|starting with)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s+(?:in )?(?:my )?savings',
                 normalized, re.I,
@@ -865,7 +880,153 @@ class LocalAgentPlanner:
             self.engine.state.get("profile_meta", {}).get("planning_currency", "SGD")
         ).upper()
 
+        # Merge explicit tuition facts from the current user message into the
+        # conversation-scoped scenario context. When an API chat supplies history,
+        # this remains ephemeral; it never leaks into another chat or saved wallet.
+        tuition_labels = [
+            "tuition amount", "tuition fee", "tuition fees", "tuition",
+            "school fee", "school fees", "semester fee",
+        ]
+        current_tuition = (
+            self._extract_labeled_amount(text, tuition_labels)
+            if any(term in t for term in ["tuition", "school fee", "semester fee"])
+            else None
+        )
+        if current_tuition:
+            remembered_context["tuition_obligation"] = {
+                "amount": current_tuition[0],
+                "currency": current_tuition[1],
+                "due_days": self._extract_horizon_days(text),
+            }
+            if not history_scoped:
+                self.engine._agent_scenario_context = remembered_context
+
+        # Resolve concise affordability follow-ups from explicit user facts in
+        # earlier messages, even when several unrelated turns occurred afterward.
+        # If the historical facts or FX valuation are insufficient, fail closed.
+        tuition_context_fact = remembered_context.get("tuition_obligation")
+        wallet_context_facts = remembered_context.get("wallet_balances") or {}
+        affordability_followup = bool(re.fullmatch(
+            r"(?:can\\s+i\\s+afford(?:\\s+(?:it|that|this|tuition|my\\s+tuition|the\\s+tuition))?"
+            r"|do\\s+i\\s+have\\s+enough(?:\\s+money)?(?:\\s+for\\s+(?:it|tuition|the\\s+tuition))?"
+            r"|will\\s+i\\s+have\\s+enough(?:\\s+money)?(?:\\s+for\\s+(?:it|tuition|the\\s+tuition))?"
+            r"|would\\s+(?:that|it)\\s+be\\s+enough|is\\s+(?:that|it)\\s+enough"
+            r"|will\\s+(?:that|it)\\s+cover\\s+(?:it|tuition|the\\s+tuition))\\s*[?.!]*",
+            t,
+            re.I,
+        ))
+        if affordability_followup and tuition_context_fact and wallet_context_facts:
+            tuition_amount = self.engine.money_value(tuition_context_fact.get("amount", 0))
+            tuition_currency = str(tuition_context_fact.get("currency", "")).upper()
+            due_days = tuition_context_fact.get("due_days")
+            try:
+                tuition_rate, tuition_fx = self.engine._currency_rate_to_sgd(tuition_currency)
+                tuition_sgd = self.engine.money_value(tuition_amount * tuition_rate)
+                wallet_total_sgd = Decimal("0")
+                wallet_rates = {}
+                for raw_currency, raw_balance in wallet_context_facts.items():
+                    currency = str(raw_currency).upper()
+                    balance = self.engine.money_value(raw_balance)
+                    if balance < 0:
+                        raise ValueError("A stated wallet balance cannot be negative.")
+                    if balance == 0:
+                        wallet_rates[currency] = {"rate_to_sgd": None, "source": None, "rate_date": None}
+                        continue
+                    rate, fx_meta = self.engine._currency_rate_to_sgd(currency)
+                    wallet_total_sgd += balance * rate
+                    wallet_rates[currency] = {
+                        "rate_to_sgd": float(rate),
+                        "source": fx_meta.get("source"),
+                        "rate_date": fx_meta.get("rate_date"),
+                    }
+                wallet_total_sgd = self.engine.money_value(wallet_total_sgd)
+                meta = self.engine.state.get("profile_meta", {})
+                reserve_currency = str(meta.get("emergency_reserve_currency", "MYR")).upper()
+                reserve_amount = self.engine.money_value(Decimal(str(
+                    meta.get("emergency_reserve_amount", self.engine.state.get("emergency_reserve_myr", 0))
+                )))
+                reserve_sgd = Decimal("0")
+                if reserve_amount > 0 and reserve_currency in wallet_context_facts:
+                    reserve_native = min(
+                        reserve_amount,
+                        self.engine.money_value(wallet_context_facts[reserve_currency]),
+                    )
+                    reserve_rate, _ = self.engine._currency_rate_to_sgd(reserve_currency)
+                    reserve_sgd = self.engine.money_value(reserve_native * reserve_rate)
+                usable_sgd = self.engine.money_value(max(Decimal("0"), wallet_total_sgd - reserve_sgd))
+                shortfall_sgd = self.engine.money_value(max(Decimal("0"), tuition_sgd - usable_sgd))
+                remaining_sgd = self.engine.money_value(max(Decimal("0"), usable_sgd - tuition_sgd))
+            except Exception as exc:
+                return self._result(
+                    "affordability",
+                    "I found the tuition and wallet amounts you stated earlier, but I could not safely compare them because a required reference FX rate is unavailable or invalid. Please refresh FX or add a trusted rate for the relevant currency. I will not guess a rate, create a proposal, or change your wallet.",
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Matched the short follow-up to earlier user-stated tuition and wallet details."},
+                        {"step": "SECURITY", "status": "blocked", "detail": f"Scenario valuation failed closed: {exc}"},
+                    ],
+                    {
+                        "goal": "conversation_context_affordability",
+                        "blocked_reason": "scenario_fx_unavailable",
+                        "scenario_inputs": {
+                            "wallet_balances": {str(k): float(self.engine.money_value(v)) for k, v in wallet_context_facts.items()},
+                            "tuition_amount": float(tuition_amount),
+                            "tuition_currency": tuition_currency,
+                            "tuition_due_days": due_days,
+                        },
+                        "proposal": None,
+                        "state_changed": False,
+                    },
+                )
+            if shortfall_sgd > 0:
+                answer = (
+                    f"Using your earlier messages, you stated wallet balances worth about SGD {wallet_total_sgd:,.2f}; "
+                    f"the tuition you stated was {tuition_currency} {tuition_amount:,.2f}"
+                    + (f", due in {due_days} days" if due_days is not None else ", with no due date captured")
+                    + f". After the represented emergency reserve of SGD {reserve_sgd:,.2f}, about SGD {usable_sgd:,.2f} is available for this tuition-only comparison, leaving a shortfall of about SGD {shortfall_sgd:,.2f} before fees and other living costs."
+                )
+            else:
+                answer = (
+                    f"Using your earlier messages, you stated wallet balances worth about SGD {wallet_total_sgd:,.2f}; "
+                    f"the tuition you stated was {tuition_currency} {tuition_amount:,.2f}"
+                    + (f", due in {due_days} days" if due_days is not None else ", with no due date captured")
+                    + f". After the represented emergency reserve of SGD {reserve_sgd:,.2f}, about SGD {usable_sgd:,.2f} is available for this tuition-only comparison, leaving about SGD {remaining_sgd:,.2f}. This does not yet account for all living costs, other obligations, or conversion fees."
+                )
+            return self._result(
+                "affordability",
+                answer + " I used amounts explicitly stated in this chat and did not create a proposal or transaction.",
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Resolved a short follow-up using user-stated facts from earlier conversation turns."},
+                    {"step": "OBSERVE", "status": "completed", "detail": f"Reused explicitly stated wallet currencies and the most recent labeled tuition amount ({tuition_currency})."},
+                    {"step": "CALCULATE", "status": "completed", "detail": f"Converted the stated balances and tuition to SGD using trusted engine rates; compared usable SGD {usable_sgd:,.2f} against tuition SGD {tuition_sgd:,.2f}."},
+                    {"step": "SECURITY", "status": "completed", "detail": "Historical context was used only for read-only affordability analysis; no proposal or transaction was created."},
+                ],
+                {
+                    "goal": "conversation_context_affordability",
+                    "affordability": {
+                        "wallet_total_sgd": float(wallet_total_sgd),
+                        "reserve_sgd": float(reserve_sgd),
+                        "usable_sgd": float(usable_sgd),
+                        "tuition_sgd": float(tuition_sgd),
+                        "shortfall_sgd": float(shortfall_sgd),
+                        "remaining_sgd": float(remaining_sgd),
+                        "wallet_rates": wallet_rates,
+                    },
+                    "scenario_inputs": {
+                        "wallet_balances": {str(k): float(self.engine.money_value(v)) for k, v in wallet_context_facts.items()},
+                        "tuition_amount": float(tuition_amount),
+                        "tuition_currency": tuition_currency,
+                        "tuition_due_days": due_days,
+                    },
+                    "state_changed": False,
+                    "proposal": None,
+                },
+            )
+
         # A stated MYR balance plus an upcoming tuition decision is affordability
+        # planning, not a generic agentic request or an instruction to transact.
+        # Replace the scenario MYR balance (do not add it to the saved balance),
+        # then evaluate the configured obligations and reserve without mutating state.
+
         # planning, not a generic agentic request or an instruction to transact.
         # Replace the scenario MYR balance (do not add it to the saved balance),
         # then evaluate the configured obligations and reserve without mutating state.

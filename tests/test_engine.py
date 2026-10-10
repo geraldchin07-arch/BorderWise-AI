@@ -3648,3 +3648,53 @@ def test_chat_api_rejects_history_outside_schema_limits(monkeypatch):
         "history": [{"role": "assistant", "content": "x" * 2001}],
     })
     assert oversized_history_message.status_code == 422
+
+
+def test_multi_turn_affordability_reuses_older_tuition_and_wallet_facts():
+    engine = FinanceEngine()
+    balances_before = copy.deepcopy(engine.get_balance())
+    proposals_before = copy.deepcopy(engine.state["proposals"])
+    transactions_before = copy.deepcopy(engine.get_transactions())
+    history = [
+        {"role": "user", "content": "My tuition is SGD 6000 due in 3 weeks."},
+        {"role": "assistant", "content": "I noted the tuition amount you stated."},
+        {"role": "user", "content": "Can you explain what MYR means?"},
+        {"role": "assistant", "content": "MYR is the code for Malaysian ringgit."},
+        {"role": "user", "content": "What is an exchange-rate spread?"},
+        {"role": "assistant", "content": "It is the difference between a reference rate and a quoted rate."},
+        {"role": "user", "content": "I have SGD 5490."},
+        {"role": "assistant", "content": "I noted the wallet amount you stated."},
+    ]
+
+    result = engine.agent("Can I afford it?", conversation_history=history)
+
+    assert result["intent"] == "affordability"
+    assert result["data"]["goal"] == "conversation_context_affordability"
+    assert result["data"]["scenario_inputs"]["wallet_balances"]["SGD"] == 5490.0
+    assert result["data"]["scenario_inputs"]["tuition_amount"] == 6000.0
+    assert result["data"]["scenario_inputs"]["tuition_currency"] == "SGD"
+    assert result["data"]["scenario_inputs"]["tuition_due_days"] == 21
+    assert result["data"]["affordability"]["wallet_total_sgd"] == 5490.0
+    assert result["data"]["affordability"]["shortfall_sgd"] == 510.0
+    assert result["data"]["proposal"] is None
+    assert result["data"]["state_changed"] is False
+    assert engine.get_balance() == balances_before
+    assert engine.state["proposals"] == proposals_before
+    assert engine.get_transactions() == transactions_before
+    assert engine._agent_scenario_context == {}
+
+
+def test_latest_user_stated_tuition_replaces_old_tuition_context():
+    from app.local_agent import LocalAgentPlanner
+
+    engine = FinanceEngine()
+    planner = LocalAgentPlanner(engine)
+    context = planner._scenario_context_from_history([
+        {"role": "user", "content": "My tuition is SGD 6000 due in 3 weeks."},
+        {"role": "assistant", "content": "I noted the first amount."},
+        {"role": "user", "content": "Correction: my tuition is SGD 5500 due in 2 weeks."},
+    ])
+
+    assert context["tuition_obligation"]["amount"] == Decimal("5500")
+    assert context["tuition_obligation"]["currency"] == "SGD"
+    assert context["tuition_obligation"]["due_days"] == 14

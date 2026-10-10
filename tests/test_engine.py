@@ -3301,6 +3301,70 @@ def test_standalone_high_value_acknowledgement_without_context_cannot_mark_a_pro
     assert e.get_transactions() == transactions_before
 
 
+def test_why_question_explains_completed_high_value_authorization_without_mutation():
+    e = FinanceEngine()
+    request_text = "Prepare a transfer of RM 16,000 to SGD now."
+    initial = e.agent(request_text)
+    proposal = initial["data"].get("proposal")
+    assert proposal and proposal["status"] == "PENDING_AUTHORIZATION"
+
+    ack_text = "I acknowledge the high-value review. I reviewed the amount, destination, quote and risk reasons."
+    ack = e.agent(ack_text, conversation_history=_conversation_turns(request_text, initial))
+    assert ack["data"]["review_acknowledged"] is True
+    assert ack["data"]["proposal"]["status"] == "PENDING_AUTHORIZATION"
+
+    authorized = e.agent("just authorise", conversation_history=_conversation_turns(ack_text, ack))
+    assert authorized["data"]["proposal"]["status"] == "EXECUTED"
+    tx = authorized["data"]["transaction"]
+    balances_before = copy.deepcopy(e.get_balance())
+    transactions_before = copy.deepcopy(e.get_transactions())
+    proposals_before = copy.deepcopy(e.state["proposals"])
+
+    explanation = e.agent(
+        "why u authorise",
+        conversation_history=_conversation_turns("just authorise", authorized),
+    )
+
+    assert explanation["data"]["explanation_only"] is True
+    assert explanation["data"]["goal"] == "explain_prior_authorization"
+    assert "high-value acknowledgement" in explanation["answer"].lower()
+    assert "just authorise" in explanation["answer"].lower()
+    assert tx["id"] in explanation["answer"]
+    assert "no real money moved" in explanation["answer"].lower()
+    assert explanation["data"]["state_changed"] is False
+    assert e.get_balance() == balances_before
+    assert e.get_transactions() == transactions_before
+    assert e.state["proposals"] == proposals_before
+
+
+def test_why_question_explains_missing_high_value_acknowledgement_without_authorizing():
+    e = FinanceEngine()
+    request_text = "Prepare a transfer of RM 16,000 to SGD now."
+    initial = e.agent(request_text)
+    proposal = initial["data"].get("proposal")
+    assert proposal and proposal["status"] == "PENDING_AUTHORIZATION"
+
+    blocked = e.agent("I authorise it.", conversation_history=_conversation_turns(request_text, initial))
+    assert blocked["data"]["blocked_reason"] == "review_requires_acknowledgement"
+    balances_before = copy.deepcopy(e.get_balance())
+    transactions_before = copy.deepcopy(e.get_transactions())
+    proposals_before = copy.deepcopy(e.state["proposals"])
+
+    explanation = e.agent(
+        "why u didn't authorise",
+        conversation_history=_conversation_turns("I authorise it.", blocked),
+    )
+
+    assert explanation["data"]["explanation_only"] is True
+    assert explanation["data"]["goal"] == "explain_pending_authorization"
+    assert "high-value review" in explanation["answer"].lower()
+    assert "not been recorded" in explanation["answer"].lower()
+    assert explanation["data"]["state_changed"] is False
+    assert e.get_balance() == balances_before
+    assert e.get_transactions() == transactions_before
+    assert e.state["proposals"] == proposals_before
+
+
 def test_authorization_followup_without_context_is_never_silently_accepted():
     e = FinanceEngine()
     before = copy.deepcopy(e.get_balance())

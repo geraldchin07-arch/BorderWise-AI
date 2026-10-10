@@ -34,7 +34,7 @@ def test_proposal_card_discloses_risk_status_and_escaped_reasons():
     html_path = Path(__file__).resolve().parents[1] / "static" / "index.html"
     html = html_path.read_text(encoding="utf-8")
     start = html.index("function showProposal(p)")
-    end = html.index("\\nasync function authorize", start)
+    end = html.index("\nasync function authorize", start)
     proposal_ui = html[start:end]
 
     assert "risk.status" in proposal_ui

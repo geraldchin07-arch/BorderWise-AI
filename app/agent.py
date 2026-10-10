@@ -320,6 +320,51 @@ For complex student-finance situations, build a goal-aware plan: identify essent
             return {"convert_currency", "forecast_portfolio", "recommend_funding", "simulate_income_impact"}
         return None
 
+    def _conversion_tool_matches_request(self, user_text: str, args: dict[str, Any]) -> bool:
+        """Require an FX tool call to match the user's explicit direction and amount."""
+        requested_pair = self.engine.extract_conversion_pair(user_text)
+        if not requested_pair:
+            return False
+        aliases = {"RMB": "CNY", "YUAN": "CNY", "RENMINBI": "CNY"}
+        requested_pair = tuple(aliases.get(code.upper(), code.upper()) for code in requested_pair)
+
+        from_currency = aliases.get(str(args.get("from_currency", "")).upper().strip(),
+                                    str(args.get("from_currency", "")).upper().strip())
+        to_currency = aliases.get(str(args.get("to_currency", "")).upper().strip(),
+                                  str(args.get("to_currency", "")).upper().strip())
+        if (from_currency, to_currency) != requested_pair:
+            return False
+
+        try:
+            tool_amount = self.engine.money_value(args.get("amount"))
+        except Exception:
+            return False
+        if tool_amount <= 0:
+            return False
+
+        explicit_amount = self.engine.extract_generic_currency_amount(user_text)
+        if explicit_amount is None:
+            source = requested_pair[0]
+            if source == "MYR":
+                amount = self.engine.extract_myr_amount(user_text)
+            elif source == "SGD":
+                amount = self.engine.extract_sgd_amount(user_text)
+            else:
+                amount = None
+            if amount is not None:
+                explicit_amount = (amount, source)
+
+        if explicit_amount is None:
+            # A rate-only question is represented by one unit of the requested base
+            # currency, so the returned quote can be directly understood as a rate.
+            return tool_amount == self.engine.money_value(1)
+
+        expected_amount, expected_currency = explicit_amount
+        expected_currency = aliases.get(str(expected_currency).upper(), str(expected_currency).upper())
+        if expected_currency != requested_pair[0]:
+            return False
+        return tool_amount == self.engine.money_value(expected_amount)
+
     def _proposal_result(
         self,
         trace: list[dict[str, Any]],
@@ -381,6 +426,7 @@ For complex student-finance situations, build a goal-aware plan: identify essent
         input_items: list[Any] = [{"role": "user", "content": text}]
         created_proposal: dict[str, Any] | None = None
         successful_tool_names: set[str] = set()
+        successful_tool_calls: list[tuple[str, dict[str, Any]]] = []
 
         try:
             for _ in range(self.max_rounds):
@@ -400,7 +446,13 @@ For complex student-finance situations, build a goal-aware plan: identify essent
                     if created_proposal is not None:
                         return self._proposal_result(trace, created_proposal, "completed")
                     required_tools = self._required_tool_names_for_request(text)
-                    if required_tools and not required_tools.intersection(successful_tool_names):
+                    sufficient_tool_evidence = bool(required_tools and required_tools.intersection(successful_tool_names))
+                    if required_tools == {"convert_currency"}:
+                        sufficient_tool_evidence = any(
+                            name == "convert_currency" and self._conversion_tool_matches_request(text, args)
+                            for name, args in successful_tool_calls
+                        )
+                    if required_tools and not sufficient_tool_evidence:
                         trace.append({
                             "step": "AGENT_FALLBACK",
                             "status": "completed",
@@ -439,6 +491,7 @@ For complex student-finance situations, build a goal-aware plan: identify essent
                             created_proposal = candidate
                     if result.get("ok"):
                         successful_tool_names.add(name)
+                        successful_tool_calls.append((name, dict(args)))
                         trace.append({"step": "TOOL_RESULT", "status": "completed", "detail": f"{name} returned deterministic financial data."})
                     else:
                         trace.append({"step": "TOOL_RESULT", "status": "blocked", "detail": f"{name} returned an error; no unsafe fallback was used."})

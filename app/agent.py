@@ -548,6 +548,12 @@ For complex student-finance situations, build a goal-aware plan: identify essent
                             deterministic_result = self._deterministic_fx_response(trace, authoritative_conversion)
                             if deterministic_result is not None:
                                 return deterministic_result
+                            trace.append({
+                                "step": "AGENT_FALLBACK",
+                                "status": "completed",
+                                "detail": "The conversion tool returned incomplete or invalid fields; deterministic handling will take over rather than trusting model-generated arithmetic.",
+                            })
+                            return None
                     answer = response.output_text.strip() if response.output_text else "I could not produce a response."
                     trace.append({"step": "RESPOND", "status": "completed", "detail": f"LLM synthesized final answer using {len(trace)-1} tool/agent steps."})
                     return {"intent": "agentic", "answer": answer, "trace": trace, "data": {"agent_mode": "llm_tool_calling", "model": self.model}, "state": self.engine.snapshot()}

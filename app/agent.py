@@ -207,6 +207,55 @@ For complex student-finance situations, build a goal-aware plan: identify essent
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    def _proposal_result(
+        self,
+        trace: list[dict[str, Any]],
+        proposal: dict[str, Any],
+        completion_status: str,
+    ) -> dict[str, Any]:
+        """Return authoritative proposal status after any LLM follow-up failure."""
+        trace.append({
+            "step": "AUTHORIZE",
+            "status": "required",
+            "detail": f"Proposal {proposal.get('id', 'unknown')} remains pending explicit Level 2 authorization; no transaction executed.",
+        })
+        if completion_status != "completed":
+            trace.append({
+                "step": "RECOVERY",
+                "status": "completed",
+                "detail": f"Stopped further LLM work ({completion_status}) without retrying the state-changing proposal tool.",
+            })
+        trace.append({
+            "step": "RESPOND",
+            "status": "completed",
+            "detail": "Returned deterministic proposal status from the engine rather than relying on an incomplete model response.",
+        })
+        amount_myr = float(proposal.get("amount_myr", 0))
+        amount_sgd = float(proposal.get("amount_sgd", 0))
+        rate = float(proposal.get("rate", 0))
+        proposal_id = str(proposal.get("id", "unknown"))
+        answer = (
+            f"I prepared sandbox proposal {proposal_id} for MYR {amount_myr:,.2f}, "
+            f"quoted at approximately SGD {amount_sgd:,.2f} (1 MYR = SGD {rate:.6f}). "
+            "The proposal is still pending explicit Level 2 authorization. "
+            "No transaction has been executed and no money has moved. Review the amount and rate before authorizing."
+        )
+        return {
+            "intent": "agentic",
+            "answer": answer,
+            "trace": trace,
+            "data": {
+                "agent_mode": "llm_tool_calling",
+                "model": self.model,
+                "proposal": proposal,
+                "proposal_created": True,
+                "transaction_created": False,
+                "state_changed": True,
+                "completion_status": completion_status,
+            },
+            "state": self.engine.snapshot(),
+        }
+
     def run(self, text: str) -> dict[str, Any] | None:
         if not self.enabled:
             return None
@@ -215,6 +264,7 @@ For complex student-finance situations, build a goal-aware plan: identify essent
             {"step": "UNDERSTAND", "status": "completed", "detail": "LLM agent enabled; selecting deterministic finance tools."}
         ]
         input_items: list[Any] = [{"role": "user", "content": text}]
+        created_proposal: dict[str, Any] | None = None
 
         try:
             for _ in range(self.max_rounds):
@@ -231,6 +281,8 @@ For complex student-finance situations, build a goal-aware plan: identify essent
                 input_items.extend(response.output)
                 calls = [item for item in response.output if getattr(item, "type", None) == "function_call"]
                 if not calls:
+                    if created_proposal is not None:
+                        return self._proposal_result(trace, created_proposal, "completed")
                     answer = response.output_text.strip() if response.output_text else "I could not produce a response."
                     trace.append({"step": "RESPOND", "status": "completed", "detail": f"LLM synthesized final answer using {len(trace)-1} tool/agent steps."})
                     return {"intent": "agentic", "answer": answer, "trace": trace, "data": {"agent_mode": "llm_tool_calling", "model": self.model}, "state": self.engine.snapshot()}
@@ -239,18 +291,28 @@ For complex student-finance situations, build a goal-aware plan: identify essent
                     name = call.name
                     args = json.loads(call.arguments or "{}")
                     trace.append({"step": "TOOL", "status": "completed", "detail": f"Selected {name} with arguments {args}."})
-                    if name == "create_transfer_proposal" and not self._proposal_request_is_explicit(text, args):
+                    if name == "create_transfer_proposal" and created_proposal is not None:
+                        result = {
+                            "ok": False,
+                            "error": "Only one transfer proposal may be created per user request. Review the existing pending proposal instead of creating a duplicate.",
+                            "blocked_reason": "duplicate_proposal_in_same_turn",
+                        }
+                    elif name == "create_transfer_proposal" and not self._proposal_request_is_explicit(text, args):
                         result = {
                             "ok": False,
                             "error": (
                                 "Proposal blocked: the user must explicitly request a transfer/preparation "
                                 "and state the exact matching MYR amount. Advice, hypothetical, conditional, "
-                                "or inferred amounts cannot create a proposal."
+                                "negated, or inferred amounts cannot create a proposal."
                             ),
                             "blocked_reason": "proposal_not_explicitly_requested",
                         }
                     else:
                         result = self.call_tool(name, args)
+                    if name == "create_transfer_proposal" and result.get("ok"):
+                        candidate = result.get("result")
+                        if isinstance(candidate, dict):
+                            created_proposal = candidate
                     if result.get("ok"):
                         trace.append({"step": "TOOL_RESULT", "status": "completed", "detail": f"{name} returned deterministic financial data."})
                     else:
@@ -261,7 +323,11 @@ For complex student-finance situations, build a goal-aware plan: identify essent
                         "output": json.dumps(result, default=str),
                     })
 
+            if created_proposal is not None:
+                return self._proposal_result(trace, created_proposal, "tool_call_limit")
             return {"intent": "agentic", "answer": "I reached the agent tool-call limit before completing the request.", "trace": trace, "data": {"agent_mode": "llm_tool_calling", "model": self.model}, "state": self.engine.snapshot()}
         except Exception as exc:
+            if created_proposal is not None:
+                return self._proposal_result(trace, created_proposal, f"generation_error:{type(exc).__name__}")
             trace.append({"step": "AGENT_FALLBACK", "status": "completed", "detail": f"LLM unavailable: {type(exc).__name__}. Deterministic engine used instead."})
             return None

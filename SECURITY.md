@@ -1,7 +1,7 @@
-# BorderWise AI — Security Architecture & Threat Self-Assessment
+# XKF5 AI — Security Architecture & Threat Self-Assessment
 
 ## Executive Overview
-BorderWise AI enforces strict separation between **LLM Reasoning (Unstrusted)** and **Financial State Execution (Trusted Engine)**. The application implements deterministic policy guards to eliminate risk vectors associated with AI prompt injections, unauthorised fund transfers, and state corruption.
+XKF5 AI enforces strict separation between **LLM Reasoning (Unstrusted)** and **Financial State Execution (Trusted Engine)**. The application implements deterministic policy guards to eliminate risk vectors associated with AI prompt injections, unauthorised fund transfers, and state corruption.
 
 ---
 

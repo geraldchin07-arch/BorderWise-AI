@@ -18,8 +18,7 @@ load_dotenv()
 BASE = Path(__file__).resolve().parent.parent
 engine = FinanceEngine()
 
-app = FastAPI(title="BorderWise AI v7.3.0 — Currency-First", version="7.3.0")
-
+app = FastAPI(title="XKF5 AI v7.4.0 — Currency-First", version="7.4.0")
 app.add_middleware(SecurityHeadersMiddleware)
 rate_limiter = SimpleRateLimiter()
 
@@ -44,49 +43,49 @@ class ChatRequest(BaseModel):
 
 
 class AuthRequest(BaseModel):
-    proposal_id: str
+    proposal_id: str = Field(min_length=1, max_length=64)
     approved: bool
     acknowledge_review: bool = False
-    
 
 
 class ExecuteRequest(BaseModel):
-    proposal_id: str
+    proposal_id: str = Field(min_length=1, max_length=64)
 
 
 class TransferRequest(BaseModel):
-    amount_myr: float = Field(gt=0)
-    purpose: str = "student finance transfer"
+    amount_myr: float = Field(gt=0, allow_inf_nan=False)
+    purpose: str = Field(default="student finance transfer", min_length=1, max_length=200)
 
 
 class FXConversionRequest(BaseModel):
-    amount: float = Field(gt=0)
-    from_currency: str = Field(min_length=3, max_length=3)
-    to_currency: str = Field(min_length=3, max_length=3)
-    custom_rate: float | None = Field(default=None, gt=0)
+    amount: float = Field(gt=0, allow_inf_nan=False)
+    from_currency: str = Field(min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
+    to_currency: str = Field(min_length=3, max_length=3, pattern=r"^[A-Za-z]{3}$")
+    custom_rate: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
 
 class ProfileRequest(BaseModel):
     general_profile: dict[str, Any] | None = None
-    myr_balance: float = Field(default=0, ge=0)
-    sgd_balance: float = Field(default=0, ge=0)
-    monthly_income_sgd: float = Field(default=0, ge=0)
-    emergency_reserve_myr: float = Field(default=0, ge=0)
-    tuition_semester_sgd: float = Field(default=0, ge=0)
-    scholarship_semester_sgd: float = Field(default=0, ge=0)
-    loan_semester_sgd: float = Field(default=0, ge=0)
+    myr_balance: float = Field(default=0, ge=0, allow_inf_nan=False)
+    sgd_balance: float = Field(default=0, ge=0, allow_inf_nan=False)
+    monthly_income_sgd: float = Field(default=0, ge=0, allow_inf_nan=False)
+    emergency_reserve_myr: float = Field(default=0, ge=0, allow_inf_nan=False)
+    tuition_semester_sgd: float = Field(default=0, ge=0, allow_inf_nan=False)
+    scholarship_semester_sgd: float = Field(default=0, ge=0, allow_inf_nan=False)
+    loan_semester_sgd: float = Field(default=0, ge=0, allow_inf_nan=False)
     tuition_due_days: int = Field(default=30, ge=0, le=365)
-    accommodation_monthly_sgd: float = Field(default=0, ge=0)
-    other_monthly_obligations_sgd: float = Field(default=0, ge=0)
-    monthly_spending_sgd: dict[str, float] = {}
-    spending_classifications: dict[str, str] = {}
-    additional_currencies: dict[str, float] = {}
+    accommodation_monthly_sgd: float = Field(default=0, ge=0, allow_inf_nan=False)
+    other_monthly_obligations_sgd: float = Field(default=0, ge=0, allow_inf_nan=False)
+    monthly_spending_sgd: dict[str, float] = Field(default_factory=dict)
+    spending_classifications: dict[str, str] = Field(default_factory=dict)
+    additional_currencies: dict[str, float] = Field(default_factory=dict)
     myr_mode: str = "live"
-    custom_myrsgd: float | None = Field(default=None, gt=0)
-    custom_fx_rates_to_sgd: dict[str, float] = {}
-    custom_fx_sources: dict[str, str] = {}
-    custom_fx_dates: dict[str, str] = {}
-    additional_fx_rate_modes: dict[str, str] = {}
+    custom_myrsgd: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    custom_fx_rates_to_sgd: dict[str, float] = Field(default_factory=dict)
+    custom_fx_sources: dict[str, str] = Field(default_factory=dict)
+    custom_fx_dates: dict[str, str] = Field(default_factory=dict)
+    additional_fx_rate_modes: dict[str, str] = Field(default_factory=dict)
+
 
 class TraceStep(BaseModel):
     step: str
@@ -102,7 +101,6 @@ class ChatResponse(BaseModel):
     state: dict[str, Any]
 
 
-
 @app.get("/")
 def index():
     return FileResponse(BASE / "static" / "index.html")
@@ -110,7 +108,7 @@ def index():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "7.3.0", "python_compatible": "3.14+", "llm_enabled": bool(os.getenv("OPENAI_API_KEY")), "auto_fx_supported": True}
+    return {"ok": True, "version": "7.4.0", "python_compatible": "3.14+", "llm_enabled": bool(os.getenv("OPENAI_API_KEY")), "auto_fx_supported": True}
 
 
 @app.get("/api/state")
@@ -118,7 +116,7 @@ def state():
     return engine.snapshot()
 
 
-@app.post("/api/chat")
+@app.post("/api/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
     return engine.agent(req.message)
 
@@ -139,7 +137,12 @@ def update_profile(req: ProfileRequest):
             req.additional_fx_rate_modes,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid profile data: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/proposals")
+def list_proposals():
+    return {"proposals": engine.list_proposals()}
 
 
 @app.post("/api/proposals")
@@ -153,7 +156,7 @@ def proposal(req: TransferRequest):
 @app.post("/api/authorize")
 def authorize(req: AuthRequest):
     try:
-        return engine.authorize(req.proposal_id, req.approved,req.acknowledge_review)
+        return engine.authorize(req.proposal_id, req.approved, acknowledge_review=req.acknowledge_review)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -176,6 +179,33 @@ def reset():
 @app.get("/api/audit")
 def audit():
     return {"audit": engine.audit_log()}
+
+
+@app.post("/api/fx/refresh")
+def refresh_fx():
+    return engine.refresh_fx(force=True)
+
+
+@app.post("/api/fx/refresh-all")
+def refresh_all_fx():
+    return engine.refresh_auto_fx(force=True)
+
+
+@app.get("/api/fx/quote")
+def fx_quote_pair(from_currency: str, to_currency: str, amount: float = 1.0, custom_rate: float | None = None):
+    try:
+        return engine.quote_conversion(amount, from_currency, to_currency, custom_rate=custom_rate)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/fx/convert")
+def fx_convert(req: FXConversionRequest):
+    try:
+        return engine.quote_conversion(req.amount, req.from_currency, req.to_currency, custom_rate=req.custom_rate)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 @app.get("/api/capabilities")
 def capabilities():
@@ -201,37 +231,3 @@ def capabilities():
             "hypothetical income-impact simulation without state mutation",
         ]
     }
-
-@app.get("/api/fx/quote")
-def fx_quote_pair(from_currency: str, to_currency: str, amount: float = 1.0, custom_rate: float | None = None):
-    try:
-        return engine.quote_conversion(amount, from_currency, to_currency, custom_rate=custom_rate)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.get("/api/proposals")
-def list_proposals():
-    return {"proposals": engine.list_proposals()}
-
-
-@app.post("/api/fx/refresh")
-def refresh_fx():
-    return engine.refresh_fx(force=True)
-
-
-@app.post("/api/fx/refresh-all")
-def refresh_all_fx():
-    return engine.refresh_auto_fx(force=True)
-
-@app.post("/api/fx/convert")
-def fx_convert(req: FXConversionRequest):
-    try:
-        return engine.quote_conversion(req.amount, req.from_currency, req.to_currency, custom_rate=req.custom_rate)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.post("/api/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
-    return engine.agent(req.message)

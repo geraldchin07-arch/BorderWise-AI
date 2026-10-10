@@ -4,7 +4,7 @@
 International students manage multiple currencies, tuition deadlines, monthly spending plan and transfers. Existing chatbots can explain finances but usually cannot safely complete a task.
 
 ## 0:45–1:15 — Product
-BorderWise AI is an agentic cross-border student finance assistant.
+XKF5 AI is an agentic cross-border student finance assistant.
 
 Tagline:
 "Not just advice. A financial agent that can reason and act safely."
@@ -38,4 +38,4 @@ Core statement:
 Agentic tool selection, multi-currency reasoning, financial forecast, risk-aware execution and auditability.
 
 ## 6:30–7:00 — Closing
-BorderWise turns cross-border student finance from a question-answering experience into a controlled agentic workflow.
+XKF5 turns cross-border student finance from a question-answering experience into a controlled agentic workflow.

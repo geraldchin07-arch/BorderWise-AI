@@ -41,9 +41,9 @@ Expected:
 Recent transaction history.
 
 ## Closing line
-"BorderWise does not let the model move money. It separates reasoning from financial execution and requires explicit authorization at the action boundary."
+"XKF5 does not let the model move money. It separates reasoning from financial execution and requires explicit authorization at the action boundary."
 
 
 ### v5 FX moment
 Ask: “What is the current MYR to SGD rate?”
-Point to the FX card: BorderWise shows the current reference rate, rate date, source, and whether live reference data or fallback data is being used. Then ask “Can I afford my tuition?” and show that the conversion recommendation is recalculated from that rate.
+Point to the FX card: XKF5 shows the current reference rate, rate date, source, and whether live reference data or fallback data is being used. Then ask “Can I afford my tuition?” and show that the conversion recommendation is recalculated from that rate.

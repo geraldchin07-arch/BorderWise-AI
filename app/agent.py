@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any, Callable
 
 try:
@@ -19,7 +20,7 @@ class AgentOrchestrator:
     """
 
     SYSTEM = """
-You are BorderWise AI, a cautious cross-border student-finance agent operating in a sandbox.
+You are XKF5 AI, a cautious cross-border student-finance agent operating in a sandbox.
 Your job is to understand the user's financial goal, choose the minimum necessary tools,
 reason over the returned data, and give a concise, transparent answer.
 
@@ -39,6 +40,7 @@ CRITICAL SAFETY RULES:
 - This is a competition sandbox, not a bank and not a source of guaranteed financial advice.
 
 Prefer tool use over guessing. For a multi-part question, use multiple tools and synthesize.
+For complex student-finance situations, build a goal-aware plan: identify essential obligations and deadlines, protect reserves, compare multi-currency funding options, simulate hypothetical income when appropriate, and distinguish recommendations from executable actions.
 """.strip()
 
     def __init__(self, engine: Any):
@@ -57,13 +59,20 @@ Prefer tool use over guessing. For a multi-part question, use multiple tools and
             }),
             self._tool("get_obligations", "Read upcoming student-finance obligations and due days.", {}),
             self._tool("forecast_cashflow", "Calculate the deterministic 30-day SGD cash-flow forecast.", {}),
+            self._tool("forecast_portfolio", "Calculate deterministic 30-day liquidity using the full multi-currency wallet in the user's planning currency.", {
+                "type": "object",
+                "properties": {
+                    "horizon_days": {"type": "integer", "minimum": 1, "maximum": 365}
+                },
+                "required": ["horizon_days"], "additionalProperties": False,
+            }),
             self._tool("analyze_spending", "Analyze the user's monthly SGD spending plan by category.", {}),
             self._tool("get_currency_overview", "Show all configured wallet currencies, their rates to SGD and indicative SGD values.", {}),
             self._tool("get_fx_rate", "Refresh and read the selected MYR/SGD rate plus source/date and live-reference fallback details.", {
                 "type": "object", "properties": {"force_refresh": {"type": "boolean"}},
                 "required": [], "additionalProperties": False,
             }),
-            self._tool("convert_currency", "Convert an amount between any two currencies using deterministic reference or wallet rates.", {
+            self._tool("convert_currency", "Convert any supported 3-letter currency pair using deterministic reference/quote data. Use this for exact user-directed conversions such as CNY→MYR, USD→SGD or MYR→SGD; do not invent cross-rates.", {
                 "type": "object",
                 "properties": {
                     "amount": {"type": "number", "exclusiveMinimum": 0},
@@ -86,6 +95,14 @@ Prefer tool use over guessing. For a multi-part question, use multiple tools and
                 },
                 "required": ["amount_myr", "purpose"], "additionalProperties": False,
             }),
+            self._tool("recommend_funding", "Find a deterministic multi-currency funding plan for a target amount while protecting the emergency reserve; never moves money.", {
+                "type": "object",
+                "properties": {
+                    "target_amount": {"type": "number", "exclusiveMinimum": 0},
+                    "target_currency": {"type": "string", "pattern": "^[A-Za-z]{3}$"},
+                },
+                "required": ["target_amount", "target_currency"], "additionalProperties": False,
+            }),
             self._tool("simulate_income_impact", "Hypothetically assess the effect of receiving funds without mutating account state.", {
                 "type": "object", "properties": {
                     "amount": {"type": "number", "exclusiveMinimum": 0},
@@ -103,6 +120,61 @@ Prefer tool use over guessing. For a multi-part question, use multiple tools and
             "strict": True,
         }
 
+    def _proposal_request_is_explicit(self, user_text: str, args: dict[str, Any]) -> bool:
+        """Fail closed unless the user explicitly requests the exact MYR proposal amount."""
+        try:
+            proposed_amount = self.engine.money_value(args.get("amount_myr"))
+        except Exception:
+            return False
+        if proposed_amount <= 0:
+            return False
+
+        normalized = self.engine.repair_user_text(user_text).lower()
+        # Match the MYR amount attached to an action, not an earlier wallet
+        # balance mentioned in the same message.
+        amount_pattern = re.compile(
+            r"\b(?:malaysian\s+ringgit|ringgit|rm|myr)\s*([0-9][0-9,]*(?:\.[0-9]+)?[km]?)"
+            r"|\b([0-9][0-9,]*(?:\.[0-9]+)?[km]?)\s*(?:malaysian\s+ringgit|ringgit|rm|myr)\b",
+            re.IGNORECASE,
+        )
+        action_phrases = [
+            "prepare", "transfer", "send", "remit", "convert", "exchange",
+            "create a proposal", "make a proposal",
+        ]
+        action_amounts = []
+        previous_end = 0
+        for match in amount_pattern.finditer(normalized):
+            segment_before_amount = normalized[previous_end:match.start()]
+            previous_end = match.end()
+            if any(phrase in segment_before_amount for phrase in action_phrases):
+                raw_amount = match.group(1) or match.group(2)
+                try:
+                    action_amounts.append(self.engine.parse_amount_token(raw_amount))
+                except Exception:
+                    continue
+        if proposed_amount not in action_amounts:
+            return False
+
+        # Defense in depth: direct callers of the LLM planner must also respect
+        # an explicit user instruction not to move or prepare money.
+        if self.engine.user_negates_money_movement(user_text):
+            return False
+
+        advice_or_scenario = any(phrase in normalized for phrase in [
+            "should i", "should we", "would you recommend", "recommend",
+            "is it wise", "what if", "hypothetical", "compare", "can i afford",
+            "might send", "may send", "could send", "expect to receive",
+            "if i receive", "if my family", "parents might", "parents may",
+        ])
+        if advice_or_scenario:
+            return False
+
+        explicit_action = any(phrase in normalized for phrase in [
+            "prepare", "create a proposal", "make a proposal", "transfer",
+            "send", "remit", "convert", "exchange",
+        ])
+        return explicit_action
+
     def call_tool(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         try:
             if name == "get_balance":
@@ -113,6 +185,8 @@ Prefer tool use over guessing. For a multi-part question, use multiple tools and
                 return {"ok": True, "result": self.engine.get_obligations()}
             if name == "forecast_cashflow":
                 return {"ok": True, "result": self.engine.forecast()}
+            if name == "forecast_portfolio":
+                return {"ok": True, "result": self.engine.forecast_portfolio(int(args["horizon_days"]))}
             if name == "analyze_spending":
                 return {"ok": True, "result": self.engine.spending_analysis()}
             if name == "get_currency_overview":
@@ -125,21 +199,308 @@ Prefer tool use over guessing. For a multi-part question, use multiple tools and
                 return {"ok": True, "result": self.engine.risk_check(self.engine.money_value(args["amount_myr"]), args["purpose"])}
             if name == "create_transfer_proposal":
                 return {"ok": True, "result": self.engine.create_proposal(self.engine.money_value(args["amount_myr"]), args["purpose"])}
+            if name == "recommend_funding":
+                return {"ok": True, "result": self.engine.recommend_funding(args["target_amount"], args["target_currency"])}
             if name == "simulate_income_impact":
                 return {"ok": True, "result": self.engine.simulate_income_impact(args["amount"], args["currency"])}
             return {"ok": False, "error": f"Unknown tool: {name}"}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    def _prefer_deterministic_planner(self, user_text: str) -> bool:
+        """Route known scenario arithmetic to deterministic handlers instead of LLM guessing."""
+        normalized = self.engine.repair_user_text(str(user_text or "")).lower()
+        intent = self.engine.detect_intent(user_text)
+
+        # Multi-operation conversions must not be compressed by the LLM into a
+        # single successful conversion. Split on explicit conjunctions and parse
+        # each side independently with the same deterministic currency grammar.
+        segments = re.split(r";|\n|\b(?:and then|and|then|also)\b", str(user_text or ""), flags=re.I)
+        requested_pairs = [
+            pair for segment in segments
+            if (pair := self.engine.extract_conversion_pair(segment)) is not None
+        ]
+        explicit_multi_pair_conversion = (
+            len(requested_pairs) >= 2
+            and any(term in normalized for term in ("convert", "exchange", "conversion", "calculate", "compare"))
+        )
+
+        requested_pair = self.engine.extract_conversion_pair(user_text)
+        display_match = re.search(
+            r"\b(?:show|display|express|present|give)\b.{0,40}\b(?:result|amount|conversion|value)\b.{0,20}\b(?:in|as)\s+([A-Z]{3})\b",
+            str(user_text or ""),
+            re.I,
+        )
+        display_currency_conversion = bool(
+            requested_pair
+            and display_match
+            and display_match.group(1).upper() != requested_pair[1].upper()
+        )
+
+        hypothetical_rate_comparison = (
+            intent == "general"
+            and any(term in normalized for term in ("hypothetical", "assume", "assumed"))
+            and any(term in normalized for term in ("compare", "difference", "calculate"))
+            and bool(self.engine.extract_conversion_pair(user_text))
+        )
+        savings_projection = (
+            any(term in normalized for term in ("save enough", "savings goal", "projected savings", "how much can i save"))
+            and any(term in normalized for term in ("month", "months", "week", "weeks"))
+        )
+        explicit_tuition_scenario = (
+            intent == "affordability"
+            and any(term in normalized for term in ("tuition is", "tuition costs", "tuition fee is", "tuition amount"))
+            and any(term in normalized for term in ("i have", "available", "saved", "cash"))
+        )
+        hypothetical_income = (
+            any(term in normalized for term in (
+                "what if i receive", "what if i get", "what if my parents",
+                "my parents might send", "my parents may send", "my family may send",
+                "might receive", "may receive",
+            ))
+            and bool(re.search(r"\b(?:sgd|myr|usd|cny|eur|gbp|aud|cad|rm|s\$|us\$)\s*\d|\d[\d,.]*\s*(?:sgd|myr|usd|cny|eur|gbp|aud|cad)\b", normalized))
+        )
+        return (
+            explicit_multi_pair_conversion
+            or display_currency_conversion
+            or hypothetical_rate_comparison
+            or savings_projection
+            or explicit_tuition_scenario
+            or hypothetical_income
+        )
+
+    def _required_tool_names_for_request(self, user_text: str) -> set[str] | None:
+        """Require evidence from a tool that can answer the detected financial intent.
+
+        None means the request is general enough to permit an LLM-only response.
+        A synthetic marker intentionally has no matching tool and therefore forces a
+        deterministic fallback when the request needs clarification first.
+        """
+        intent = self.engine.detect_intent(user_text)
+        if intent == "balance":
+            return {"get_balance"}
+        if intent == "transactions":
+            return {"get_transactions"}
+        if intent == "spending":
+            return {"analyze_spending"}
+        if intent == "forecast":
+            # Hypothetical-income scenarios are routed through the deterministic
+            # planner before this check. A normal forecast requires a forecast tool,
+            # not merely a successful scenario-simulation call.
+            return {"forecast_cashflow", "forecast_portfolio"}
+        if intent == "affordability":
+            # Obligation lists and funding options are useful supporting evidence,
+            # but they do not establish an affordability result without a forecast.
+            return {"forecast_cashflow", "forecast_portfolio"}
+        if intent == "transfer":
+            normalized = self.engine.repair_user_text(user_text).lower()
+            advice_or_scenario = any(term in normalized for term in (
+                "should i", "should we", "recommend", "what if", "hypothetical",
+                "compare", "can i afford", "is it safe", "safe to send",
+            ))
+            amount_myr = self.engine.extract_myr_amount(user_text)
+            if advice_or_scenario:
+                return {"assess_transfer_risk", "recommend_funding"}
+            if amount_myr is None:
+                return {"__explicit_transfer_amount_required__"}
+            if self._proposal_request_is_explicit(user_text, {"amount_myr": float(amount_myr)}):
+                return {"create_transfer_proposal"}
+            return {"assess_transfer_risk", "recommend_funding"}
+        if intent == "fx":
+            pair = self.engine.extract_conversion_pair(user_text)
+            if not pair:
+                return {"__clarify_currency_pair__"}
+            has_amount = bool(
+                self.engine.extract_generic_currency_amount(user_text)
+                or self.engine.extract_myr_amount(user_text)
+                or self.engine.extract_sgd_amount(user_text)
+            )
+            if has_amount:
+                return {"convert_currency"}
+            # Even a unit-rate question must quote the exact requested direction.
+            # A generic MYR→SGD rate tool is not sufficient evidence for SGD→MYR.
+            return {"convert_currency"}
+
+        normalized = self.engine.repair_user_text(str(user_text or "")).lower()
+        has_currency = bool(self.engine.extract_conversion_pair(user_text)) or any(
+            term in normalized for term in ("myr", "sgd", "usd", "cny", "eur", "gbp", "aud", "cad", "ringgit", "dollar", "yuan")
+        )
+        math_or_finance_request = any(term in normalized for term in (
+            "calculate", "compare", "difference", "how much", "can i afford", "should i",
+            "what if", "forecast", "funding", "tuition", "balance", "exchange",
+        ))
+        if has_currency and math_or_finance_request:
+            return {"convert_currency", "forecast_portfolio", "recommend_funding", "simulate_income_impact"}
+        return None
+
+    def _conversion_tool_matches_request(self, user_text: str, args: dict[str, Any]) -> bool:
+        """Require an FX tool call to match the user's explicit direction and amount."""
+        requested_pair = self.engine.extract_conversion_pair(user_text)
+        if not requested_pair:
+            return False
+        aliases = {"RMB": "CNY", "YUAN": "CNY", "RENMINBI": "CNY"}
+        requested_pair = tuple(aliases.get(code.upper(), code.upper()) for code in requested_pair)
+
+        from_currency = aliases.get(str(args.get("from_currency", "")).upper().strip(),
+                                    str(args.get("from_currency", "")).upper().strip())
+        to_currency = aliases.get(str(args.get("to_currency", "")).upper().strip(),
+                                  str(args.get("to_currency", "")).upper().strip())
+        if (from_currency, to_currency) != requested_pair:
+            return False
+
+        try:
+            tool_amount = self.engine.money_value(args.get("amount"))
+        except Exception:
+            return False
+        if tool_amount <= 0:
+            return False
+
+        explicit_amount = self.engine.extract_generic_currency_amount(user_text)
+        if explicit_amount is None:
+            source = requested_pair[0]
+            if source == "MYR":
+                amount = self.engine.extract_myr_amount(user_text)
+            elif source == "SGD":
+                amount = self.engine.extract_sgd_amount(user_text)
+            else:
+                amount = None
+            if amount is not None:
+                explicit_amount = (amount, source)
+
+        if explicit_amount is None:
+            # A rate-only question is represented by one unit of the requested base
+            # currency, so the returned quote can be directly understood as a rate.
+            return tool_amount == self.engine.money_value(1)
+
+        expected_amount, expected_currency = explicit_amount
+        expected_currency = aliases.get(str(expected_currency).upper(), str(expected_currency).upper())
+        if expected_currency != requested_pair[0]:
+            return False
+        return tool_amount == self.engine.money_value(expected_amount)
+
+    def _deterministic_fx_response(
+        self,
+        trace: list[dict[str, Any]],
+        conversion: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Synthesize FX output from the engine result, not model-generated arithmetic."""
+        try:
+            amount = self.engine.money_value(conversion["amount"])
+            converted = self.engine.money_value(conversion["converted_amount"])
+            rate = float(conversion["rate"])
+            base = str(conversion["from_currency"]).upper()
+            quote = str(conversion["to_currency"]).upper()
+            if amount <= 0 or rate <= 0:
+                return None
+        except (KeyError, TypeError, ValueError, ArithmeticError):
+            return None
+
+        fx = conversion.get("fx") if isinstance(conversion.get("fx"), dict) else {}
+        source = fx.get("source")
+        if not source:
+            from_source = fx.get("source_from")
+            to_source = fx.get("source_to")
+            source = " / ".join(str(item) for item in (from_source, to_source) if item)
+        if not source:
+            source = "engine-selected rate source"
+        rate_date = fx.get("rate_date")
+        if not rate_date:
+            dates = [str(item) for item in (fx.get("date_from"), fx.get("date_to")) if item]
+            rate_date = " / ".join(dict.fromkeys(dates)) if dates else "unavailable"
+
+        answer = (
+            f"Using the engine-selected rate, 1 {base} = {rate:.6f} {quote} "
+            f"(source: {source}; rate date: {rate_date}), "
+            f"{amount:,.2f} {base} is approximately {converted:,.2f} {quote}. "
+            "This is an indicative calculation; your provider may apply a different spread or fees."
+        )
+        trace.append({
+            "step": "CALCULATE",
+            "status": "completed",
+            "detail": f"Used the deterministic engine result: {amount:,.2f} {base} → {converted:,.2f} {quote}.",
+        })
+        trace.append({
+            "step": "RESPOND",
+            "status": "completed",
+            "detail": "Returned the verified engine conversion result instead of relying on model-generated arithmetic.",
+        })
+        return {
+            "intent": "fx",
+            "answer": answer,
+            "trace": trace,
+            "data": {
+                "agent_mode": "llm_tool_calling",
+                "model": self.model,
+                "conversion": conversion,
+                "state_changed": False,
+                "proposal": None,
+                "verified_tool_evidence": True,
+            },
+            "state": self.engine.snapshot(),
+        }
+
+    def _proposal_result(
+        self,
+        trace: list[dict[str, Any]],
+        proposal: dict[str, Any],
+        completion_status: str,
+    ) -> dict[str, Any]:
+        """Return authoritative proposal status after any LLM follow-up failure."""
+        trace.append({
+            "step": "AUTHORIZE",
+            "status": "required",
+            "detail": f"Proposal {proposal.get('id', 'unknown')} remains pending explicit Level 2 authorization; no transaction executed.",
+        })
+        if completion_status != "completed":
+            trace.append({
+                "step": "RECOVERY",
+                "status": "completed",
+                "detail": f"Stopped further LLM work ({completion_status}) without retrying the state-changing proposal tool.",
+            })
+        trace.append({
+            "step": "RESPOND",
+            "status": "completed",
+            "detail": "Returned deterministic proposal status from the engine rather than relying on an incomplete model response.",
+        })
+        amount_myr = float(proposal.get("amount_myr", 0))
+        amount_sgd = float(proposal.get("amount_sgd", 0))
+        rate = float(proposal.get("rate", 0))
+        proposal_id = str(proposal.get("id", "unknown"))
+        answer = (
+            f"I prepared sandbox proposal {proposal_id} for MYR {amount_myr:,.2f}, "
+            f"quoted at approximately SGD {amount_sgd:,.2f} (1 MYR = SGD {rate:.6f}). "
+            "The proposal is still pending explicit Level 2 authorization. "
+            "No transaction has been executed and no money has moved. Review the amount and rate before authorizing."
+        )
+        return {
+            "intent": "agentic",
+            "answer": answer,
+            "trace": trace,
+            "data": {
+                "agent_mode": "llm_tool_calling",
+                "model": self.model,
+                "proposal": proposal,
+                "proposal_created": True,
+                "transaction_created": False,
+                "state_changed": True,
+                "completion_status": completion_status,
+            },
+            "state": self.engine.snapshot(),
+        }
+
     def run(self, text: str) -> dict[str, Any] | None:
         if not self.enabled:
+            return None
+        if self._prefer_deterministic_planner(text):
             return None
 
         trace: list[dict[str, Any]] = [
             {"step": "UNDERSTAND", "status": "completed", "detail": "LLM agent enabled; selecting deterministic finance tools."}
         ]
         input_items: list[Any] = [{"role": "user", "content": text}]
-        extra: dict[str, Any] = {}
+        created_proposal: dict[str, Any] | None = None
+        successful_tool_names: set[str] = set()
+        successful_tool_calls: list[tuple[str, dict[str, Any], Any]] = []
 
         try:
             for _ in range(self.max_rounds):
@@ -156,20 +517,93 @@ Prefer tool use over guessing. For a multi-part question, use multiple tools and
                 input_items.extend(response.output)
                 calls = [item for item in response.output if getattr(item, "type", None) == "function_call"]
                 if not calls:
+                    if created_proposal is not None:
+                        return self._proposal_result(trace, created_proposal, "completed")
+                    required_tools = self._required_tool_names_for_request(text)
+                    sufficient_tool_evidence = bool(required_tools and required_tools.intersection(successful_tool_names))
+                    if required_tools == {"convert_currency"}:
+                        sufficient_tool_evidence = any(
+                            name == "convert_currency" and self._conversion_tool_matches_request(text, args)
+                            for name, args, _tool_result in successful_tool_calls
+                        )
+                    if required_tools and not sufficient_tool_evidence:
+                        trace.append({
+                            "step": "AGENT_FALLBACK",
+                            "status": "completed",
+                            "detail": "The LLM did not return a successful result from a tool appropriate to the detected financial intent; deterministic handling will be used.",
+                        })
+                        return None
+                    if self.engine.detect_intent(text) == "fx":
+                        authoritative_conversion = next(
+                            (
+                                tool_result
+                                for name, args, tool_result in successful_tool_calls
+                                if name == "convert_currency"
+                                and self._conversion_tool_matches_request(text, args)
+                                and isinstance(tool_result, dict)
+                            ),
+                            None,
+                        )
+                        if authoritative_conversion is not None:
+                            deterministic_result = self._deterministic_fx_response(trace, authoritative_conversion)
+                            if deterministic_result is not None:
+                                return deterministic_result
+                            trace.append({
+                                "step": "AGENT_FALLBACK",
+                                "status": "completed",
+                                "detail": "The conversion tool returned incomplete or invalid fields; deterministic handling will take over rather than trusting model-generated arithmetic.",
+                            })
+                            return None
                     answer = response.output_text.strip() if response.output_text else "I could not produce a response."
                     trace.append({"step": "RESPOND", "status": "completed", "detail": f"LLM synthesized final answer using {len(trace)-1} tool/agent steps."})
-                    return {"intent": "agentic", "answer": answer, "trace": trace, "data": {"agent_mode": "llm_tool_calling", "model": self.model,**extra}, "state": self.engine.snapshot()}
+                    return {"intent": "agentic", "answer": answer, "trace": trace, "data": {"agent_mode": "llm_tool_calling", "model": self.model}, "state": self.engine.snapshot()}
 
                 for call in calls:
                     name = call.name
                     args = json.loads(call.arguments or "{}")
                     trace.append({"step": "TOOL", "status": "completed", "detail": f"Selected {name} with arguments {args}."})
-                    result = self.call_tool(name, args)
-                    if result.get("ok") and name == "create_transfer_proposal":
-                        extra["proposal"] = result["result"]
-                    if result.get("ok") and name == "assess_transfer_risk":
-                        extra["risk"] = result["result"]
+                    if (
+                        name == "convert_currency"
+                        and not self._conversion_tool_matches_request(text, args)
+                    ):
+                        # Never treat a successful tool response as authoritative
+                        # unless its pair and amount match the user's explicit request.
+                        # Return the tool error to the model so it can correct the
+                        # arguments; the final-answer gate below independently checks
+                        # matching evidence before accepting a response.
+                        result = {
+                            "ok": False,
+                            "error": (
+                                "Conversion blocked: amount and currency direction must "
+                                "exactly match the user's request."
+                            ),
+                            "blocked_reason": "conversion_arguments_do_not_match_request",
+                        }
+                    elif name == "create_transfer_proposal" and created_proposal is not None:
+                        result = {
+                            "ok": False,
+                            "error": "Only one transfer proposal may be created per user request. Review the existing pending proposal instead of creating a duplicate.",
+                            "blocked_reason": "duplicate_proposal_in_same_turn",
+                        }
+                    elif name == "create_transfer_proposal" and not self._proposal_request_is_explicit(text, args):
+                        result = {
+                            "ok": False,
+                            "error": (
+                                "Proposal blocked: the user must explicitly request a transfer/preparation "
+                                "and state the exact matching MYR amount. Advice, hypothetical, conditional, "
+                                "negated, or inferred amounts cannot create a proposal."
+                            ),
+                            "blocked_reason": "proposal_not_explicitly_requested",
+                        }
+                    else:
+                        result = self.call_tool(name, args)
+                    if name == "create_transfer_proposal" and result.get("ok"):
+                        candidate = result.get("result")
+                        if isinstance(candidate, dict):
+                            created_proposal = candidate
                     if result.get("ok"):
+                        successful_tool_names.add(name)
+                        successful_tool_calls.append((name, dict(args), result.get("result")))
                         trace.append({"step": "TOOL_RESULT", "status": "completed", "detail": f"{name} returned deterministic financial data."})
                     else:
                         trace.append({"step": "TOOL_RESULT", "status": "blocked", "detail": f"{name} returned an error; no unsafe fallback was used."})
@@ -179,7 +613,18 @@ Prefer tool use over guessing. For a multi-part question, use multiple tools and
                         "output": json.dumps(result, default=str),
                     })
 
+            if created_proposal is not None:
+                return self._proposal_result(trace, created_proposal, "tool_call_limit")
+            if self._required_tool_names_for_request(text):
+                trace.append({
+                    "step": "AGENT_FALLBACK",
+                    "status": "completed",
+                    "detail": "The LLM exhausted its tool-call rounds before producing an evidence-backed financial answer; deterministic handling will take over.",
+                })
+                return None
             return {"intent": "agentic", "answer": "I reached the agent tool-call limit before completing the request.", "trace": trace, "data": {"agent_mode": "llm_tool_calling", "model": self.model}, "state": self.engine.snapshot()}
         except Exception as exc:
+            if created_proposal is not None:
+                return self._proposal_result(trace, created_proposal, f"generation_error:{type(exc).__name__}")
             trace.append({"step": "AGENT_FALLBACK", "status": "completed", "detail": f"LLM unavailable: {type(exc).__name__}. Deterministic engine used instead."})
             return None

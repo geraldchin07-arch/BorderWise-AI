@@ -2494,7 +2494,7 @@ class FinanceEngine:
                 "amount, destination", "quote and risk", "risk reasons",
             ])
             and not re.search(
-                r"\\b(?:authori[sz](?:e|ed)|approve|approved|execute|executed|send|transfer|pay)\\b",
+                r"\b(?:authori[sz](?:e|ed)|approve|approved|execute|executed|send|transfer|pay)\b",
                 current_lower,
             )
         )

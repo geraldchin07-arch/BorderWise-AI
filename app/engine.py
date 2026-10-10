@@ -2303,7 +2303,7 @@ class FinanceEngine:
             item for item in (conversation_history or [])
             if isinstance(item, dict) and item.get("role") in {"user", "assistant"}
             and isinstance(item.get("content"), str)
-        ][-12:]
+        ][-50:]
         current = self.repair_user_text(str(text or "")).strip()
         current_lower = current.lower().replace("’", "'")
         current_compact = re.sub(r"[.!?]+$", "", current_lower).strip()
@@ -2581,13 +2581,22 @@ class FinanceEngine:
         # A short approval such as "I authorised it" is contextual consent only
         # when the immediately preceding assistant response explicitly contained a
         # proposal ID and that ID still identifies one pending proposal.
-        authorization_phrase = bool(re.search(
-            r"\b(?:i\s+(?:explicitly\s+)?(?:authori[sz](?:e|ed)|approv(?:e|ed)|confirm(?:ed)?|accept(?:ed)?)"
-            r"(?:\s+(?:it|this|the proposal|the transfer))?|"
-            r"(?:yes\s*,?\s*)?(?:authori[sz](?:e|ed)|approv(?:e|ed)|confirm(?:ed)?)\s+"
-            r"(?:it|this|the proposal|the transfer))\b",
-            current_lower,
-        ))
+        authorization_phrase = (
+            bool(re.search(
+                r"\b(?:i\s+(?:explicitly\s+)?(?:authori[sz](?:e|ed)|approv(?:e|ed)|confirm(?:ed)?|accept(?:ed)?)"
+                r"(?:\s+(?:it|this|the proposal|the transfer))?|"
+                r"(?:yes\s*,?\s*)?(?:authori[sz](?:e|ed)|approv(?:e|ed)|confirm(?:ed)?)\s+"
+                r"(?:it|this|the proposal|the transfer))\b",
+                current_lower,
+            ))
+            # Short forms such as "just authorise" are supported only in the
+            # contextual handler below, which still validates the proposal,
+            # status and high-value acknowledgement.
+            or bool(re.fullmatch(
+                r"(?:just|please|go ahead and)\s+(?:authori[sz](?:e|ed)|approv(?:e|ed)|confirm(?:ed)?)",
+                current_lower,
+            ))
+        )
         if authorization_phrase:
             # Preserve the established exact-amount authorization route for messages
             # that explicitly identify RM/MYR. This maintains the existing safety

@@ -3265,6 +3265,7 @@ def test_standalone_high_value_acknowledgement_without_context_cannot_mark_a_pro
     e = FinanceEngine()
     proposal = e.create_proposal(Decimal("16000"), "test proposal")
     before = copy.deepcopy(e.get_balance())
+    transactions_before = copy.deepcopy(e.get_transactions())
 
     result = e.agent(
         "I acknowledge the high-value review. I reviewed the amount, destination, quote and risk reasons."
@@ -3274,7 +3275,7 @@ def test_standalone_high_value_acknowledgement_without_context_cannot_mark_a_pro
     assert e.state["proposals"][proposal["id"]]["status"] == "PENDING_AUTHORIZATION"
     assert e.state["proposals"][proposal["id"]].get("review_acknowledged") is not True
     assert e.get_balance() == before
-    assert e.get_transactions() == []
+    assert e.get_transactions() == transactions_before
 
 
 def test_authorization_followup_without_context_is_never_silently_accepted():

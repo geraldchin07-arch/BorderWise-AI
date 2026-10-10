@@ -13,6 +13,22 @@ def reset_shared_test_state():
 client = TestClient(app)
 
 
+
+def test_rate_limiter_returns_http_429_when_limit_is_exceeded():
+    previous_limit = rate_limiter.requests_per_minute
+    rate_limiter.client_history.clear()
+    rate_limiter.requests_per_minute = 1
+    try:
+        first = client.get("/api/health")
+        second = client.get("/api/health")
+
+        assert first.status_code == 200
+        assert second.status_code == 429
+        assert second.json()["detail"] == "Rate limit exceeded. Please try again later."
+    finally:
+        rate_limiter.requests_per_minute = previous_limit
+        rate_limiter.client_history.clear()
+
 def test_health_check():
     """Verify backend health check endpoint."""
     response = client.get("/api/health")

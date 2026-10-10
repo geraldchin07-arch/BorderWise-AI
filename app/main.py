@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from dotenv import load_dotenv
@@ -25,7 +25,16 @@ rate_limiter = SimpleRateLimiter()
 @app.middleware("http")
 async def enforce_rate_limit(request, call_next):
     client_ip = request.client.host if request.client else "127.0.0.1"
-    rate_limiter.check_rate_limit(client_ip)
+    try:
+        rate_limiter.check_rate_limit(client_ip)
+    except HTTPException as exc:
+        # Exceptions raised by outer middleware may bypass FastAPI's normal
+        # route exception handler. Return the intended 429 response directly.
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=exc.headers,
+        )
     return await call_next(request)
 
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")

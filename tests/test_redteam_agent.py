@@ -936,3 +936,29 @@ def test_redteam_unit_rate_requires_one_unit_of_requested_base_currency():
         "What is the exchange rate from SGD to MYR?",
         {"amount": 10, "from_currency": "SGD", "to_currency": "MYR"},
     ) is False
+
+
+def test_redteam_llm_tool_limit_falls_back_for_unanswered_financial_request():
+    from types import SimpleNamespace
+
+    class RepeatingWrongTool:
+        calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            call = SimpleNamespace(
+                type="function_call",
+                name="get_transactions",
+                arguments='{"limit": 5}',
+                call_id=f"wrong-tool-{self.calls}",
+            )
+            return SimpleNamespace(output=[call], output_text="")
+
+    planner = AgentOrchestrator(FinanceEngine())
+    planner.enabled = True
+    planner.max_rounds = 2
+    planner.client = SimpleNamespace(responses=RepeatingWrongTool())
+
+    result = planner.run("What is my current account balance?")
+    assert result is None
+    assert planner.client.responses.calls == 2

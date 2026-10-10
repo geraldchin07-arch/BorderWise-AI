@@ -1943,6 +1943,7 @@ class FinanceEngine:
         )
         canonical_codes = {**aliases, **{symbol: code for symbol, code in symbol_aliases.items()}}
         # Match longer names first so "US DOLLARS" is not reduced to "DOLLARS".
+        # ASCII-letter boundaries allow symbols to act as complete tokens.
         token = r"(?<![A-Z])(?:" + "|".join(re.escape(a) for a in choices) + r")(?![A-Z])"
         patterns = [
             rf"\bFROM\s+(?P<base>{token})\s+TO\s+(?P<quote>{token})",

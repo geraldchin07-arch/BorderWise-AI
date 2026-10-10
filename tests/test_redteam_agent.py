@@ -916,10 +916,17 @@ def test_redteam_fx_tool_success_with_wrong_pair_or_amount_is_not_authoritative(
         planner = AgentOrchestrator(FinanceEngine())
         planner.enabled = True
         planner.client = SimpleNamespace(responses=FakeResponses())
-        planner.call_tool = lambda name, args: {"ok": True, "result": {"rate": 0.32, "converted_amount": 999}}
+        tool_calls = []
+
+        def record_tool_call(name, args):
+            tool_calls.append((name, dict(args)))
+            return {"ok": True, "result": {"rate": 0.32, "converted_amount": 999}}
+
+        planner.call_tool = record_tool_call
 
         assert planner.run(prompt) is None
         assert planner.client.responses.calls == 2
+        assert tool_calls == []
 
 
 def test_redteam_unit_rate_requires_one_unit_of_requested_base_currency():

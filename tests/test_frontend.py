@@ -59,3 +59,17 @@ def test_authorize_ui_checks_engine_status_before_execution_and_verifies_transac
     assert execution_check < success_message
     assert "out.transaction.status!=='completed'" in function
     assert "latestProposal=null" in function
+
+
+def test_proposal_card_discloses_quote_source_date_rate_and_expiry():
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+    start = html.index("function showProposal(p)")
+    end = html.index("\nasync function authorize", start)
+    proposal_ui = html[start:end]
+
+    for field in ("quote.source", "quote.rate_date", "quote.expires_at", "p.rate"):
+        assert field in proposal_ui
+    assert "Fallback / non-live reference" in proposal_ui
+    assert "Date.now()<Date.parse(expiryValue)" in proposal_ui
+    assert "escapeFXHtml(quoteSource)" not in proposal_ui
+    assert "escapeFXHtml(quoteDate)" not in proposal_ui

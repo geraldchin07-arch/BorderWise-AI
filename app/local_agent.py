@@ -826,7 +826,14 @@ class LocalAgentPlanner:
             converted_sgd = self.engine.money_value(quote.get("converted_amount", 0))
             rate = quote.get("rate")
             balances = self.engine.get_balance()
-            scenario_balances = {str(code).upper(): self.engine.money_value(value) for code, value in balances.items()}
+            scenario_balances = {
+                str(code).upper(): self.engine.money_value(value)
+                for code, value in balances.items()
+            }
+            scenario_balances.update({
+                str(code).upper(): self.engine.money_value(value)
+                for code, value in current_wallet.items()
+            })
             scenario_balances["MYR"] = stated_myr
             forecast = self.engine.forecast_portfolio(30, balances_override=scenario_balances)
             obligations = self.engine.get_obligations()
@@ -834,7 +841,7 @@ class LocalAgentPlanner:
                 (item for item in obligations if "tuition" in str(item.get("name", "")).lower()),
                 None,
             )
-            current_sgd_cash = self.engine.money_value(balances.get("SGD", 0))
+            current_sgd_cash = self.engine.money_value(scenario_balances.get("SGD", 0))
             tuition_amount_sgd = (
                 self.engine.money_value(tuition_obligation.get("amount_sgd", 0))
                 if tuition_obligation else None
@@ -854,7 +861,7 @@ class LocalAgentPlanner:
                 due_days = tuition_obligation.get("days", "?")
                 tuition_text = (
                     f"The configured tuition obligation is about SGD {tuition_amount_sgd:,.2f}, due in {due_days} day(s); "
-                    f"configured SGD cash is SGD {current_sgd_cash:,.2f}, so the tuition-only cash gap is SGD {tuition_gap_sgd:,.2f} before fees and other near-term cash needs."
+                    f"SGD cash used in this scenario is SGD {current_sgd_cash:,.2f}, so the tuition-only cash gap is SGD {tuition_gap_sgd:,.2f} before fees and other near-term cash needs."
                 )
             else:
                 tuition_text = (
@@ -874,7 +881,7 @@ class LocalAgentPlanner:
                 )
             elif tuition_gap_sgd == 0:
                 recommendation = (
-                    "The configured SGD cash alone appears to cover the recorded tuition amount, so there is no tuition-only reason to convert MYR immediately. "
+                    "The SGD cash used in this scenario alone appears to cover the recorded tuition amount, so there is no tuition-only reason to convert MYR immediately. "
                     "Keep the reserve intact and recheck other bills, the invoice deadline, and FX fees before deciding."
                 )
             else:
@@ -901,7 +908,10 @@ class LocalAgentPlanner:
             ]
             return self._result("affordability", answer, trace, {
                 "goal": "affordability",
-                "scenario_inputs": {"myr_balance": float(stated_myr)},
+                "scenario_inputs": {
+                    "myr_balance": float(stated_myr),
+                    "wallet_balances": {str(code).upper(): float(value) for code, value in scenario_balances.items()},
+                },
                 "fx_conversion": quote,
                 "tuition_obligation": tuition_obligation,
                 "tuition_gap_sgd": float(tuition_gap_sgd) if tuition_gap_sgd is not None else None,
@@ -940,6 +950,10 @@ class LocalAgentPlanner:
                 str(code).upper(): self.engine.money_value(value)
                 for code, value in balances.items()
             }
+            scenario_balances.update({
+                str(code).upper(): self.engine.money_value(value)
+                for code, value in current_wallet.items()
+            })
             scenario_balances["MYR"] = stated_myr
             forecast = self.engine.forecast_portfolio(30, balances_override=scenario_balances)
             reserve = forecast.get("emergency_reserve", {})
@@ -964,7 +978,7 @@ class LocalAgentPlanner:
             answer = (
                 "**Currency conversion advice (read-only)**\\n\\n"
                 + conversion_text + "\\n\\n"
-                + f"Configured SGD cash: SGD {self.engine.money_value(balances.get('SGD', 0)):,.2f}. "
+                + f"SGD cash used in this scenario: SGD {self.engine.money_value(scenario_balances.get('SGD', 0)):,.2f}. "
                 + f"30-day portfolio forecast after reserve and recorded cash flows: SGD {projected_sgd:,.2f}.\\n\\n"
                 + recommendation + "\\n\\n"
                 + "This scenario replaces the saved MYR balance with the amount you stated for analysis only; saved balances are not changed. FX spreads, fees and settlement timing may differ. No proposal or transaction was created."
@@ -980,7 +994,10 @@ class LocalAgentPlanner:
             ]
             return self._result("affordability", answer, trace, {
                 "goal": "affordability",
-                "scenario_inputs": {"myr_balance": float(stated_myr)},
+                "scenario_inputs": {
+                    "myr_balance": float(stated_myr),
+                    "wallet_balances": {str(code).upper(): float(value) for code, value in scenario_balances.items()},
+                },
                 "fx_conversion": quote,
                 "forecast": forecast,
                 "emergency_reserve_met": reserve_met,

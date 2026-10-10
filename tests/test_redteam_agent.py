@@ -1312,3 +1312,22 @@ def test_redteam_plain_myr_conversion_question_gets_advice_not_rate_only():
     assert result["data"]["state_changed"] is False
     assert engine.state["balances"] == balances_before
     assert engine.state["proposals"] == {}
+
+
+def test_redteam_myr_advice_uses_all_message_stated_wallet_balances():
+    engine = FinanceEngine()
+    prompt = "I have RM10000 and SGD 500. Should I convert some to SGD?"
+    balances_before = dict(engine.state["balances"])
+
+    result = engine.agent(prompt)
+
+    assert result["intent"] == "affordability"
+    scenario_wallet = result["data"]["scenario_inputs"]["wallet_balances"]
+    assert scenario_wallet["MYR"] == 10000.0
+    assert scenario_wallet["SGD"] == 500.0
+    assert "SGD cash used in this scenario: SGD 500.00" in result["answer"]
+    assert result["data"]["state_changed"] is False
+    assert result["data"].get("proposal") is None
+    assert engine.state["balances"] == balances_before
+    assert engine.state["proposals"] == {}
+

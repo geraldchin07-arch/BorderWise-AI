@@ -1924,6 +1924,24 @@ class FinanceEngine:
             key=len,
             reverse=True,
         )
+        # Unique symbols can identify a currency in a pair even without an amount.
+        # Do not infer a country from shared symbols such as "$" or "¥".
+        symbol_aliases = {
+            "R$": "BRL", "ZŁ": "PLN", "€": "EUR", "£": "GBP", "₹": "INR",
+            "₩": "KRW", "฿": "THB", "₱": "PHP", "₦": "NGN", "₺": "TRY",
+            "₪": "ILS", "₫": "VND", "₴": "UAH", "₡": "CRC", "₲": "PYG",
+            "₵": "GHS", "₸": "KZT", "₭": "LAK", "₮": "MNT", "₼": "AZN",
+        }
+        choices = sorted(
+            [
+                alias for alias in aliases
+                if alias not in ambiguous_codes
+                or re.search(rf"(?<![A-Za-z]){re.escape(alias)}(?![A-Za-z])", raw_text)
+            ] + list(symbol_aliases),
+            key=len,
+            reverse=True,
+        )
+        canonical_codes = {**aliases, **{symbol: code for symbol, code in symbol_aliases.items()}}
         # Match longer names first so "US DOLLARS" is not reduced to "DOLLARS".
         token = r"(?<![A-Z])(?:" + "|".join(re.escape(a) for a in choices) + r")(?![A-Z])"
         patterns = [
@@ -1933,8 +1951,8 @@ class FinanceEngine:
         for pattern in patterns:
             match = re.search(pattern, t)
             if match:
-                base = aliases[match.group("base").strip()]
-                quote = aliases[match.group("quote").strip()]
+                base = canonical_codes[match.group("base").strip()]
+                quote = canonical_codes[match.group("quote").strip()]
                 if base != quote:
                     return base, quote
         return None

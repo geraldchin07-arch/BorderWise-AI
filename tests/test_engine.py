@@ -3600,6 +3600,7 @@ def test_proposals_api_lists_pending_proposals():
 
     main_module.engine.reset()
     client = TestClient(main_module.app)
+    transactions_before = main_module.engine.get_transactions()
     proposal = main_module.engine.create_proposal(Decimal("250.00"), "proposal list API regression")
 
     response = client.get("/api/proposals")
@@ -3611,4 +3612,4 @@ def test_proposals_api_lists_pending_proposals():
     assert listed is not None
     assert listed["status"] == "PENDING_AUTHORIZATION"
     assert listed["amount_myr"] == 250.0
-    assert main_module.engine.get_transactions() == []
+    assert main_module.engine.get_transactions() == transactions_before

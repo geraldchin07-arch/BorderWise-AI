@@ -2426,7 +2426,13 @@ class FinanceEngine:
             # checks for amount matching, conflicting edits, and security overrides.
             # Only amount-less pronouns such as "I authorised it" use conversation
             # context, and those require the immediately displayed, verified proposal.
-            if self.extract_myr_amount(text) is not None:
+            explicit_myr_amount = bool(re.search(
+                r"\b(?:rm|myr|malaysian\s+ringgit|ringgit)\s*[0-9][0-9,]*(?:\.[0-9]{1,2})?\b"
+                r"|\b[0-9][0-9,]*(?:\.[0-9]{1,2})?\s*(?:rm|myr|malaysian\s+ringgit|ringgit)\b",
+                current_lower,
+                re.I,
+            ))
+            if explicit_myr_amount:
                 return None
             if not contextual_proposal or not contextual_proposal_id:
                 # Do not let a short approval authorize whichever proposal happens

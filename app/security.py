@@ -1,4 +1,6 @@
 import time
+import threading
+
 from fastapi import Request, HTTPException, status
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -21,19 +23,26 @@ class SimpleRateLimiter:
     def __init__(self, requests_per_minute: int = 60):
         self.requests_per_minute = requests_per_minute
         self.client_history: dict[str, list[float]] = {}
+        self._lock = threading.Lock()
 
     def check_rate_limit(self, client_ip: str):
-        now = time.time()
-        window_start = now - 60.0
-        
-        # Clean up timestamps older than 60 seconds
-        history = [t for t in self.client_history.get(client_ip, []) if t > window_start]
-        
-        if len(history) >= self.requests_per_minute:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Rate limit exceeded. Please try again later."
-            )
-        
-        history.append(now)
-        self.client_history[client_ip] = history
+        # The read/trim/check/write sequence must be atomic across concurrent
+        # requests; otherwise simultaneous callers can all pass the same limit.
+        with self._lock:
+            now = time.time()
+            window_start = now - 60.0
+
+            # Clean up timestamps older than 60 seconds.
+            history = [
+                t for t in self.client_history.get(client_ip, [])
+                if t > window_start
+            ]
+
+            if len(history) >= self.requests_per_minute:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Rate limit exceeded. Please try again later.",
+                )
+
+            history.append(now)
+            self.client_history[client_ip] = history

@@ -1,7 +1,12 @@
 import copy
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from app.main import app, engine, rate_limiter
+from app.security import SimpleRateLimiter
 
 
 @pytest.fixture(autouse=True)
@@ -28,6 +33,28 @@ def test_rate_limiter_returns_http_429_when_limit_is_exceeded():
     finally:
         rate_limiter.requests_per_minute = previous_limit
         rate_limiter.client_history.clear()
+
+
+def test_rate_limiter_is_atomic_under_concurrent_requests():
+    limiter = SimpleRateLimiter(requests_per_minute=1)
+    callers = 8
+    barrier = Barrier(callers)
+
+    def hit(_index):
+        barrier.wait(timeout=5)
+        try:
+            limiter.check_rate_limit("198.51.100.10")
+            return "allowed"
+        except HTTPException as exc:
+            assert exc.status_code == 429
+            return "limited"
+
+    with ThreadPoolExecutor(max_workers=callers) as pool:
+        results = list(pool.map(hit, range(callers)))
+
+    assert results.count("allowed") == 1
+    assert results.count("limited") == callers - 1
+    assert len(limiter.client_history["198.51.100.10"]) == 1
 
 def test_health_check():
     """Verify backend health check endpoint."""

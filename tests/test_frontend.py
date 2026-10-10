@@ -86,3 +86,19 @@ def test_chat_error_does_not_claim_transaction_state_without_confirmation():
     assert "The response was not confirmed. Check account state and audit history" in send_function
     assert "No transaction was created. Please try again." not in send_function
     assert "The request failed before any state-changing operation." not in send_function
+
+
+def test_chat_history_survives_page_refresh_in_tab_session_only():
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+    assert "const CHAT_STORAGE_KEY='xkf5-ai.chat-history.v1';" in html
+    assert "sessionStorage.setItem(CHAT_STORAGE_KEY,JSON.stringify(bounded))" in html
+    assert "sessionStorage.getItem(CHAT_STORAGE_KEY)" in html
+    assert "chat.replaceChildren()" in html
+    assert "restored.forEach(turn=>addMsg(turn.content,turn.role==='user'?'user':'bot'))" in html
+    assert "content:String(turn.content||'').slice(0,2000)" in html
+    assert "conversationHistory=conversationHistory.slice(-50)" in html
+    reset_start = html.index("async function resetDemo()")
+    reset_end = html.index("\\nasync function bootstrap()", reset_start)
+    reset_function = html[reset_start:reset_end]
+    assert "sessionStorage.removeItem(CHAT_STORAGE_KEY)" in reset_function
+    assert "localStorage" not in html

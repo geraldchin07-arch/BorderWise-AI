@@ -170,7 +170,8 @@ h1{font-size:40px;margin:0 0 8px}.sub{color:var(--muted);font-size:16px;margin-b
 </div>
 
 <script>
-let latestProposal=null; let currentScenario=null; conversationHistory=[];
+const CHAT_STORAGE_KEY='xkf5-ai.chat-history.v1';
+let latestProposal=null; let currentScenario=null; let conversationHistory=[];
 const money=(n,c)=>`${c}${Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 async function getState(){
  const controller=new AbortController();
@@ -332,6 +333,36 @@ async function refreshAllFX(showMessage=false){
 }
 setInterval(()=>refreshAllFX(false),15*60*1000);
 function addMsg(text,who){const d=document.createElement('div');d.className='msg '+who;d.textContent=text;document.getElementById('chat').appendChild(d);document.getElementById('chat').scrollTop=99999}
+function persistConversationHistory(){
+ try{
+  const bounded=conversationHistory.slice(-50).filter(turn=>turn&&
+   (turn.role==='user'||turn.role==='assistant')&&typeof turn.content==='string')
+   .map(turn=>({role:turn.role,content:turn.content.slice(0,2000),
+    proposal_id:typeof turn.proposal_id==='string'?turn.proposal_id.slice(0,64):null}));
+  sessionStorage.setItem(CHAT_STORAGE_KEY,JSON.stringify(bounded));
+ }catch(err){console.warn('Chat history could not be saved for this tab.',err);}
+}
+function restoreConversationHistory(){
+ try{
+  const saved=sessionStorage.getItem(CHAT_STORAGE_KEY);
+  if(!saved)return;
+  const parsed=JSON.parse(saved);
+  if(!Array.isArray(parsed))throw new Error('Saved chat history is not an array.');
+  const restored=parsed.filter(turn=>turn&&
+   (turn.role==='user'||turn.role==='assistant')&&typeof turn.content==='string'&&turn.content.trim())
+   .slice(-50).map(turn=>({role:turn.role,content:turn.content.slice(0,2000),
+    proposal_id:typeof turn.proposal_id==='string'?turn.proposal_id.slice(0,64):null}));
+  if(!restored.length)return;
+  conversationHistory=restored;
+  const chat=document.getElementById('chat');
+  chat.replaceChildren();
+  restored.forEach(turn=>addMsg(turn.content,turn.role==='user'?'user':'bot'));
+  chat.scrollTop=chat.scrollHeight;
+ }catch(err){
+  try{sessionStorage.removeItem(CHAT_STORAGE_KEY);}catch(_){}
+  console.warn('Saved chat history was invalid and has been cleared.',err);
+ }
+}
 function renderDecisionCard(data){
  const a=data?.affordability;
  if(!a)return;
@@ -354,7 +385,7 @@ function renderDecisionCard(data){
 async function send(){
  const input=document.getElementById('input');const text=input.value.trim();if(!text)return null;
  const priorHistory=conversationHistory.slice(-50).map(turn=>({
-   role:turn.role,content:turn.content,proposal_id:turn.proposal_id||null
+   role:turn.role,content:String(turn.content||'').slice(0,2000),proposal_id:turn.proposal_id||null
  }));
  addMsg(text,'user');input.value='';
  try{
@@ -365,6 +396,7 @@ async function send(){
    conversationHistory.push({role:'user',content:text});
    conversationHistory.push({role:'assistant',content:answer,proposal_id:data.data?.proposal?.id||null});
    conversationHistory=conversationHistory.slice(-50);
+   persistConversationHistory();
    addMsg(answer,'bot'); renderDecisionCard(data.data); renderTrace(data.trace); renderState(data.state);
    // Keep a pending proposal available across ordinary questions, but clear it
    // once the engine reports a terminal proposal status such as EXECUTED/EXPIRED.
@@ -505,7 +537,7 @@ async function runScenario(kind){
  const stage=blocked?3:(hasProposal?4:3);
  setJourney(stage,copy.title,copy.note,Boolean(blocked));
 }
-async function resetDemo(){await fetch('/api/reset',{method:'POST'});document.getElementById('chat').innerHTML='<div class="msg bot">Demo reset. Demo scenario restored. Open ‘Set my balances’ to choose your planning currency, balances, tuition, accommodation and monthly spending.</div>';document.getElementById('proposal').innerHTML='';document.getElementById('trace').innerHTML='<div class="trace-item">Reset complete.</div>';latestProposal=null;currentScenario=null;conversationHistory=[];setJourney(0,'Judge journey: ready','<b>Demo tip:</b> Start with Tuition check. It produces the clearest end-to-end story while keeping execution behind explicit authorization.');await refresh()}
+async function resetDemo(){await fetch('/api/reset',{method:'POST'});document.getElementById('chat').innerHTML='<div class="msg bot">Demo reset. Demo scenario restored. Open ‘Set my balances’ to choose your planning currency, balances, tuition, accommodation and monthly spending.</div>';document.getElementById('proposal').innerHTML='';document.getElementById('trace').innerHTML='<div class="trace-item">Reset complete.</div>';latestProposal=null;currentScenario=null;conversationHistory=[];try{sessionStorage.removeItem(CHAT_STORAGE_KEY)}catch(e){};setJourney(0,'Judge journey: ready','<b>Demo tip:</b> Start with Tuition check. It produces the clearest end-to-end story while keeping execution behind explicit authorization.');await refresh()}
 async function bootstrap(){
  try{
    await refresh();
@@ -523,6 +555,7 @@ async function bootstrap(){
    if(r.ok){ await refresh(); }
  }catch(e){ console.warn('FX refresh unavailable; cached/fallback rate remains visible.',e); }
 }
+restoreConversationHistory();
 bootstrap();
 </script>
 </body>

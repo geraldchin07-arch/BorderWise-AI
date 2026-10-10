@@ -746,3 +746,31 @@ def test_redteam_general_nonfinancial_question_can_use_llm_without_finance_tools
     result = planner.run("Explain compound interest in simple terms.")
     assert result is not None
     assert "Compound interest" in result["answer"]
+
+
+def test_redteam_multi_pair_conversion_bypasses_llm_and_preserves_all_pairs():
+    from types import SimpleNamespace
+
+    class UnexpectedLLMCall:
+        calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            raise AssertionError("A multi-pair request must be handled by deterministic logic.")
+
+    engine = FinanceEngine()
+    planner = AgentOrchestrator(engine)
+    planner.enabled = True
+    planner.client = SimpleNamespace(responses=UnexpectedLLMCall())
+
+    prompt = "Convert 100 MYR to SGD and 100 SGD to MYR."
+    assert planner._prefer_deterministic_planner(prompt) is True
+    assert planner.run(prompt) is None
+    assert planner.client.responses.calls == 0
+
+
+def test_redteam_multi_pair_detection_does_not_capture_single_conversion_with_display_currency():
+    planner = AgentOrchestrator(FinanceEngine())
+    assert planner._prefer_deterministic_planner(
+        "Convert 500 MYR to SGD, but show the result in USD."
+    ) is False

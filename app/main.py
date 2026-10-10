@@ -87,6 +87,20 @@ class ProfileRequest(BaseModel):
     additional_fx_rate_modes: dict[str, str] = Field(default_factory=dict)
 
 
+class TraceStep(BaseModel):
+    step: str
+    status: str
+    detail: str
+
+
+class ChatResponse(BaseModel):
+    intent: str
+    answer: str
+    trace: list[TraceStep]
+    data: dict[str, Any]
+    state: dict[str, Any]
+
+
 @app.get("/")
 def index():
     return FileResponse(BASE / "static" / "index.html")
@@ -102,7 +116,7 @@ def state():
     return engine.snapshot()
 
 
-@app.post("/api/chat")
+@app.post("/api/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
     return engine.agent(req.message)
 

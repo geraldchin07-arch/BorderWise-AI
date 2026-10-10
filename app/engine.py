@@ -3667,7 +3667,7 @@ class FinanceEngine:
                     f"RM{amount:,.2f} would violate a safety rule: " + " ".join(risk["reasons"]) +
                     f" The most you can convert is RM{risk['max_allowed_myr']:,.2f}. No proposal was created."
                 )
-                return self._result(intent, answer, trace, {"forecast": f, "risk": risk, "state_changed": False, "proposal": None})
+                return self._result(intent, answer, trace, {"forecast": f, "risk": risk, "state_changed": False})
 
             answer = (
                 f"You have a projected S${f['shortfall_sgd']:,.2f} shortfall over 30 days. "

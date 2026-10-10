@@ -1509,6 +1509,32 @@ class FinanceEngine:
         self.audit("PROPOSAL_CREATED", proposal)
         return proposal
 
+    def _expire_proposal_if_needed(self, proposal_id: str, proposal: dict[str, Any]) -> bool:
+        """Mark proposals with missing, malformed, or expired FX quotes as terminal."""
+        raw_expiry = proposal.get("quote_expires_at") or (proposal.get("fx_quote") or {}).get("expires_at")
+        try:
+            if not raw_expiry:
+                raise ValueError("Proposal is missing quote-expiry metadata.")
+            quote_expiry = datetime.fromisoformat(str(raw_expiry).replace("Z", "+00:00"))
+            if quote_expiry.tzinfo is None:
+                quote_expiry = quote_expiry.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            proposal["status"] = "EXPIRED"
+            self.audit("PROPOSAL_EXPIRED", {
+                "proposal_id": proposal_id,
+                "reason": "missing_or_invalid_quote_expiry",
+            })
+            return True
+        if datetime.now(timezone.utc) >= quote_expiry:
+            proposal["status"] = "EXPIRED"
+            self.audit("PROPOSAL_EXPIRED", {
+                "proposal_id": proposal_id,
+                "reason": "quote_expired",
+                "quote_expires_at": str(raw_expiry),
+            })
+            return True
+        return False
+
     @_state_locked
     def authorize(self, proposal_id: str, approved: bool) -> dict[str, Any]:
         proposal = self.state["proposals"].get(proposal_id)
@@ -1516,6 +1542,8 @@ class FinanceEngine:
             raise ValueError("Proposal not found.")
         if proposal["status"] != "PENDING_AUTHORIZATION":
             raise ValueError("Proposal is no longer awaiting authorization.")
+        if approved and self._expire_proposal_if_needed(proposal_id, proposal):
+            raise ValueError("Proposal quote has expired or is invalid; prepare and review a fresh proposal before authorization.")
         proposal["status"] = "AUTHORIZED" if approved else "REJECTED"
         self.audit("AUTHORIZATION", {"proposal_id": proposal_id, "approved": approved})
         if not approved:
@@ -1534,27 +1562,9 @@ class FinanceEngine:
         if "MYR" not in balances or "SGD" not in balances:
             raise ValueError("Execution requires both MYR and SGD wallet balances; no funds were changed.")
 
-        # A quote reviewed indefinitely ago is not sufficient authorization for execution.
-        # Missing or malformed expiry metadata fails closed as well.
-        raw_expiry = proposal.get("quote_expires_at") or (proposal.get("fx_quote") or {}).get("expires_at")
-        try:
-            if not raw_expiry:
-                raise ValueError("Proposal is missing quote-expiry metadata.")
-            quote_expiry = datetime.fromisoformat(str(raw_expiry).replace("Z", "+00:00"))
-            if quote_expiry.tzinfo is None:
-                quote_expiry = quote_expiry.replace(tzinfo=timezone.utc)
-        except (TypeError, ValueError):
-            proposal["status"] = "EXPIRED"
-            self.audit("PROPOSAL_EXPIRED", {"proposal_id": proposal_id, "reason": "missing_or_invalid_quote_expiry"})
-            raise ValueError("Proposal quote is missing valid expiry metadata; prepare a fresh proposal before execution.")
-        if datetime.now(timezone.utc) >= quote_expiry:
-            proposal["status"] = "EXPIRED"
-            self.audit("PROPOSAL_EXPIRED", {
-                "proposal_id": proposal_id,
-                "reason": "quote_expired",
-                "quote_expires_at": str(raw_expiry),
-            })
-            raise ValueError("Proposal quote has expired; prepare and review a fresh proposal before execution.")
+        # Quote expiry is checked again at execution in case it expires after authorization.
+        if self._expire_proposal_if_needed(proposal_id, proposal):
+            raise ValueError("Proposal quote has expired or is invalid; prepare and review a fresh proposal before execution.")
 
         amount_myr = money(proposal["amount_myr"])
         amount_sgd = money(proposal["amount_sgd"])

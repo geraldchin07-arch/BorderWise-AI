@@ -1808,8 +1808,8 @@ class FinanceEngine:
         }
         for symbol in sorted(symbol_aliases, key=len, reverse=True):
             symbol_pattern = re.escape(symbol)
-            for pattern in (rf"(?<![A-Za-z]){symbol_pattern}\\s*{amount}",
-                            rf"{amount}\\s*{symbol_pattern}(?![A-Za-z])"):
+            for pattern in (rf"(?<![A-Za-z]){symbol_pattern}\s*{amount}",
+                            rf"{amount}\s*{symbol_pattern}(?![A-Za-z])"):
                 match = re.search(pattern, t, re.IGNORECASE)
                 if match:
                     return self.parse_amount_token(match.group(1)), symbol_aliases[symbol]

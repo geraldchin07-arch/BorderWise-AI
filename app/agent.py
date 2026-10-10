@@ -304,8 +304,8 @@ For complex student-finance situations, build a goal-aware plan: identify essent
             )
             if has_amount:
                 return {"convert_currency"}
-            if set(pair) <= {"MYR", "SGD"}:
-                return {"convert_currency", "get_fx_rate"}
+            # Even a unit-rate question must quote the exact requested direction.
+            # A generic MYR→SGD rate tool is not sufficient evidence for SGD→MYR.
             return {"convert_currency"}
 
         normalized = self.engine.repair_user_text(str(user_text or "")).lower()

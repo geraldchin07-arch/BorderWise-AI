@@ -43,3 +43,19 @@ def test_proposal_card_discloses_risk_status_and_escaped_reasons():
     assert "Review required:" in proposal_ui
     assert "const canAuthorize=riskStatus==='LOW'||riskStatus==='REVIEW'" in proposal_ui
     assert "disabled title=" in proposal_ui
+
+
+def test_authorize_ui_checks_engine_status_before_execution_and_verifies_transaction():
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+    start = html.index("async function authorize(approved)")
+    end = html.index("\nfunction setJourney", start)
+    function = html[start:end]
+
+    authorization_check = function.index("if(!r.ok || p.status!==expectedStatus)")
+    execution_call = function.index("fetch('/api/execute'")
+    execution_check = function.index("if(!r.ok || out.detail || !out.transaction")
+    success_message = function.index("✓ VERIFIED:")
+    assert authorization_check < execution_call
+    assert execution_check < success_message
+    assert "out.transaction.status!=='completed'" in function
+    assert "latestProposal=null" in function

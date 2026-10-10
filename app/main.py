@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
@@ -38,8 +38,17 @@ async def no_cache_dev(request, call_next):
     return response
 
 
+class ChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=2000)
+    # This is only a contextual reference. The engine must validate the ID against
+    # its own proposal store and current status before any authorization.
+    proposal_id: str | None = Field(default=None, max_length=64)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
+    history: list[ChatTurn] = Field(default_factory=list, max_length=12)
 
 
 class AuthRequest(BaseModel):
@@ -118,7 +127,8 @@ def state():
 
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
-    return engine.agent(req.message)
+    history = [turn.model_dump() for turn in req.history]
+    return engine.agent(req.message, conversation_history=history)
 
 
 @app.post("/api/profile")

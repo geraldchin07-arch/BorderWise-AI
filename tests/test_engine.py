@@ -2941,3 +2941,230 @@ def test_affordability_blocked_conversion_does_not_crash():
     result = e.agent("Can I afford my tuition?")
     assert result["data"]["risk"]["status"] == "BLOCKED"
     assert "proposal" not in result["data"]
+
+
+def test_read_only_fx_quote_with_do_not_transfer_instruction_is_not_blocked():
+    e = FinanceEngine()
+    before = copy.deepcopy(e.get_balance())
+    prompt = (
+        "I have SGD 1,200 available. If I convert SGD 300 to MYR at the current exchange rate, "
+        "how much MYR should I receive after fees? Show the exchange rate, fees and quote timestamp "
+        "if available. This is only a quotation request. Do not create or execute a transfer."
+    )
+    assert e.extract_conversion_pair(prompt) == ("SGD", "MYR")
+    assert not e.user_negates_money_movement(prompt)
+    assert e.detect_intent(prompt) == "fx"
+    r = e.agent(prompt)
+    assert r["intent"] == "fx"
+    assert r["data"].get("proposal") is None
+    assert e.state["proposals"] == {}
+    assert e.get_balance() == before
+    assert "300.00 SGD" in r["answer"] or "300.00 SGD" in str(r["data"])
+    assert "fees/spread are not included" in r["answer"].lower()
+    assert "quote timestamp" in r["answer"].lower()
+
+
+def test_multi_pair_fx_with_fees_does_not_fall_into_saved_tuition_forecast():
+    e = FinanceEngine()
+    before = copy.deepcopy(e.get_balance())
+    r = e.agent(
+        "Compare converting USD 100 to SGD and MYR 500 to SGD. Present each conversion separately, "
+        "with the source amount, target currency, verified rate, fees and quote timestamp where available. "
+        "Do not execute any transaction."
+    )
+    assert r["intent"] == "fx"
+    assert len(r["data"]["conversions"]) == 2
+    assert r["data"].get("proposal") is None
+    assert "USD" in r["answer"] and "MYR" in r["answer"]
+    assert "fees/spread are not included" in r["answer"].lower()
+    assert "quote timestamp" in r["answer"].lower()
+    assert e.state["proposals"] == {}
+    assert e.get_balance() == before
+
+
+def test_explicit_payment_affordability_uses_prompt_amounts_and_stays_read_only():
+    e = FinanceEngine()
+    before = copy.deepcopy(e.get_balance())
+    r = e.agent(
+        "I have SGD 900 and need to pay MYR 1,000. Can I afford it? Estimate the cost using "
+        "a verified current exchange rate, include applicable fees, and tell me whether I have enough funds. "
+        "Do not create or execute a transfer."
+    )
+    assert r["intent"] == "affordability"
+    assert r["data"]["goal"] == "payment_affordability"
+    assert r["data"]["balance_currency"] == "SGD"
+    assert r["data"]["balance_amount"] == 900.0
+    assert r["data"]["payment_currency"] == "MYR"
+    assert r["data"]["payment_amount"] == 1000.0
+    assert r["data"].get("proposal") is None
+    assert r["data"]["state_changed"] is False
+    assert "fee amount" in r["answer"].lower()
+    assert e.state["proposals"] == {}
+    assert e.get_balance() == before
+
+
+def test_explicit_sgd_recipient_transfer_does_not_create_tuition_proposal():
+    e = FinanceEngine()
+    r = e.agent(
+        "My available balance is SGD 100. Prepare a transfer of SGD 500 to my configured test recipient Alice. "
+        "Check affordability before creating a proposal. Do not execute anything."
+    )
+    # The deterministic unsupported-recipient guard runs before the generic
+    # transfer planner, so it returns a safe local-agent refusal by design.
+    assert r["intent"] == "agentic_local"
+    assert r["data"].get("proposal") is None
+    assert r["data"]["blocked_reason"] == "unsupported_recipient_transfer"
+    assert "named recipients" in r["answer"].lower()
+    assert e.state["proposals"] == {}
+
+
+def test_typo_tolerant_balance_query_asks_for_the_requested_currency():
+    e = FinanceEngine()
+    r = e.agent("how do i have in usd")
+    assert r["intent"] == "balance"
+    assert r["data"]["state_changed"] is False
+    assert "USD" in r["answer"]
+    assert e.state["proposals"] == {}
+
+
+def test_myr_amount_does_not_enable_unsupported_named_recipient_transfer():
+    e = FinanceEngine()
+    r = e.agent(
+        "Prepare a transfer of RM 5,000 to my configured test recipient Alice. Do not execute it."
+    )
+    assert r["data"].get("proposal") is None
+    assert r["data"].get("blocked_reason") == "unsupported_recipient_transfer"
+    assert "named recipients" in r["answer"].lower()
+    assert e.state["proposals"] == {}
+
+
+def _conversation_turns(user_text, result):
+    return [
+        {"role": "user", "content": user_text, "proposal_id": None},
+        {
+            "role": "assistant",
+            "content": result["answer"],
+            "proposal_id": (((result.get("data") or {}).get("proposal") or {}).get("id")),
+        },
+    ]
+
+
+def test_currency_clarification_followup_resolves_prior_conversion_request():
+    e = FinanceEngine()
+    initial_text = "Convert 250 to SGD."
+    initial = e.agent(initial_text)
+    assert "source currency" in initial["answer"].lower() or "currency is the amount in" in initial["answer"].lower()
+
+    followup = e.agent("myr", conversation_history=_conversation_turns(initial_text, initial))
+
+    assert followup["intent"] == "fx"
+    conversion = followup["data"]["conversion"]
+    assert conversion["amount"] == 250.0
+    assert conversion["from_currency"] == "MYR"
+    assert conversion["to_currency"] == "SGD"
+    assert followup["data"].get("proposal") is None
+    assert followup["data"]["state_changed"] is False
+
+
+def test_balance_currency_followup_keeps_balance_intent_instead_of_fx():
+    e = FinanceEngine()
+    initial_text = "how much do i have in sgd"
+    initial = e.agent(initial_text)
+    assert "you currently have" in initial["answer"].lower()
+
+    followup = e.agent("how about in usd", conversation_history=_conversation_turns(initial_text, initial))
+
+    assert followup["intent"] == "balance"
+    assert "don't see a configured usd balance" in followup["answer"].lower()
+    assert "reference rate for myr to sgd" not in followup["answer"].lower()
+    assert followup["data"]["state_changed"] is False
+    assert followup["data"].get("proposal") is None
+
+
+def test_repeat_same_transfer_proposal_reuses_contextual_pending_proposal():
+    e = FinanceEngine()
+    request_text = "transfer RM 1000 to SGD now"
+    initial = e.agent(request_text)
+    proposal = initial["data"].get("proposal")
+    assert proposal and proposal["status"] == "PENDING_AUTHORIZATION"
+    original_proposal_ids = set(e.state["proposals"])
+
+    repeated = e.agent(
+        "Prepare exactly the same transfer proposal again.",
+        conversation_history=_conversation_turns(request_text, initial),
+    )
+
+    assert repeated["data"]["proposal_reused"] is True
+    assert repeated["data"]["proposal"]["id"] == proposal["id"]
+    assert set(e.state["proposals"]) == original_proposal_ids
+    assert e.state["proposals"][proposal["id"]]["status"] == "PENDING_AUTHORIZATION"
+
+
+def test_contextual_authorization_matches_only_the_immediately_shown_pending_proposal():
+    e = FinanceEngine()
+    request_text = "transfer RM 1000 to SGD now"
+    initial = e.agent(request_text)
+    proposal = initial["data"].get("proposal")
+    assert proposal and proposal["status"] == "PENDING_AUTHORIZATION"
+    history = _conversation_turns(request_text, initial)
+    before_myr = e.get_balance()["MYR"]
+    before_sgd = e.get_balance()["SGD"]
+
+    result = e.agent("i authorised it", conversation_history=history)
+
+    assert result["data"]["contextual_authorization"] is True
+    assert result["data"]["proposal"]["status"] == "EXECUTED"
+    assert result["data"]["transaction"]["status"] == "completed"
+    assert e.get_balance()["MYR"] < before_myr
+    assert e.get_balance()["SGD"] > before_sgd
+    assert e.state["proposals"][proposal["id"]]["status"] == "EXECUTED"
+
+
+def test_contextual_authorization_cannot_use_client_history_alone_to_choose_a_proposal():
+    e = FinanceEngine()
+    proposal = e.create_proposal(Decimal("1000"), "student finance transfer")
+    fake_history = [
+        {"role": "assistant", "content": "Previous proposal details", "proposal_id": "P-NOT-REAL"}
+    ]
+    before = copy.deepcopy(e.get_balance())
+
+    result = e.agent("I authorised it", conversation_history=fake_history)
+
+    assert result["data"]["blocked_reason"] == "missing_contextual_proposal"
+    assert e.state["proposals"][proposal["id"]]["status"] == "PENDING_AUTHORIZATION"
+    assert e.get_balance() == before
+
+
+def test_contextual_authorization_still_requires_high_value_review_acknowledgement():
+    e = FinanceEngine()
+    request_text = "transfer RM 16000 to SGD now"
+    initial = e.agent(request_text)
+    proposal = initial["data"].get("proposal")
+    assert proposal and proposal["status"] == "PENDING_AUTHORIZATION"
+    assert proposal["risk"]["status"] == "REVIEW"
+    history = _conversation_turns(request_text, initial)
+    before = copy.deepcopy(e.get_balance())
+
+    blocked = e.agent("I authorise it", conversation_history=history)
+    assert blocked["data"]["blocked_reason"] == "review_requires_acknowledgement"
+    assert e.state["proposals"][proposal["id"]]["status"] == "PENDING_AUTHORIZATION"
+    assert e.get_balance() == before
+
+    approved = e.agent(
+        "I acknowledge the high-value review and authorise it.",
+        conversation_history=history,
+    )
+    assert approved["data"]["contextual_authorization"] is True
+    assert approved["data"]["transaction"]["status"] == "completed"
+    assert e.state["proposals"][proposal["id"]]["status"] == "EXECUTED"
+
+
+def test_authorization_followup_without_context_is_never_silently_accepted():
+    e = FinanceEngine()
+    before = copy.deepcopy(e.get_balance())
+
+    result = e.agent("I authorised it")
+
+    assert result["data"]["blocked_reason"] == "missing_contextual_proposal"
+    assert e.state["proposals"] == {}
+    assert e.get_balance() == before

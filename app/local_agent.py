@@ -773,7 +773,9 @@ class LocalAgentPlanner:
 
             wallet = self._extract_wallet_balances_from_text(raw_text)
             if wallet:
-                context["wallet_balances"] = dict(wallet)
+                merged_wallet = dict(context.get("wallet_balances", {}))
+                merged_wallet.update(wallet)
+                context["wallet_balances"] = merged_wallet
 
             normalized = self.engine.repair_user_text(raw_text).lower().strip()
             savings_start = re.search(
@@ -845,7 +847,10 @@ class LocalAgentPlanner:
             return self._savings_goal_result(remembered_plan, Decimal(expense_increase.group(1).replace(',', '')))
         current_wallet = self._extract_wallet_balances_from_text(t)
         if current_wallet:
-            remembered_context["wallet_balances"] = dict(current_wallet)
+            merged_wallet = dict(remembered_context.get("wallet_balances", {}))
+            merged_wallet.update(current_wallet)
+            remembered_context["wallet_balances"] = merged_wallet
+            current_wallet = merged_wallet
             if not history_scoped:
                 self.engine._agent_scenario_context = remembered_context
         myr = self._amount(t, "MYR")

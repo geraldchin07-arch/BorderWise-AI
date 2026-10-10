@@ -3569,3 +3569,26 @@ def test_api_scenario_context_is_scoped_to_supplied_conversation_history():
     fresh_chat = engine.agent("Can I afford tuition?", conversation_history=[])
     assert "5,490" not in fresh_chat["answer"]
     assert engine._agent_scenario_context == {}
+
+
+def test_api_scenario_context_merges_wallet_balances_across_user_turns():
+    engine = FinanceEngine()
+    first = engine.agent("I have SGD 5490.", conversation_history=[])
+    history = [
+        {"role": "user", "content": "I have SGD 5490."},
+        {"role": "assistant", "content": first["answer"]},
+    ]
+
+    result = engine.agent(
+        "Also, I have MYR 10000. Should I convert some to SGD?",
+        conversation_history=history,
+    )
+
+    assert result["intent"] == "affordability"
+    wallet = result["data"]["scenario_inputs"]["wallet_balances"]
+    assert wallet["SGD"] == 5490.0
+    assert wallet["MYR"] == 10000.0
+    assert "SGD cash used in this scenario: SGD 5,490.00" in result["answer"]
+    assert result["data"]["state_changed"] is False
+    assert result["data"].get("proposal") is None
+    assert engine._agent_scenario_context == {}

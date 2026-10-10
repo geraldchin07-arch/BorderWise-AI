@@ -171,6 +171,7 @@ h1{font-size:40px;margin:0 0 8px}.sub{color:var(--muted);font-size:16px;margin-b
 
 <script>
 const CHAT_STORAGE_KEY='xkf5-ai.chat-history.v1';
+const PROPOSAL_STORAGE_KEY='xkf5-ai.pending-proposal-id.v1';
 let latestProposal=null; let currentScenario=null; let conversationHistory=[];
 const money=(n,c)=>`${c}${Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 async function getState(){
@@ -382,6 +383,38 @@ function renderDecisionCard(data){
  <div class="decision-foot">${title}. Scenario uses only the balances stated in the message; no transaction or proposal was created.</div>`;
  document.getElementById('chat').appendChild(card); document.getElementById('chat').scrollTop=99999;
 }
+
+function savePendingProposalId(proposalId){
+ try{
+  if(typeof proposalId==='string'&&proposalId.trim())sessionStorage.setItem(PROPOSAL_STORAGE_KEY,proposalId.slice(0,64));
+  else sessionStorage.removeItem(PROPOSAL_STORAGE_KEY);
+ }catch(err){console.warn('Pending proposal reference could not be saved for this tab.',err);}
+}
+async function restorePendingProposal(){
+ let proposalId=null;
+ try{proposalId=sessionStorage.getItem(PROPOSAL_STORAGE_KEY)}catch(err){return}
+ if(!proposalId)return;
+ try{
+  const response=await fetch('/api/proposals',{cache:'no-store'});
+  if(!response.ok)throw new Error('Proposal status request failed ('+response.status+').');
+  const payload=await response.json();
+  const proposals=Array.isArray(payload.proposals)?payload.proposals:[];
+  const proposal=proposals.find(item=>item&&item.id===proposalId);
+  const expiry=proposal&&(proposal.quote_expires_at||(proposal.fx_quote||{}).expires_at);
+  const expiryMs=expiry?Date.parse(expiry):NaN;
+  if(!proposal||String(proposal.status||'').toUpperCase()!=='PENDING_AUTHORIZATION'||
+    !Number.isFinite(expiryMs)||Date.now()>=expiryMs){
+   savePendingProposalId(null);
+   return;
+  }
+  latestProposal=proposal;
+  showProposal(proposal);
+ }catch(err){
+  // Do not infer the proposal's status if the server cannot verify it.
+  console.warn('Pending proposal could not be restored; verify its status before retrying.',err);
+ }
+}
+
 async function send(){
  const input=document.getElementById('input');const text=input.value.trim();if(!text)return null;
  const priorHistory=conversationHistory.slice(-50).map(turn=>({
@@ -402,8 +435,14 @@ async function send(){
    // once the engine reports a terminal proposal status such as EXECUTED/EXPIRED.
    if(data.data?.proposal){
      latestProposal=data.data.proposal;
-     if(String(latestProposal.status||'').toUpperCase()==='PENDING_AUTHORIZATION') showProposal(latestProposal);
-     else { latestProposal=null; document.getElementById('proposal').innerHTML=''; }
+     if(String(latestProposal.status||'').toUpperCase()==='PENDING_AUTHORIZATION'){
+       savePendingProposalId(latestProposal.id);
+       showProposal(latestProposal);
+     }else{
+       latestProposal=null;
+       savePendingProposalId(null);
+       document.getElementById('proposal').innerHTML='';
+     }
    }
    return data;
  }catch(err){
@@ -475,9 +514,11 @@ async function authorize(approved){
   setJourney(4,'Judge journey: authorization rejected','<b>No execution occurred.</b> The proposal remains outside the execution path.');
   document.getElementById('proposal').innerHTML='';
   latestProposal=null;
+  savePendingProposalId(null);
   return;
  }
  latestProposal=null;
+ savePendingProposalId(null);
  document.getElementById('proposal').innerHTML='<div class="proposal"><b>Authorization accepted by the engine</b><p>Checking the execution result. Do not retry until the transaction status is verified.</p></div>';
  setJourney(4,'Judge journey: authorization confirmed','<b>Level 2 authorization accepted.</b> The engine is checking this specific pending proposal.');
  let out;
@@ -537,7 +578,7 @@ async function runScenario(kind){
  const stage=blocked?3:(hasProposal?4:3);
  setJourney(stage,copy.title,copy.note,Boolean(blocked));
 }
-async function resetDemo(){await fetch('/api/reset',{method:'POST'});document.getElementById('chat').innerHTML='<div class="msg bot">Demo reset. Demo scenario restored. Open ‘Set my balances’ to choose your planning currency, balances, tuition, accommodation and monthly spending.</div>';document.getElementById('proposal').innerHTML='';document.getElementById('trace').innerHTML='<div class="trace-item">Reset complete.</div>';latestProposal=null;currentScenario=null;conversationHistory=[];try{sessionStorage.removeItem(CHAT_STORAGE_KEY)}catch(e){};setJourney(0,'Judge journey: ready','<b>Demo tip:</b> Start with Tuition check. It produces the clearest end-to-end story while keeping execution behind explicit authorization.');await refresh()}
+async function resetDemo(){await fetch('/api/reset',{method:'POST'});document.getElementById('chat').innerHTML='<div class="msg bot">Demo reset. Demo scenario restored. Open ‘Set my balances’ to choose your planning currency, balances, tuition, accommodation and monthly spending.</div>';document.getElementById('proposal').innerHTML='';document.getElementById('trace').innerHTML='<div class="trace-item">Reset complete.</div>';latestProposal=null;currentScenario=null;conversationHistory=[];try{sessionStorage.removeItem(CHAT_STORAGE_KEY)}catch(e){};try{sessionStorage.removeItem(PROPOSAL_STORAGE_KEY)}catch(e){};setJourney(0,'Judge journey: ready','<b>Demo tip:</b> Start with Tuition check. It produces the clearest end-to-end story while keeping execution behind explicit authorization.');await refresh()}
 async function bootstrap(){
  try{
    await refresh();
@@ -556,6 +597,7 @@ async function bootstrap(){
  }catch(e){ console.warn('FX refresh unavailable; cached/fallback rate remains visible.',e); }
 }
 restoreConversationHistory();
+restorePendingProposal();
 bootstrap();
 </script>
 </body>

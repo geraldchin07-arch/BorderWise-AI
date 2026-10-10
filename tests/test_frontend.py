@@ -102,3 +102,22 @@ def test_chat_history_survives_page_refresh_in_tab_session_only():
     reset_function = html[reset_start:reset_end]
     assert "sessionStorage.removeItem(CHAT_STORAGE_KEY)" in reset_function
     assert "localStorage" not in html
+
+
+def test_pending_proposal_card_is_restored_only_after_server_verification():
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+    assert "const PROPOSAL_STORAGE_KEY='xkf5-ai.pending-proposal-id.v1';" in html
+    start = html.index("async function restorePendingProposal()")
+    end = html.index("\\nasync function send()", start)
+    restore_function = html[start:end]
+    assert "fetch('/api/proposals',{cache:'no-store'})" in restore_function
+    assert "payload.proposals" in restore_function
+    assert "item.id===proposalId" in restore_function
+    assert "PENDING_AUTHORIZATION" in restore_function
+    assert "Date.now()>=expiryMs" in restore_function
+    assert "showProposal(proposal)" in restore_function
+    assert "savePendingProposalId(null)" in restore_function
+    reset_start = html.index("async function resetDemo()")
+    reset_end = html.index("async function bootstrap()", reset_start)
+    reset_function = html[reset_start:reset_end]
+    assert "sessionStorage.removeItem(PROPOSAL_STORAGE_KEY)" in reset_function

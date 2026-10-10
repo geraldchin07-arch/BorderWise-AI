@@ -873,3 +873,58 @@ def test_redteam_reverse_fx_rate_requires_pair_specific_conversion_tool():
     assert planner._required_tool_names_for_request("What is the exchange rate from SGD to MYR?") == {"convert_currency"}
     assert planner.run("What is the exchange rate from SGD to MYR?") is None
     assert planner.client.responses.calls == 2
+
+
+def test_redteam_fx_tool_success_with_wrong_pair_or_amount_is_not_authoritative():
+    from types import SimpleNamespace
+
+    scenarios = [
+        (
+            "Convert 100 SGD to MYR.",
+            {"amount": 100, "from_currency": "MYR", "to_currency": "SGD"},
+        ),
+        (
+            "Convert 100 SGD to MYR.",
+            {"amount": 200, "from_currency": "SGD", "to_currency": "MYR"},
+        ),
+    ]
+
+    for prompt, wrong_args in scenarios:
+        class FakeResponses:
+            calls = 0
+
+            def create(self, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    call = SimpleNamespace(
+                        type="function_call",
+                        name="convert_currency",
+                        arguments=json.dumps(wrong_args),
+                        call_id="wrong-conversion-args",
+                    )
+                    return SimpleNamespace(output=[call], output_text="")
+                return SimpleNamespace(output=[], output_text="The conversion is correct.")
+
+        planner = AgentOrchestrator(FinanceEngine())
+        planner.enabled = True
+        planner.client = SimpleNamespace(responses=FakeResponses())
+        planner.call_tool = lambda name, args: {"ok": True, "result": {"rate": 0.32, "converted_amount": 999}}
+
+        assert planner.run(prompt) is None
+        assert planner.client.responses.calls == 2
+
+
+def test_redteam_unit_rate_requires_one_unit_of_requested_base_currency():
+    planner = AgentOrchestrator(FinanceEngine())
+    assert planner._conversion_tool_matches_request(
+        "What is the exchange rate from SGD to MYR?",
+        {"amount": 1, "from_currency": "SGD", "to_currency": "MYR"},
+    ) is True
+    assert planner._conversion_tool_matches_request(
+        "What is the exchange rate from SGD to MYR?",
+        {"amount": 1, "from_currency": "MYR", "to_currency": "SGD"},
+    ) is False
+    assert planner._conversion_tool_matches_request(
+        "What is the exchange rate from SGD to MYR?",
+        {"amount": 10, "from_currency": "SGD", "to_currency": "MYR"},
+    ) is False

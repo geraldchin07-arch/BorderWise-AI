@@ -663,3 +663,82 @@ def test_redteam_explicit_us_dollar_forms_remain_parseable():
     assert planner._amount("Convert US$500 to SGD", "USD") == 500
     assert planner._amount("Convert $500 to SGD", "USD") is None
     assert planner._amount("Convert 500 dollars to SGD", "USD") is None
+
+
+def test_redteam_llm_without_required_balance_tool_falls_back_instead_of_hallucinating(monkeypatch):
+    from types import SimpleNamespace
+
+    class FakeResponses:
+        calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            return SimpleNamespace(output=[], output_text="Your balance is SGD 999,999.00.")
+
+    planner = AgentOrchestrator(FinanceEngine())
+    planner.enabled = True
+    planner.client = SimpleNamespace(responses=FakeResponses())
+
+    result = planner.run("What is my current account balance?")
+    assert result is None
+    assert planner.client.responses.calls == 1
+
+
+def test_redteam_wrong_successful_tool_cannot_substitute_for_balance_tool(monkeypatch):
+    from types import SimpleNamespace
+
+    class FakeResponses:
+        calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                call = SimpleNamespace(
+                    type="function_call",
+                    name="get_transactions",
+                    arguments="{}",
+                    call_id="wrong-tool-call",
+                )
+                return SimpleNamespace(output=[call], output_text="")
+            return SimpleNamespace(output=[], output_text="Your balance is SGD 999,999.00.")
+
+    planner = AgentOrchestrator(FinanceEngine())
+    planner.enabled = True
+    planner.client = SimpleNamespace(responses=FakeResponses())
+
+    result = planner.run("What is my current account balance?")
+    assert result is None
+    assert planner.client.responses.calls == 2
+
+
+def test_redteam_hypothetical_fx_calculation_uses_deterministic_planner(monkeypatch):
+    from types import SimpleNamespace
+
+    class UnexpectedLLMCall:
+        def create(self, **kwargs):
+            raise AssertionError("A live LLM tool turn must not replace hypothetical-rate arithmetic.")
+
+    planner = AgentOrchestrator(FinanceEngine())
+    planner.enabled = True
+    planner.client = SimpleNamespace(responses=UnexpectedLLMCall())
+
+    result = planner.run(
+        "Compare MYR 10,000 at hypothetical rates 0.32 and 0.33 SGD per MYR and calculate the difference."
+    )
+    assert result is None
+
+
+def test_redteam_general_nonfinancial_question_can_use_llm_without_finance_tools(monkeypatch):
+    from types import SimpleNamespace
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            return SimpleNamespace(output=[], output_text="Compound interest earns interest on accumulated interest.")
+
+    planner = AgentOrchestrator(FinanceEngine())
+    planner.enabled = True
+    planner.client = SimpleNamespace(responses=FakeResponses())
+
+    result = planner.run("Explain compound interest in simple terms.")
+    assert result is not None
+    assert "Compound interest" in result["answer"]

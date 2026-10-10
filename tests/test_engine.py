@@ -1,4 +1,5 @@
 from decimal import Decimal
+import inspect
 from concurrent.futures import ThreadPoolExecutor
 import copy
 from app.engine import FinanceEngine
@@ -3525,3 +3526,11 @@ def test_concurrent_execution_requests_commit_exactly_one_transaction():
     assert balances_after["SGD"] == balances_before["SGD"] + proposal["amount_sgd"]
     assert len(e.get_transactions()) == len(transactions_before) + 1
     assert e.state["proposals"][proposal["id"]]["status"] == "EXECUTED"
+
+
+
+def test_finance_engine_core_methods_are_defined_once():
+    source = inspect.getsource(FinanceEngine)
+    assert source.count("\n    def agent(") == 1
+    assert source.count("\n    def _result(") == 1
+    assert source.count("\n    def snapshot(") == 1

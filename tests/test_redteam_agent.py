@@ -630,3 +630,33 @@ def test_redteam_llm_cannot_create_two_proposals_in_one_turn(monkeypatch):
     assert result["data"]["proposal"]["status"] == "PENDING_AUTHORIZATION"
     assert result["data"]["transaction_created"] is False
     assert "No transaction has been executed" in result["answer"]
+
+
+def test_redteam_bare_dollar_words_and_symbols_require_currency_clarification():
+    prompts = [
+        "What is the exchange rate from dollars to SGD?",
+        "What is the current rate from dollars to Malaysian ringgit?",
+        "Convert $500 to SGD.",
+        "How much is 200 dollars in MYR?",
+    ]
+    for prompt in prompts:
+        e = FinanceEngine()
+        before = e.get_balance()
+        result = e.agent(prompt)
+        assert result["intent"] == "fx"
+        assert result["data"]["needs_clarification"] is True
+        assert result["data"]["state_changed"] is False
+        assert result["data"]["proposal"] is None
+        assert e.get_balance() == before
+        assert e.state["proposals"] == {}
+
+
+def test_redteam_explicit_us_dollar_forms_remain_parseable():
+    e = FinanceEngine()
+    assert e.extract_conversion_pair("convert US dollars to SGD") == ("USD", "SGD")
+    assert e.extract_conversion_pair("convert US$ to SGD") == ("USD", "SGD")
+    planner = LocalAgentPlanner(e)
+    assert planner._amount("Convert 500 US dollars to SGD", "USD") == 500
+    assert planner._amount("Convert US$500 to SGD", "USD") == 500
+    assert planner._amount("Convert $500 to SGD", "USD") is None
+    assert planner._amount("Convert 500 dollars to SGD", "USD") is None

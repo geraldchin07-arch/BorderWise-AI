@@ -98,7 +98,7 @@ def test_chat_history_survives_page_refresh_in_tab_session_only():
     assert "content:String(turn.content||'').slice(0,2000)" in html
     assert "conversationHistory=conversationHistory.slice(-50)" in html
     reset_start = html.index("async function resetDemo()")
-    reset_end = html.index("\\nasync function bootstrap()", reset_start)
+    reset_end = html.index("async function bootstrap()", reset_start)
     reset_function = html[reset_start:reset_end]
     assert "sessionStorage.removeItem(CHAT_STORAGE_KEY)" in reset_function
     assert "localStorage" not in html

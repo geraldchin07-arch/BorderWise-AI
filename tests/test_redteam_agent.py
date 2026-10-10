@@ -774,3 +774,32 @@ def test_redteam_multi_pair_detection_does_not_capture_single_conversion_with_di
     assert planner._prefer_deterministic_planner(
         "Convert 500 MYR to SGD, but show the result in USD."
     ) is False
+
+
+def test_redteam_multi_pair_conversion_split_uses_real_conjunction_boundaries():
+    planner = AgentOrchestrator(FinanceEngine())
+    prompt = "Convert 100 MYR to SGD and 100 SGD to MYR."
+    normalized = planner.engine.repair_user_text(prompt).lower()
+    segments = re.split(r";|\n|\b(?:and then|and|then|also)\b", prompt, flags=re.I)
+    pairs = [
+        pair for segment in segments
+        if (pair := planner.engine.extract_conversion_pair(segment)) is not None
+    ]
+    assert len(pairs) == 2
+    assert planner._prefer_deterministic_planner(prompt) is True
+
+
+def test_redteam_explicit_transfer_requires_proposal_tool_evidence():
+    planner = AgentOrchestrator(FinanceEngine())
+    assert planner._required_tool_names_for_request("Transfer RM5000 to Singapore.") == {"create_transfer_proposal"}
+
+
+def test_redteam_transfer_without_amount_cannot_be_answered_as_prepared():
+    planner = AgentOrchestrator(FinanceEngine())
+    assert planner._required_tool_names_for_request("Transfer money to Singapore.") == {"__explicit_transfer_amount_required__"}
+
+
+def test_redteam_advice_about_transfer_does_not_require_proposal_creation():
+    planner = AgentOrchestrator(FinanceEngine())
+    result = planner._required_tool_names_for_request("Can I afford tuition if I transfer RM5000?")
+    assert result is None or "create_transfer_proposal" not in result

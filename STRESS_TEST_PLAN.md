@@ -1,12 +1,12 @@
 # XKF5 AI Stress Test Plan
 
 Branch: `agent`  
-Verified baseline commit: `31727d0d7886e2b04788acccb73bb2d36551ed4a`  
+Verified baseline commit: `af685f07456700c6257dfcf5a58a52e16ab53308`  
 Scope: deterministic engine, offline planner, LLM orchestration, chat API, and UI conversation context.
 
 ## Current automated baseline
 
-GitHub Actions run [38050708932](https://github.com/geraldchin07-arch/XKF5-AI/actions/runs/38050708932) passed on 2026-10-10 with **341 tests passing** after Python compilation succeeded.
+GitHub Actions run [38052613693](https://github.com/geraldchin07-arch/XKF5-AI/actions/runs/38052613693) passed on 2026-10-10 with **345 tests passing** after Python compilation succeeded.
 
 Recent regression coverage now includes:
 - The offline planner rebuilds hypothetical wallet and savings context from the supplied conversation history instead of sharing those scenarios across chat sessions.
@@ -22,6 +22,7 @@ Recent regression coverage now includes:
 - If a browser request returns an ambiguous error, the UI tells the user to verify transaction/audit state before retrying rather than claiming no transaction happened.
 - The engine is tested for duplicate core method definitions after a large redundant block was removed.
 - Tuition-conversion advice remains read-only and does not create a transfer proposal.
+- The chat follow-up handler recognizes affirmative replies such as `Yes, go ahead` only when the immediately preceding assistant turn carries a proposal ID that resolves to a real pending proposal; without that verified reference, it blocks rather than selecting a global pending proposal. Existing high-value review gates remain enforced.
 
 A green unit-test suite is evidence of tested behavior, not a guarantee that every live-app path or external FX integration behaves correctly. The longer scenarios below remain a test plan unless a specific run/result is recorded.
 

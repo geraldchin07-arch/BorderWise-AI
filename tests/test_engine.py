@@ -2826,3 +2826,116 @@ def test_expired_pending_proposal_cannot_be_authorized(monkeypatch):
     assert e.state["balances"] == before_balances
     assert e.state["transactions"] == before_transactions
     assert any(item["event"] == "PROPOSAL_EXPIRED" for item in e.state["audit"])
+
+
+def test_duplicate_proposal_is_reused():
+    e = FinanceEngine()
+    first = e.create_proposal(Decimal("5000"), "test")
+    second = e.create_proposal(Decimal("5000"), "test")
+    assert first["id"] == second["id"]
+    assert len(e.state["proposals"]) == 1
+
+
+def test_execute_is_verified_and_not_replayable():
+    e = FinanceEngine()
+    proposal = e.create_proposal(Decimal("5000"), "test")
+    e.authorize(proposal["id"], True)
+    result = e.execute(proposal["id"])
+    assert result["verified"] is True
+    assert result["proposal"]["verified"] is True
+    assert any(event["event"] == "VERIFIED" for event in e.state["audit"])
+    with pytest.raises(ValueError):
+        e.execute(proposal["id"])
+
+
+def test_execute_without_authorization_is_denied():
+    e = FinanceEngine()
+    proposal = e.create_proposal(Decimal("5000"), "test")
+    with pytest.raises(ValueError):
+        e.execute(proposal["id"])
+
+
+def test_vague_authorization_does_nothing():
+    e = FinanceEngine()
+    e.create_proposal(Decimal("5000"), "test")
+    result = LocalAgentPlanner(e).run("I authorize this")
+    assert result["data"]["blocked_reason"] == "no_unambiguous_pending_proposal"
+    assert all(p["status"] == "PENDING_AUTHORIZATION" for p in e.state["proposals"].values())
+    assert e.get_balance()["MYR"] == 30000.0
+
+
+def test_concurrent_execute_only_once():
+    import threading
+
+    e = FinanceEngine()
+    proposal = e.create_proposal(Decimal("5000"), "test")
+    e.authorize(proposal["id"], True)
+    outcomes = []
+
+    def execute():
+        try:
+            e.execute(proposal["id"])
+            outcomes.append("ok")
+        except ValueError:
+            outcomes.append("err")
+
+    threads = [threading.Thread(target=execute) for _ in range(5)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert outcomes.count("ok") == 1
+    assert e.get_balance()["MYR"] == 25000.0
+
+
+def test_expired_proposal_cannot_be_authorized_or_executed():
+    e = FinanceEngine()
+    proposal = e.create_proposal(Decimal("5000"), "test")
+    e.state["proposals"][proposal["id"]]["expires_at"] = "2000-01-01T00:00:00+00:00"
+
+    for call in (lambda: e.authorize(proposal["id"], True), lambda: e.execute(proposal["id"])):
+        with pytest.raises(ValueError):
+            call()
+
+    assert e.state["proposals"][proposal["id"]]["status"] == "EXPIRED"
+    assert any(event["event"] == "PROPOSAL_EXPIRED" for event in e.state["audit"])
+
+
+def test_risk_check_reports_max_allowed():
+    e = FinanceEngine()
+    result = e.risk_check(Decimal("26000"), "test")
+    assert result["status"] == "BLOCKED"
+    assert result["max_allowed_myr"] == 25000.0
+
+
+def test_review_transfer_requires_acknowledgement():
+    e = FinanceEngine()
+    proposal = e.create_proposal(Decimal("16000"), "test")
+    assert proposal["risk"]["status"] == "REVIEW"
+
+    with pytest.raises(ValueError, match="acknowledgement"):
+        e.authorize(proposal["id"], True)
+
+    e.authorize(proposal["id"], True, acknowledge_review=True)
+    assert e.state["proposals"][proposal["id"]]["status"] == "AUTHORIZED"
+
+
+def test_new_proposal_supersedes_old_pending():
+    e = FinanceEngine()
+    older = e.create_proposal(Decimal("5000"), "test")
+    newer = e.create_proposal(Decimal("6000"), "test")
+
+    assert e.state["proposals"][older["id"]]["status"] == "SUPERSEDED"
+    assert e.state["proposals"][newer["id"]]["status"] == "PENDING_AUTHORIZATION"
+
+    with pytest.raises(ValueError):
+        e.authorize(older["id"], True)
+
+
+def test_affordability_blocked_conversion_does_not_crash():
+    e = FinanceEngine()
+    e.state["education"]["tuition_semester_sgd"] = Decimal("30000")
+    result = e.agent("Can I afford my tuition?")
+    assert result["data"]["risk"]["status"] == "BLOCKED"
+    assert "proposal" not in result["data"]

@@ -369,7 +369,30 @@ async function send(){
  }
 }
 function showProposal(p){
- document.getElementById('proposal').innerHTML=`<div class="proposal"><b>Level 2 authorization required</b><p>Convert <b>RM ${Number(p.amount_myr).toLocaleString(undefined,{minimumFractionDigits:2})}</b> → <b>S$ ${Number(p.amount_sgd).toLocaleString(undefined,{minimumFractionDigits:2})}</b></p><p>Purpose: ${escapeFXHtml(p.purpose)}</p><div style="display:flex;gap:8px"><button class="btn" onclick="authorize(true)">Authorize & execute</button><button class="btn secondary" onclick="authorize(false)">Reject</button></div></div>`;
+ const risk=p.risk||{};
+ const riskStatus=String(risk.status||'UNKNOWN').toUpperCase();
+ const riskClass=riskStatus.toLowerCase()==='review'?'review':riskStatus.toLowerCase()==='blocked'?'blocked':'';
+ const reasons=Array.isArray(risk.reasons)?risk.reasons.filter(Boolean):[];
+ const reasonHtml=reasons.length
+   ? '<ul style="margin:8px 0 0;padding-left:18px">'+reasons.map(reason=>'<li>'+escapeFXHtml(reason)+'</li>').join('')+'</ul>'
+   : '<p>No additional risk reasons were reported by the engine.</p>';
+ const riskDescription=riskStatus==='REVIEW'
+   ? '<p><b>Review required:</b> read the flags below carefully before authorization.</p>'
+   : riskStatus==='LOW'
+     ? '<p>Verify the amount, destination, and quoted rate before authorization.</p>'
+     : '<p><b>Authorization disabled:</b> the risk status is blocked or unavailable.</p>';
+ const riskHtml='<div class="risk '+riskClass+'"><b>Risk assessment: '+escapeFXHtml(riskStatus)+'</b>'+riskDescription+reasonHtml+'</div>';
+ const canAuthorize=riskStatus==='LOW'||riskStatus==='REVIEW';
+ const actionHtml=canAuthorize
+   ? '<button class="btn" onclick="authorize(true)">Authorize & execute</button>'
+   : '<button class="btn" disabled title="A verified LOW or REVIEW risk status is required">Cannot authorize</button>';
+ document.getElementById('proposal').innerHTML=
+   '<div class="proposal"><b>Level 2 authorization required</b>'+
+   '<p>Convert <b>RM '+Number(p.amount_myr).toLocaleString(undefined,{minimumFractionDigits:2})+
+   '</b> → <b>S$ '+Number(p.amount_sgd).toLocaleString(undefined,{minimumFractionDigits:2})+
+   '</b></p><p>Purpose: '+escapeFXHtml(p.purpose)+'</p>'+riskHtml+
+   '<div style="display:flex;gap:8px">'+actionHtml+
+   '<button class="btn secondary" onclick="authorize(false)">Reject</button></div></div>';
 }
 async function authorize(approved){
  if(!latestProposal)return;

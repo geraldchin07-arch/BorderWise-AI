@@ -1190,7 +1190,7 @@ class LocalAgentPlanner:
             if requested_amount is not None:
                 matches = [p for p in pending if abs(float(p["amount_myr"]) - float(requested_amount)) < 0.005]
             else:
-                matches = pending if len(pending) == 1 else []
+                # Authorization must identify the exact amount; a lone pending proposal is not consent.
 
             # Never pick the first proposal when more than one proposal matches.
             # Ambiguous authorization must stop rather than silently authorizing
@@ -1223,7 +1223,21 @@ class LocalAgentPlanner:
                 return self._result("agentic_local", answer, trace, {"blocked_reason": "no_unambiguous_pending_proposal"})
 
             proposal = matches[0]
-            self.engine.authorize(proposal["id"], True)
+            try:
+                self.engine.authorize(proposal["id"], True)
+            except ValueError as exc:
+                trace.append({"step": "SECURITY", "status": "blocked", "detail": str(exc)})
+                blocked_reason = (
+                    "review_requires_acknowledgement"
+                    if "acknowledgement" in str(exc).lower()
+                    else "authorization_blocked"
+                )
+                return self._result(
+                    "agentic_local",
+                    f"I did not authorize that proposal. {exc} Please review and confirm it on the dashboard.",
+                    trace,
+                    {"proposal": proposal, "blocked_reason": blocked_reason, "state_changed": False},
+                )
             trace.append({"step": "AUTHORIZE", "status": "completed", "detail": f"Level 2 authorization recorded for proposal {proposal['id']}.",})
             try:
                 executed = self.engine.execute(proposal["id"])

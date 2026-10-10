@@ -1598,12 +1598,46 @@ class FinanceEngine:
             raise ValueError("Proposal is no longer awaiting authorization.")
         if approved and self._expire_proposal_if_needed(proposal_id, proposal):
             raise ValueError("Proposal quote has expired or is invalid; prepare and review a fresh proposal before authorization.")
-        if approved and proposal.get("risk", {}).get("status") == "REVIEW" and not acknowledge_review:
+        if approved and proposal.get("risk", {}).get("status") == "REVIEW" and not (
+            acknowledge_review or proposal.get("review_acknowledged") is True
+        ):
             raise ValueError("High-value transfer: explicit acknowledgement is required (acknowledge_review=true).")
+        if approved and acknowledge_review and proposal.get("risk", {}).get("status") == "REVIEW" and proposal.get("review_acknowledged") is not True:
+            proposal["review_acknowledged"] = True
+            proposal["review_acknowledged_at"] = datetime.now(timezone.utc).isoformat()
+            self.audit("HIGH_VALUE_REVIEW_ACKNOWLEDGED", {
+                "proposal_id": proposal_id,
+                "amount_myr": proposal.get("amount_myr"),
+                "source": "authorization_control",
+            })
         proposal["status"] = "AUTHORIZED" if approved else "REJECTED"
         self.audit("AUTHORIZATION", {"proposal_id": proposal_id, "approved": approved})
         if not approved:
             return proposal
+        return proposal
+
+    @_state_locked
+    def acknowledge_review(self, proposal_id: str) -> dict[str, Any]:
+        """Record explicit review acknowledgement without authorizing or executing."""
+        proposal = self.state["proposals"].get(proposal_id)
+        if not proposal:
+            raise ValueError("Proposal not found.")
+        if self._expire_if_needed(proposal):
+            raise ValueError("Proposal has expired; prepare and review a fresh proposal.")
+        if proposal["status"] != "PENDING_AUTHORIZATION":
+            raise ValueError("Proposal is no longer awaiting authorization.")
+        if self._expire_proposal_if_needed(proposal_id, proposal):
+            raise ValueError("Proposal quote has expired; prepare and review a fresh proposal.")
+        if str(proposal.get("risk", {}).get("status", "")).upper() != "REVIEW":
+            raise ValueError("This proposal does not require the high-value review acknowledgement.")
+        if proposal.get("review_acknowledged") is not True:
+            proposal["review_acknowledged"] = True
+            proposal["review_acknowledged_at"] = datetime.now(timezone.utc).isoformat()
+            self.audit("HIGH_VALUE_REVIEW_ACKNOWLEDGED", {
+                "proposal_id": proposal_id,
+                "amount_myr": proposal.get("amount_myr"),
+                "source": "conversation",
+            })
         return proposal
 
     @_state_locked
@@ -2447,6 +2481,69 @@ class FinanceEngine:
                  "state_changed": False, "proposal_reused": False},
             )
 
+        # A standalone high-value acknowledgement is a separate state-machine step:
+        # persist acknowledgement on the authoritative pending proposal, but do not
+        # authorize or execute until the user gives a separate explicit approval.
+        acknowledgement_only = (
+            any(phrase in current_lower for phrase in [
+                "i acknowledge", "i have reviewed", "i reviewed",
+                "i acknowledge that", "i have carefully reviewed",
+            ])
+            and any(phrase in current_lower for phrase in [
+                "high-value review", "high value review", "reviewed the amount",
+                "amount, destination", "quote and risk", "risk reasons",
+            ])
+            and not re.search(
+                r"\\b(?:authori[sz](?:e|ed)|approve|approved|execute|executed|send|transfer|pay)\\b",
+                current_lower,
+            )
+        )
+        if acknowledgement_only:
+            if not contextual_proposal or not contextual_proposal_id:
+                return self._result(
+                    "agentic_local",
+                    "I understand that you've reviewed the high-value details, but I couldn't match this acknowledgement to a proposal shown in the immediately preceding reply. No proposal was authorized or executed. Reopen the relevant proposal and acknowledge its review there.",
+                    [{"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a standalone high-value review acknowledgement."},
+                     {"step": "SECURITY", "status": "blocked", "detail": "No verified contextual proposal was available; no authorization or execution occurred."}],
+                    {"blocked_reason": "missing_contextual_proposal", "state_changed": False, "proposal": None},
+                )
+            if contextual_proposal.get("status") != "PENDING_AUTHORIZATION":
+                return self._result(
+                    "agentic_local",
+                    f"Proposal {contextual_proposal_id} is not pending authorization, so its review acknowledgement cannot advance it. No transaction was executed.",
+                    [{"step": "UNDERSTAND", "status": "completed", "detail": "Matched the acknowledgement to the displayed proposal."},
+                     {"step": "SECURITY", "status": "blocked", "detail": "Review acknowledgement cannot change a terminal proposal."}],
+                    {"blocked_reason": "proposal_not_pending", "state_changed": False, "proposal": contextual_proposal},
+                )
+            if str(contextual_proposal.get("risk", {}).get("status", "")).upper() != "REVIEW":
+                return self._result(
+                    "agentic_local",
+                    f"Proposal {contextual_proposal_id} does not require high-value review. It remains pending authorization, and nothing was executed.",
+                    [{"step": "UNDERSTAND", "status": "completed", "detail": "Matched the acknowledgement to the displayed proposal."},
+                     {"step": "SECURITY", "status": "completed", "detail": "No unnecessary review acknowledgement was recorded."}],
+                    {"proposal": contextual_proposal, "state_changed": False},
+                )
+            try:
+                acknowledged = self.acknowledge_review(contextual_proposal_id)
+            except ValueError as exc:
+                return self._result(
+                    "agentic_local",
+                    f"I couldn't record the high-value review acknowledgement: {exc} No authorization or execution occurred.",
+                    [{"step": "UNDERSTAND", "status": "completed", "detail": "Matched the acknowledgement to the displayed high-value proposal."},
+                     {"step": "SECURITY", "status": "blocked", "detail": str(exc)}],
+                    {"proposal": self.state["proposals"].get(contextual_proposal_id, contextual_proposal),
+                     "blocked_reason": "review_acknowledgement_blocked", "state_changed": False},
+                )
+            return self._result(
+                "agentic_local",
+                f"High-value review acknowledgement recorded for proposal {contextual_proposal_id} (RM{float(acknowledged['amount_myr']):,.2f}). The proposal remains pending. This acknowledgement did not authorize or execute the transfer; balances are unchanged. To continue, explicitly authorize the same proposal.",
+                [{"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a standalone high-value review acknowledgement."},
+                 {"step": "OBSERVE", "status": "completed", "detail": f"Verified pending proposal {contextual_proposal_id} in the authoritative proposal store."},
+                 {"step": "SECURITY", "status": "completed", "detail": "Recorded acknowledgement only; authorization and execution remain separate required steps."}],
+                {"proposal": acknowledged, "review_acknowledged": True, "state_changed": True,
+                 "authorization_granted": False, "transaction_created": False},
+            )
+
         repeat_proposal_request = bool(re.search(
             r"\b(?:prepare|create|show|repeat)\b.*\b(?:exactly\s+the\s+same|same|again|repeat)\b.*"
             r"\b(?:transfer|proposal|conversion)\b|\bprepare\s+exactly\s+the\s+same\s+"
@@ -2524,8 +2621,11 @@ class FinanceEngine:
                     {"proposal": contextual_proposal, "blocked_reason": "proposal_not_pending", "state_changed": False},
                 )
             risk_status = str(contextual_proposal.get("risk", {}).get("status", "")).upper()
-            explicit_review_ack = "acknowledge" in current_lower and any(
-                word in current_lower for word in ["review", "high value", "high-value", "risk"]
+            explicit_review_ack = (
+                ("acknowledge" in current_lower and any(
+                    word in current_lower for word in ["review", "high value", "high-value", "risk"]
+                ))
+                or contextual_proposal.get("review_acknowledged") is True
             )
             if risk_status == "REVIEW" and not explicit_review_ack:
                 return self._result(

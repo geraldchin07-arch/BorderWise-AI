@@ -1,4 +1,5 @@
 from decimal import Decimal
+from concurrent.futures import ThreadPoolExecutor
 import copy
 from app.engine import FinanceEngine
 import json
@@ -3469,3 +3470,57 @@ def test_contextual_high_value_acknowledgement_alone_does_not_authorize():
     assert e.get_transactions() == transactions_before
 
 
+
+
+def test_concurrent_identical_proposal_requests_are_idempotent():
+    """Concurrent duplicate preparation must resolve to one pending proposal."""
+    e = FinanceEngine()
+    requested_amount = Decimal("1000.00")
+
+    def create_same_proposal(_):
+        return e.create_proposal(requested_amount, "concurrent stress request")
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(create_same_proposal, range(16)))
+
+    proposal_ids = {item["id"] for item in results}
+    assert len(proposal_ids) == 1
+    proposal_id = next(iter(proposal_ids))
+    pending = [
+        item for item in e.state["proposals"].values()
+        if item.get("status") == "PENDING_AUTHORIZATION"
+        and Decimal(str(item.get("amount_myr"))) == requested_amount
+    ]
+    assert len(pending) == 1
+    assert pending[0]["id"] == proposal_id
+    assert not e.get_transactions()
+
+
+def test_concurrent_execution_requests_commit_exactly_one_transaction():
+    """Multiple simultaneous execute calls must not double-debit balances."""
+    e = FinanceEngine()
+    proposal = e.create_proposal(Decimal("1000.00"), "concurrent execution stress")
+    e.authorize(proposal["id"], True)
+    balances_before = copy.deepcopy(e.get_balance())
+    transactions_before = copy.deepcopy(e.get_transactions())
+
+    def execute_same_proposal(_):
+        try:
+            return ("success", e.execute(proposal["id"]))
+        except ValueError as exc:
+            return ("blocked", str(exc))
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        outcomes = list(pool.map(execute_same_proposal, range(16)))
+
+    successes = [value for status, value in outcomes if status == "success"]
+    blocked = [value for status, value in outcomes if status == "blocked"]
+    assert len(successes) == 1
+    assert len(blocked) == 15
+    assert all("authorization" in message.lower() or "no longer" in message.lower() or "status" in message.lower()
+               for message in blocked)
+    balances_after = e.get_balance()
+    assert balances_after["MYR"] == balances_before["MYR"] - 1000.0
+    assert balances_after["SGD"] == balances_before["SGD"] + proposal["amount_sgd"]
+    assert len(e.get_transactions()) == len(transactions_before) + 1
+    assert e.state["proposals"][proposal["id"]]["status"] == "EXECUTED"

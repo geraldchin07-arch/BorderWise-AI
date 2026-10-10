@@ -6745,42 +6745,6 @@ class FinanceEngine:
             "obligations": self.get_obligations(),
             "audit": self.audit_log(),
         }
- symbol",
-            ])
-            and re.search(r"\b(?:convert|conversion|exchange)\b", previous_user_lower)
-        ):
-            raw_currency = currency_reply.group(1).strip().lower()
-            source = source_aliases.get(raw_currency, raw_currency.upper() if re.fullmatch(r"[a-z]{3}", raw_currency) else None)
-            target_match = re.search(
-                r"\b(?:to|into)\s+(?:the\s+)?(?P<target>[a-z]{3}|s\$|us\$|"
-                r"singapore dollars?|malaysian ringgit|ringgit|us dollars?|euro|euros|"
-                r"pounds?|yen|yuan|rmb|baht|won)\b",
-                previous_user_lower,
-            )
-            amount_match = re.search(
-                r"\b(?:convert|exchange|change)\s+(?:the\s+)?"
-                r"(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?[km]?)\s+(?:to|into)\b",
-                previous_user_lower,
-            )
-            if not amount_match:
-                target_start = target_match.start() if target_match else len(previous_user_lower)
-                amount_match = re.search(
-                    r"(?<![A-Za-z0-9])(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?[km]?)(?![A-Za-z0-9])",
-                    previous_user_lower[:target_start],
-                )
-            if source and target_match and amount_match:
-                target_raw = target_match.group("target")
-                try:
-                    pair = self.extract_conversion_pair(f"{source} to {target_raw}")
-                except Exception:
-                    pair = None
-                if pair:
-                    amount = amount_match.group("amount")
-                    return (
-                        f"Convert {amount} {pair[0]} to {pair[1]} at the current reference exchange rate. "
-                        "This is a quotation only; do not create or execute a transfer."
-                    )
-
         # Resolve "how about in USD?" as a balance follow-up only when the previous
         # exchange was itself a balance lookup. This prevents a bare currency mention
         # from being mistaken for an FX-rate question in unrelated contexts.
@@ -8951,42 +8915,6 @@ class FinanceEngine:
             "obligations": self.get_obligations(),
             "audit": self.audit_log(),
         }
- symbol",
-            ])
-            and re.search(r"\b(?:convert|conversion|exchange)\b", previous_user_lower)
-        ):
-            raw_currency = currency_reply.group(1).strip().lower()
-            source = source_aliases.get(raw_currency, raw_currency.upper() if re.fullmatch(r"[a-z]{3}", raw_currency) else None)
-            target_match = re.search(
-                r"\b(?:to|into)\s+(?:the\s+)?(?P<target>[a-z]{3}|s\$|us\$|"
-                r"singapore dollars?|malaysian ringgit|ringgit|us dollars?|euro|euros|"
-                r"pounds?|yen|yuan|rmb|baht|won)\b",
-                previous_user_lower,
-            )
-            amount_match = re.search(
-                r"\b(?:convert|exchange|change)\s+(?:the\s+)?"
-                r"(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?[km]?)\s+(?:to|into)\b",
-                previous_user_lower,
-            )
-            if not amount_match:
-                target_start = target_match.start() if target_match else len(previous_user_lower)
-                amount_match = re.search(
-                    r"(?<![A-Za-z0-9])(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?[km]?)(?![A-Za-z0-9])",
-                    previous_user_lower[:target_start],
-                )
-            if source and target_match and amount_match:
-                target_raw = target_match.group("target")
-                try:
-                    pair = self.extract_conversion_pair(f"{source} to {target_raw}")
-                except Exception:
-                    pair = None
-                if pair:
-                    amount = amount_match.group("amount")
-                    return (
-                        f"Convert {amount} {pair[0]} to {pair[1]} at the current reference exchange rate. "
-                        "This is a quotation only; do not create or execute a transfer."
-                    )
-
         # Resolve "how about in USD?" as a balance follow-up only when the previous
         # exchange was itself a balance lookup. This prevents a bare currency mention
         # from being mistaken for an FX-rate question in unrelated contexts.
@@ -11157,41 +11085,6 @@ class FinanceEngine:
             "obligations": self.get_obligations(),
             "audit": self.audit_log(),
         }
- symbol",
-            ])
-        ):
-            raw_currency = currency_reply.group(1).strip().lower()
-            source = source_aliases.get(raw_currency, raw_currency.upper() if re.fullmatch(r"[a-z]{3}", raw_currency) else None)
-            target_match = re.search(
-                r"\b(?:to|into)\s+(?:the\s+)?(?P<target>[a-z]{3}|s\$|us\$|"
-                r"singapore dollars?|malaysian ringgit|ringgit|us dollars?|euro|euros|"
-                r"pounds?|yen|yuan|rmb|baht|won)\b",
-                previous_user_lower,
-            )
-            amount_match = re.search(
-                r"\b(?:convert|exchange|change)\s+(?:the\s+)?"
-                r"(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?[km]?)\s+(?:to|into)\b",
-                previous_user_lower,
-            )
-            if not amount_match:
-                target_start = target_match.start() if target_match else len(previous_user_lower)
-                amount_match = re.search(
-                    r"(?<![A-Za-z0-9])(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?[km]?)(?![A-Za-z0-9])",
-                    previous_user_lower[:target_start],
-                )
-            if source and target_match and amount_match:
-                target_raw = target_match.group("target")
-                try:
-                    pair = self.extract_conversion_pair(f"{source} to {target_raw}")
-                except Exception:
-                    pair = None
-                if pair:
-                    amount = amount_match.group("amount")
-                    return (
-                        f"Convert {amount} {pair[0]} to {pair[1]} at the current reference exchange rate. "
-                        "This is a quotation only; do not create or execute a transfer."
-                    )
-
         # Resolve "how about in USD?" as a balance follow-up only when the previous
         # exchange was itself a balance lookup. This prevents a bare currency mention
         # from being mistaken for an FX-rate question in unrelated contexts.
@@ -13362,42 +13255,6 @@ class FinanceEngine:
             "obligations": self.get_obligations(),
             "audit": self.audit_log(),
         }
- symbol",
-            ])
-            and re.search(r"\b(?:convert|conversion|exchange)\b", previous_user_lower)
-        ):
-            raw_currency = currency_reply.group(1).strip().lower()
-            source = source_aliases.get(raw_currency, raw_currency.upper() if re.fullmatch(r"[a-z]{3}", raw_currency) else None)
-            target_match = re.search(
-                r"\b(?:to|into)\s+(?:the\s+)?(?P<target>[a-z]{3}|s\$|us\$|"
-                r"singapore dollars?|malaysian ringgit|ringgit|us dollars?|euro|euros|"
-                r"pounds?|yen|yuan|rmb|baht|won)\b",
-                previous_user_lower,
-            )
-            amount_match = re.search(
-                r"\b(?:convert|exchange|change)\s+(?:the\s+)?"
-                r"(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?[km]?)\s+(?:to|into)\b",
-                previous_user_lower,
-            )
-            if not amount_match:
-                target_start = target_match.start() if target_match else len(previous_user_lower)
-                amount_match = re.search(
-                    r"(?<![A-Za-z0-9])(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?[km]?)(?![A-Za-z0-9])",
-                    previous_user_lower[:target_start],
-                )
-            if source and target_match and amount_match:
-                target_raw = target_match.group("target")
-                try:
-                    pair = self.extract_conversion_pair(f"{source} to {target_raw}")
-                except Exception:
-                    pair = None
-                if pair:
-                    amount = amount_match.group("amount")
-                    return (
-                        f"Convert {amount} {pair[0]} to {pair[1]} at the current reference exchange rate. "
-                        "This is a quotation only; do not create or execute a transfer."
-                    )
-
         # Resolve "how about in USD?" as a balance follow-up only when the previous
         # exchange was itself a balance lookup. This prevents a bare currency mention
         # from being mistaken for an FX-rate question in unrelated contexts.
@@ -15568,42 +15425,6 @@ class FinanceEngine:
             "obligations": self.get_obligations(),
             "audit": self.audit_log(),
         }
- symbol",
-            ])
-            and re.search(r"\b(?:convert|conversion|exchange)\b", previous_user_lower)
-        ):
-            raw_currency = currency_reply.group(1).strip().lower()
-            source = source_aliases.get(raw_currency, raw_currency.upper() if re.fullmatch(r"[a-z]{3}", raw_currency) else None)
-            target_match = re.search(
-                r"\b(?:to|into)\s+(?:the\s+)?(?P<target>[a-z]{3}|s\$|us\$|"
-                r"singapore dollars?|malaysian ringgit|ringgit|us dollars?|euro|euros|"
-                r"pounds?|yen|yuan|rmb|baht|won)\b",
-                previous_user_lower,
-            )
-            amount_match = re.search(
-                r"\b(?:convert|exchange|change)\s+(?:the\s+)?"
-                r"(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?[km]?)\s+(?:to|into)\b",
-                previous_user_lower,
-            )
-            if not amount_match:
-                target_start = target_match.start() if target_match else len(previous_user_lower)
-                amount_match = re.search(
-                    r"(?<![A-Za-z0-9])(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?[km]?)(?![A-Za-z0-9])",
-                    previous_user_lower[:target_start],
-                )
-            if source and target_match and amount_match:
-                target_raw = target_match.group("target")
-                try:
-                    pair = self.extract_conversion_pair(f"{source} to {target_raw}")
-                except Exception:
-                    pair = None
-                if pair:
-                    amount = amount_match.group("amount")
-                    return (
-                        f"Convert {amount} {pair[0]} to {pair[1]} at the current reference exchange rate. "
-                        "This is a quotation only; do not create or execute a transfer."
-                    )
-
         # Resolve "how about in USD?" as a balance follow-up only when the previous
         # exchange was itself a balance lookup. This prevents a bare currency mention
         # from being mistaken for an FX-rate question in unrelated contexts.

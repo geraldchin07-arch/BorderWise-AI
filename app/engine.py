@@ -2372,6 +2372,7 @@ class FinanceEngine:
                 "which currency do you mean", "which currency do you mean by",
                 "bare '$' symbol",
             ])
+        )
             raw_currency = currency_reply.group(1).strip().lower()
             source = source_aliases.get(raw_currency, raw_currency.upper() if re.fullmatch(r"[a-z]{3}", raw_currency) else None)
             target_match = re.search(

@@ -28,12 +28,21 @@ def test_multi_intent_balance():
     assert r["data"]["balances"]["SGD"] == 5000.0
 
 
-def test_affordability_creates_proposal():
+def test_generic_tuition_affordability_is_direct_and_read_only():
     e = FinanceEngine()
+    balances_before = copy.deepcopy(e.get_balance())
+    proposals_before = copy.deepcopy(e.state["proposals"])
     r = e.agent("Can I afford my tuition?")
     assert r["intent"] == "affordability"
-    assert r["data"]["forecast"]["shortfall_sgd"] == 3999.0
-    assert r["data"]["proposal"]["permission_level"] == 2
+    assert r["data"]["goal"] == "configured_tuition_affordability"
+    assert r["data"]["configured_tuition_affordability"] is True
+    assert r["data"]["tuition_amount"] == 9025.0
+    assert r["data"]["proposal"] is None
+    assert r["data"]["state_changed"] is False
+    assert ("Yes" in r["answer"] or "Not yet" in r["answer"])
+    assert "recommend" not in r["answer"].lower() or "recommend" in r["answer"].lower() and "conversion" in r["answer"].lower()
+    assert e.get_balance() == balances_before
+    assert e.state["proposals"] == proposals_before
 
 
 def test_spending_intent():
@@ -3374,3 +3383,79 @@ def test_authorization_followup_without_context_is_never_silently_accepted():
     assert result["data"]["blocked_reason"] == "missing_contextual_proposal"
     assert e.state["proposals"] == {}
     assert e.get_balance() == before
+
+
+def test_next_tuition_fees_question_answers_directly_without_conversion_proposal():
+    e = FinanceEngine()
+    balances_before = copy.deepcopy(e.get_balance())
+    proposals_before = copy.deepcopy(e.state["proposals"])
+
+    result = e.agent("can i afford my next tuition fees")
+
+    assert result["intent"] == "affordability"
+    assert result["data"]["goal"] == "configured_tuition_affordability"
+    assert result["data"]["tuition_due_days"] == e.state["education"]["tuition_due_days"]
+    assert result["data"]["proposal"] is None
+    assert result["data"]["state_changed"] is False
+    assert "next net tuition fee" in result["answer"].lower()
+    assert "projected shortfall over 30 days" not in result["answer"].lower()
+    assert "i have not recommended or prepared a conversion" in result["answer"].lower()
+    assert e.get_balance() == balances_before
+    assert e.state["proposals"] == proposals_before
+
+
+def test_direct_answer_feedback_retries_previous_read_only_tuition_question():
+    e = FinanceEngine()
+    user_question = "can i afford my next tuition fees"
+    fake_history = [
+        {"role": "user", "content": user_question, "proposal_id": None},
+        {
+            "role": "assistant",
+            "content": "I can help with balances, spending, cash-flow forecasts, FX, transfers, tuition affordability and transaction history.",
+            "proposal_id": None,
+        },
+    ]
+    balances_before = copy.deepcopy(e.get_balance())
+    proposals_before = copy.deepcopy(e.state["proposals"])
+
+    result = e.agent("can u directly answer my ques", conversation_history=fake_history)
+
+    assert result["intent"] == "affordability"
+    assert result["data"]["goal"] == "configured_tuition_affordability"
+    assert "next net tuition fee" in result["answer"].lower()
+    assert "balances, spending" not in result["answer"].lower()
+    assert result["data"]["proposal"] is None
+    assert e.get_balance() == balances_before
+    assert e.state["proposals"] == proposals_before
+
+
+def test_contextual_high_value_acknowledgement_alone_does_not_authorize():
+    e = FinanceEngine()
+    request_text = "transfer RM 16000 to SGD now"
+    initial = e.agent(request_text)
+    proposal = initial["data"].get("proposal")
+    assert proposal and proposal["status"] == "PENDING_AUTHORIZATION"
+    assert proposal["risk"]["status"] == "REVIEW"
+    request_history = _conversation_turns(request_text, initial)
+
+    blocked = e.agent("I authorise it.", conversation_history=request_history)
+    assert blocked["data"]["blocked_reason"] == "review_requires_acknowledgement"
+    assert blocked["data"].get("proposal", {}).get("id") == proposal["id"]
+    acknowledgement_history = _conversation_turns("I authorise it.", blocked)
+    balances_before = copy.deepcopy(e.get_balance())
+    transactions_before = copy.deepcopy(e.get_transactions())
+
+    acknowledged = e.agent(
+        "I acknowledge the high-value review. I have reviewed the amount, destination, quote and risk reasons.",
+        conversation_history=acknowledgement_history,
+    )
+
+    assert acknowledged["data"]["review_acknowledged"] is True
+    assert acknowledged["data"]["authorization_granted"] is False
+    assert acknowledged["data"]["transaction_created"] is False
+    assert acknowledged["data"]["proposal"]["id"] == proposal["id"]
+    assert acknowledged["data"]["proposal"]["status"] == "PENDING_AUTHORIZATION"
+    assert e.get_balance() == balances_before
+    assert e.get_transactions() == transactions_before
+
+

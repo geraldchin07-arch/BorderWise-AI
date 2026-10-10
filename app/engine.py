@@ -3355,9 +3355,14 @@ class FinanceEngine:
                         for amount, base, quote in requests:
                             conversion = self.quote_conversion(amount, base, quote)
                             results.append(conversion)
+                            fx_meta = conversion.get("fx", {})
+                            rate_date = fx_meta.get("rate_date") or "date unavailable"
+                            updated_at = fx_meta.get("updated_at")
+                            timestamp = f"; quote timestamp {updated_at}" if updated_at else "; quote timestamp unavailable"
+                            source = fx_meta.get("source", "reference source")
                             lines.append(
                                 f"{amount:,.2f} {base} ≈ {conversion['converted_amount']:,.2f} {quote} "
-                                f"(1 {base} = {conversion['rate']:.6f} {quote})"
+                                f"(1 {base} = {conversion['rate']:.6f} {quote}; rate date {rate_date}{timestamp}; source: {source})"
                             )
                     except (ValueError, KeyError, HTTPError, URLError, TimeoutError, OSError) as exc:
                         return self._result(
@@ -3368,7 +3373,7 @@ class FinanceEngine:
                             {"needs_clarification": True, "state_changed": False, "proposal": None},
                         )
                     answer = "Here are both conversions using indicative reference rates:\n" + "\n".join(lines)
-                    answer += "\nRates may differ from your bank's rate and exclude fees. These are calculations only; no proposal or transaction was created."
+                    answer += "\nFees/spread are not included because no verified fee schedule is available in these reference quotes. Rates may differ from your bank's final rate. These are calculations only; no proposal or transaction was created."
                     return self._result(
                         "fx", answer,
                         [{"step": "UNDERSTAND", "status": "completed", "detail": f"Recognized {len(results)} separate conversion requests."},
@@ -3427,13 +3432,17 @@ class FinanceEngine:
                     base, quote = pair
                     amount = generic_amount[0] if generic_amount else money(1)
                     conv = self.quote_conversion(amount, base, quote)
-                    rate_date = conv.get("fx", {}).get("rate_date") or "date unavailable"
-                    source = conv.get("fx", {}).get("source", "reference source")
+                    fx_meta = conv.get("fx", {})
+                    rate_date = fx_meta.get("rate_date") or "date unavailable"
+                    updated_at = fx_meta.get("updated_at")
+                    timestamp_note = f"; quote timestamp {updated_at}" if updated_at else "; quote timestamp unavailable"
+                    source = fx_meta.get("source", "reference source")
                     answer = (
                         f"The current reference rate is 1 {base} = {conv['rate']:.6f} {quote} "
-                        f"(rate date {rate_date}). "
+                        f"(rate date {rate_date}{timestamp_note}). "
                         f"{amount:,.2f} {base} is approximately {conv['converted_amount']:,.2f} {quote}. "
-                        f"Source: {source}. This is an indicative reference rate, not a guaranteed bank quote."
+                        f"Source: {source}. Fees/spread are not included: this reference quote does not provide a verified fee schedule, "
+                        "so I cannot confirm the final amount after fees. This is not a guaranteed bank quote. No proposal or transaction was created."
                     )
                     return self._result(
                         "fx",

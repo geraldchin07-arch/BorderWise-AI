@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 from .engine import FinanceEngine
+from .security import SecurityHeadersMiddleware, SimpleRateLimiter
 
 load_dotenv()
 
@@ -18,6 +19,15 @@ BASE = Path(__file__).resolve().parent.parent
 engine = FinanceEngine()
 
 app = FastAPI(title="XKF5 AI v7.4.0 — Currency-First", version="7.4.0")
+app.add_middleware(SecurityHeadersMiddleware)
+rate_limiter = SimpleRateLimiter()
+
+@app.middleware("http")
+async def enforce_rate_limit(request, call_next):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    rate_limiter.check_rate_limit(client_ip)
+    return await call_next(request)
+
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
 @app.middleware("http")
@@ -35,6 +45,7 @@ class ChatRequest(BaseModel):
 class AuthRequest(BaseModel):
     proposal_id: str = Field(min_length=1, max_length=64)
     approved: bool
+    acknowledge_review: bool = False
 
 
 class ExecuteRequest(BaseModel):
@@ -115,6 +126,11 @@ def update_profile(req: ProfileRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/api/proposals")
+def list_proposals():
+    return {"proposals": engine.list_proposals()}
+
+
 @app.post("/api/proposals")
 def proposal(req: TransferRequest):
     try:
@@ -126,7 +142,7 @@ def proposal(req: TransferRequest):
 @app.post("/api/authorize")
 def authorize(req: AuthRequest):
     try:
-        return engine.authorize(req.proposal_id, req.approved)
+        return engine.authorize(req.proposal_id, req.approved, acknowledge_review=req.acknowledge_review)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

@@ -155,6 +155,11 @@ For complex student-finance situations, build a goal-aware plan: identify essent
         if proposed_amount not in action_amounts:
             return False
 
+        # Defense in depth: direct callers of the LLM planner must also respect
+        # an explicit user instruction not to move or prepare money.
+        if self.engine.user_negates_money_movement(user_text):
+            return False
+
         advice_or_scenario = any(phrase in normalized for phrase in [
             "should i", "should we", "would you recommend", "recommend",
             "is it wise", "what if", "hypothetical", "compare", "can i afford",

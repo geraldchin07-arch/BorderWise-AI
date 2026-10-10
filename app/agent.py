@@ -378,6 +378,67 @@ For complex student-finance situations, build a goal-aware plan: identify essent
             return False
         return tool_amount == self.engine.money_value(expected_amount)
 
+    def _deterministic_fx_response(
+        self,
+        trace: list[dict[str, Any]],
+        conversion: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Synthesize FX output from the engine result, not model-generated arithmetic."""
+        try:
+            amount = self.engine.money_value(conversion["amount"])
+            converted = self.engine.money_value(conversion["converted_amount"])
+            rate = float(conversion["rate"])
+            base = str(conversion["from_currency"]).upper()
+            quote = str(conversion["to_currency"]).upper()
+            if amount <= 0 or rate <= 0:
+                return None
+        except (KeyError, TypeError, ValueError, ArithmeticError):
+            return None
+
+        fx = conversion.get("fx") if isinstance(conversion.get("fx"), dict) else {}
+        source = fx.get("source")
+        if not source:
+            from_source = fx.get("source_from")
+            to_source = fx.get("source_to")
+            source = " / ".join(str(item) for item in (from_source, to_source) if item)
+        if not source:
+            source = "engine-selected rate source"
+        rate_date = fx.get("rate_date")
+        if not rate_date:
+            dates = [str(item) for item in (fx.get("date_from"), fx.get("date_to")) if item]
+            rate_date = " / ".join(dict.fromkeys(dates)) if dates else "unavailable"
+
+        answer = (
+            f"Using the engine-selected rate, 1 {base} = {rate:.6f} {quote} "
+            f"(source: {source}; rate date: {rate_date}), "
+            f"{amount:,.2f} {base} is approximately {converted:,.2f} {quote}. "
+            "This is an indicative calculation; your provider may apply a different spread or fees."
+        )
+        trace.append({
+            "step": "CALCULATE",
+            "status": "completed",
+            "detail": f"Used the deterministic engine result: {amount:,.2f} {base} → {converted:,.2f} {quote}.",
+        })
+        trace.append({
+            "step": "RESPOND",
+            "status": "completed",
+            "detail": "Returned the verified engine conversion result instead of relying on model-generated arithmetic.",
+        })
+        return {
+            "intent": "fx",
+            "answer": answer,
+            "trace": trace,
+            "data": {
+                "agent_mode": "llm_tool_calling",
+                "model": self.model,
+                "conversion": conversion,
+                "state_changed": False,
+                "proposal": None,
+                "verified_tool_evidence": True,
+            },
+            "state": self.engine.snapshot(),
+        }
+
     def _proposal_result(
         self,
         trace: list[dict[str, Any]],
@@ -439,7 +500,7 @@ For complex student-finance situations, build a goal-aware plan: identify essent
         input_items: list[Any] = [{"role": "user", "content": text}]
         created_proposal: dict[str, Any] | None = None
         successful_tool_names: set[str] = set()
-        successful_tool_calls: list[tuple[str, dict[str, Any]]] = []
+        successful_tool_calls: list[tuple[str, dict[str, Any], Any]] = []
 
         try:
             for _ in range(self.max_rounds):
@@ -463,7 +524,7 @@ For complex student-finance situations, build a goal-aware plan: identify essent
                     if required_tools == {"convert_currency"}:
                         sufficient_tool_evidence = any(
                             name == "convert_currency" and self._conversion_tool_matches_request(text, args)
-                            for name, args in successful_tool_calls
+                            for name, args, _tool_result in successful_tool_calls
                         )
                     if required_tools and not sufficient_tool_evidence:
                         trace.append({
@@ -472,6 +533,21 @@ For complex student-finance situations, build a goal-aware plan: identify essent
                             "detail": "The LLM did not return a successful result from a tool appropriate to the detected financial intent; deterministic handling will be used.",
                         })
                         return None
+                    if self.engine.detect_intent(text) == "fx":
+                        authoritative_conversion = next(
+                            (
+                                tool_result
+                                for name, args, tool_result in successful_tool_calls
+                                if name == "convert_currency"
+                                and self._conversion_tool_matches_request(text, args)
+                                and isinstance(tool_result, dict)
+                            ),
+                            None,
+                        )
+                        if authoritative_conversion is not None:
+                            deterministic_result = self._deterministic_fx_response(trace, authoritative_conversion)
+                            if deterministic_result is not None:
+                                return deterministic_result
                     answer = response.output_text.strip() if response.output_text else "I could not produce a response."
                     trace.append({"step": "RESPOND", "status": "completed", "detail": f"LLM synthesized final answer using {len(trace)-1} tool/agent steps."})
                     return {"intent": "agentic", "answer": answer, "trace": trace, "data": {"agent_mode": "llm_tool_calling", "model": self.model}, "state": self.engine.snapshot()}
@@ -521,7 +597,7 @@ For complex student-finance situations, build a goal-aware plan: identify essent
                             created_proposal = candidate
                     if result.get("ok"):
                         successful_tool_names.add(name)
-                        successful_tool_calls.append((name, dict(args)))
+                        successful_tool_calls.append((name, dict(args), result.get("result")))
                         trace.append({"step": "TOOL_RESULT", "status": "completed", "detail": f"{name} returned deterministic financial data."})
                     else:
                         trace.append({"step": "TOOL_RESULT", "status": "blocked", "detail": f"{name} returned an error; no unsafe fallback was used."})

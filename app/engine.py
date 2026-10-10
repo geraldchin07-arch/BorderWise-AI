@@ -2771,8 +2771,8 @@ class FinanceEngine:
             # because this handler separately requires the immediately displayed,
             # server-verified pending proposal and still enforces review gates.
             or bool(re.fullmatch(
-                r"(?:(?:yes|yeah|yep|sure|okay|ok|alright|all right)[,\\s]+)?"
-                r"(?:go ahead|proceed|do it|go for it)(?:\\s+please)?",
+                r"(?:(?:yes|yeah|yep|sure|okay|ok|alright|all right)[,\s]+)?"
+                r"(?:go ahead|proceed|do it|go for it)(?:\s+please)?",
                 current_compact,
             ))
         )

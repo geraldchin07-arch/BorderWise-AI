@@ -2212,6 +2212,19 @@ class FinanceEngine:
         """
         normalized = self.repair_user_text(str(text or "")).lower().replace("’", "'")
 
+        # A direct refusal to transfer or convert is stronger than generic
+        # quote-language elsewhere in the same message. Never let a mention of
+        # the current rate override "I don't want to transfer".
+        direct_refusal = re.search(
+            r"\b(?:do\s+not\s+want\s+to|don't\s+want\s+to|dont\s+want\s+to|"
+            r"do\s+not\s+wish\s+to|don't\s+wish\s+to|would\s+prefer\s+not\s+to|"
+            r"prefer\s+not\s+to)\s+(?:any\s+)?(?:transfer|send|remit(?:tance)?|convert|exchange|move(?:\s+money)?|pay)\b",
+            normalized,
+            re.I,
+        )
+        if direct_refusal:
+            return True
+
         read_only_language = any(phrase in normalized for phrase in (
             "only a quotation", "quotation request", "quote only", "quotation only",
             "estimate the cost", "estimate a conversion", "current exchange rate",
@@ -3653,7 +3666,25 @@ class FinanceEngine:
             sgd_amount = self.extract_sgd_amount(text)
             myr_amount = self.extract_myr_amount(text)
             pair = self.extract_conversion_pair(text)
-            generic_amount = self.extract_generic_currency_amount(text)
+            generic_amount = None
+            if pair:
+                # When the user states a wallet balance before the actual
+                # conversion, prefer the amount inside the conversion clause.
+                # Example: "I have SGD 1,200 available. Convert SGD 300 to MYR."
+                # A whole-message first-match parser would otherwise convert 1,200.
+                clauses = re.split(r"[;\\n]|(?<=[.!?])\\s+|\\b(?:and then|then|also)\\b", str(text or ""), flags=re.I)
+                for clause in clauses:
+                    clause_pair = self.extract_conversion_pair(clause)
+                    if not clause_pair or tuple(code.upper() for code in clause_pair) != tuple(code.upper() for code in pair):
+                        continue
+                    if not any(word in clause.lower() for word in ["convert", "converting", "conversion", "exchange", "how much"]):
+                        continue
+                    candidate_amount = self.extract_generic_currency_amount(clause)
+                    if candidate_amount and candidate_amount[1].upper() == pair[0].upper():
+                        generic_amount = candidate_amount
+                        break
+            if generic_amount is None:
+                generic_amount = self.extract_generic_currency_amount(text)
             if pair and generic_amount:
                 amount_generic, generic_currency = generic_amount
                 base, quote = pair

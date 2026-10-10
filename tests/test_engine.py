@@ -2663,3 +2663,26 @@ def test_execute_with_missing_destination_currency_fails_before_mutation():
     assert e.state["balances"] == before_balances
     assert e.state["transactions"] == before_transactions
     assert e.state["proposals"]["P-TEST"]["status"] == "AUTHORIZED"
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Convert €250 to SGD", "EUR"),
+        ("I have £1,200", "GBP"),
+        ("Convert ₹500 to SGD", "INR"),
+        ("₩10000 to USD", "KRW"),
+        ("Convert R$ 250 to USD", "BRL"),
+        ("250 zł to EUR", "PLN"),
+        ("I have $500", None),  # Shared symbols must not silently pick a currency.
+        ("I have ¥500", None),  # Shared symbols must not silently pick a currency.
+    ],
+)
+def test_generic_currency_amount_symbol_recognition(message, expected):
+    e = FinanceEngine()
+    result = e.extract_generic_currency_amount(message)
+    if expected is None:
+        assert result is None
+    else:
+        assert result is not None
+        assert result[1] == expected

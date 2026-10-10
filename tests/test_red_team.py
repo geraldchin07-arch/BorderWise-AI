@@ -189,7 +189,15 @@ def test_chat_api_preserves_high_value_review_context_and_blocks_replay(monkeypa
     assert engine.get_balance() == balances_before
     assert engine.get_transactions() == transactions_before
 
-    # Ordinary authorization must not skip the high-value review.
+    # A short natural affirmative must not skip the high-value review either.
+    short_approval = _post_chat_with_frontend_history("Yes, go ahead.", history)
+    assert short_approval["data"]["blocked_reason"] == "review_requires_acknowledgement"
+    assert short_approval["data"]["proposal"]["id"] == proposal_id
+    assert engine.state["proposals"][proposal_id]["status"] == "PENDING_AUTHORIZATION"
+    assert engine.get_balance() == balances_before
+    assert engine.get_transactions() == transactions_before
+
+    # The explicit authorization wording is subject to the same review gate.
     blocked = _post_chat_with_frontend_history("I authorise it.", history)
     assert blocked["data"]["blocked_reason"] == "review_requires_acknowledgement"
     assert blocked["data"]["proposal"]["id"] == proposal_id

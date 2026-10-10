@@ -3865,7 +3865,18 @@ class LocalAgentPlanner:
                     conv = self.engine.convert_currency(source_amount, source_code, target_code)
                 except ValueError as exc:
                     trace.append({"step": "FX", "status": "blocked", "detail": str(exc)})
-                    return self._result("agentic_local", f"I could not calculate that conversion safely: {exc}", trace, {"blocked_reason": "fx_unavailable"})
+                    message = str(exc)
+                    blocked_reason = (
+                        "invalid_amount"
+                        if "conversion amount must be positive" in message.lower()
+                        else "fx_unavailable"
+                    )
+                    return self._result(
+                        "agentic_local",
+                        f"I could not calculate that conversion safely: {message}",
+                        trace,
+                        {"blocked_reason": blocked_reason, "state_changed": False},
+                    )
                 fx = conv.get("fx", {})
                 rate = conv["rate"]
                 trace.append({"step": "REASON", "status": "completed", "detail": f"Applied 1 {source_code} = {rate:.8f} {target_code} using the selected reference/quote path."})

@@ -1925,7 +1925,7 @@ class FinanceEngine:
             reverse=True,
         )
         # Unique symbols can identify a currency in a pair even without an amount.
-        # Do not infer a country from shared symbols such as "$" or "¥".
+        # Shared "$" and "¥" symbols deliberately remain unsupported/ambiguous.
         symbol_aliases = {
             "R$": "BRL", "ZŁ": "PLN", "€": "EUR", "£": "GBP", "₹": "INR",
             "₩": "KRW", "฿": "THB", "₱": "PHP", "₦": "NGN", "₺": "TRY",

@@ -3225,10 +3225,27 @@ class FinanceEngine:
         # Typo-tolerant FX fast path: simple exchange-rate questions should never depend
         # on the LLM understanding every word perfectly. Repair small typos, resolve the pair
         # deterministically, and return a safe reference quote before invoking any planner.
-        fx_action_request = any(k in normalized for k in [
-            "transfer", "send money", "remit", "remittance", "prepare a transfer",
-            "make a transfer", "create a transfer", "set up a transfer",
-        ])
+        # Do not skip the deterministic FX quote path just because a read-only
+        # question mentions "transfer" in a safety disclaimer. Detect only a
+        # positive transfer command, evaluated sentence by sentence.
+        fx_action_pattern = re.compile(
+            r"\b(?:prepare|create|make|set\s+up|initiate|execute)\s+"
+            r"(?:(?:a|an|the)\s+)?(?:sandbox\s+)?(?:transfer|proposal)\b"
+            r"|\b(?:transfer|send|remit|pay)\s+(?:rm|myr|sgd|s\$|usd|us\$)\s*[0-9]",
+            re.I,
+        )
+        fx_negated_action_pattern = re.compile(
+            r"\b(?:do\s+not|don't|dont|never|should\s+not|shouldn't|shouldnt|"
+            r"must\s+not|mustn't|mustnt|will\s+not|won't|wont|would\s+not|wouldn't|wouldnt)"
+            r"\s+(?:(?:any|the|my|a|an|this|that)\s+)?"
+            r"(?:prepare|create|make|set\s+up|initiate|execute|transfer|send|remit|pay)\b",
+            re.I,
+        )
+        fx_action_segments = re.split(r"[.!?;\\n]+", normalized)
+        fx_action_request = any(
+            fx_action_pattern.search(segment) and not fx_negated_action_pattern.search(segment)
+            for segment in fx_action_segments
+        )
         fx_all_funds_request = bool(re.search(r"\b(?:all|everything)\b", normalized))
         family_future_income = (
             any(k in normalized for k in ["family", "parent", "parents"])
@@ -3363,7 +3380,23 @@ class FinanceEngine:
             try:
                 repaired = self.repair_user_text(text)
                 pair = self.extract_conversion_pair(repaired)
-                generic_amount = self.extract_generic_currency_amount(repaired)
+                generic_amount = None
+                if pair:
+                    # Prefer the amount in the actual conversion sentence, not
+                    # an earlier balance mentioned for context.
+                    clauses = re.split(r"[;\n]|(?<=[.!?])\s+|\b(?:and then|then|also)\b", repaired, flags=re.I)
+                    for clause in clauses:
+                        clause_pair = self.extract_conversion_pair(clause)
+                        if clause_pair != pair:
+                            continue
+                        if not any(word in clause.lower() for word in ["convert", "converting", "conversion", "exchange", "how much"]):
+                            continue
+                        candidate_amount = self.extract_generic_currency_amount(clause)
+                        if candidate_amount and candidate_amount[1].upper() == pair[0].upper():
+                            generic_amount = candidate_amount
+                            break
+                if generic_amount is None:
+                    generic_amount = self.extract_generic_currency_amount(repaired)
                 if pair:
                     base, quote = pair
                     amount = generic_amount[0] if generic_amount else money(1)
@@ -3722,7 +3755,7 @@ class FinanceEngine:
                 any(k in normalized_request for k in ["recipient", "beneficiary", "payee"])
                 and any(k in normalized_request for k in ["transfer", "send", "remit", "pay", "prepare"])
             )
-            if amount is None and named_recipient_action:
+            if named_recipient_action:
                 return self._result(
                     intent,
                     "This XKF5 sandbox does not support payments to named recipients or bank-account transfers yet. "

@@ -516,6 +516,13 @@ For complex student-finance situations, build a goal-aware plan: identify essent
 
             if created_proposal is not None:
                 return self._proposal_result(trace, created_proposal, "tool_call_limit")
+            if self._required_tool_names_for_request(text):
+                trace.append({
+                    "step": "AGENT_FALLBACK",
+                    "status": "completed",
+                    "detail": "The LLM exhausted its tool-call rounds before producing an evidence-backed financial answer; deterministic handling will take over.",
+                })
+                return None
             return {"intent": "agentic", "answer": "I reached the agent tool-call limit before completing the request.", "trace": trace, "data": {"agent_mode": "llm_tool_calling", "model": self.model}, "state": self.engine.snapshot()}
         except Exception as exc:
             if created_proposal is not None:

@@ -1740,7 +1740,7 @@ class FinanceEngine:
             "PHP": "PHP", "VND": "VND", "NZD": "NZD", "CHF": "CHF",
             "SEK": "SEK", "NOK": "NOK", "DKK": "DKK", "SAR": "SAR",
             "AED": "AED", "QAR": "QAR", "BND": "BND", "BHD": "BHD",
-            "TRY": "TRY", "BDT": "BDT", "TND": "TND",
+            "BDT": "BDT", "TND": "TND",
             "ALBANIAN LEK": "ALL", "LEK": "ALL", "SOUTH AFRICAN RAND": "ZAR",
             "RAND": "ZAR", "KUWAITI DINAR": "KWD", "POLISH ZLOTY": "PLN",
             "ZLOTY": "PLN", "TURKISH LIRA": "TRY", "MEXICAN PESO": "MXN",

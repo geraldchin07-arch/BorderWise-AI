@@ -1795,6 +1795,9 @@ class FinanceEngine:
                 # CUP, etc.) count as codes only when the user typed the code in
                 # uppercase. Do not use the typo-normalized text here: repair_user_text
                 # uppercases three-letter tokens and would turn "all" into "ALL".
+                # Some ISO codes are also ordinary English words. Only treat
+                # those tokens as currency codes when the user explicitly typed
+                # the uppercase code; normalization must not erase that signal.
                 if is_code and code in ambiguous_codes and not re.search(
                     rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", raw_upper
                 ):

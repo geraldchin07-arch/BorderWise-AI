@@ -10,8 +10,19 @@ import difflib
 import uuid
 import json
 import time
+import threading
+from functools import wraps
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+
+
+def _state_locked(method):
+    """Serialize critical state reads/writes on the shared demo engine."""
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._state_lock:
+            return method(self, *args, **kwargs)
+    return wrapped
 
 
 Q = Decimal("0.01")
@@ -81,8 +92,10 @@ class FinanceEngine:
     FX_PAIR_TTL_SECONDS = 900
 
     def __init__(self) -> None:
+        self._state_lock = threading.RLock()
         self.reset()
 
+    @_state_locked
     def reset(self) -> None:
         self.state = {
             "balances": {"MYR": money("30000"), "SGD": money("5000")},
@@ -183,6 +196,7 @@ class FinanceEngine:
         return money(value)
 
 
+    @_state_locked
     def get_profile(self) -> dict[str, Any]:
         prefs = self.state.get("fx_preferences", {})
         extra = {k: float(v) for k, v in self.state["balances"].items() if k not in {"MYR", "SGD"}}
@@ -229,6 +243,7 @@ class FinanceEngine:
             "auto_fx_live": dict(prefs.get("auto_fx_live", {})),
         }
 
+    @_state_locked
     def update_profile(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         """Apply legacy profile updates atomically, including FX refresh failures."""
         previous_state = copy.deepcopy(self.state)
@@ -381,6 +396,7 @@ class FinanceEngine:
         meta = self._fetch_reference_pair(code, "SGD")
         return fxrate(meta["rate"])
 
+    @_state_locked
     def update_profile_general(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Apply a currency-first profile update atomically.
 
@@ -568,6 +584,7 @@ class FinanceEngine:
         self.audit("PROFILE_UPDATED", {"profile": self.get_profile(), "source": "currency-first manual user input"})
         return {"ok": True, "profile": self.get_profile(), "state": self.snapshot()}
 
+    @_state_locked
     def get_obligations(self) -> list[dict[str, Any]]:
         edu = self.state["education"]
         meta = self.state.get("profile_meta", {})
@@ -907,12 +924,15 @@ class FinanceEngine:
         }
 
         # ---------- read tools ----------
+    @_state_locked
     def get_balance(self) -> dict[str, float]:
         return {k: float(v) for k, v in self.state["balances"].items()}
 
+    @_state_locked
     def get_transactions(self, limit: int = 20) -> list[dict[str, Any]]:
         return [asdict(t) for t in self.state["transactions"][-limit:]][::-1]
 
+    @_state_locked
     def forecast(self) -> dict[str, Any]:
         meta = self.state.get("profile_meta", {})
         planning = str(meta.get("planning_currency", "SGD")).upper()
@@ -1081,6 +1101,7 @@ class FinanceEngine:
         }
 
 
+    @_state_locked
     def spending_analysis(self) -> dict[str, Any]:
         meta = self.state.get("profile_meta", {})
         planning = str(meta.get("planning_currency", "SGD")).upper()
@@ -1112,6 +1133,7 @@ class FinanceEngine:
             ],
         }
 
+    @_state_locked
     def health_analysis(self) -> dict[str, Any]:
         """Transparent, deterministic liquidity health indicator; not a credit score."""
         f = self.forecast()
@@ -1249,6 +1271,7 @@ class FinanceEngine:
             "mode": "custom",
         }
 
+    @_state_locked
     def currency_overview(self) -> dict[str, Any]:
         meta = self.state.get("profile_meta", {})
         planning = str(meta.get("planning_currency", "SGD")).upper()
@@ -1429,6 +1452,7 @@ class FinanceEngine:
             "requires_level": 2,
         }
 
+    @_state_locked
     def create_proposal(self, amount_myr: Decimal, purpose: str = "student finance transfer") -> dict[str, Any]:
         amount_myr = money(amount_myr)
         balances = self.state.get("balances", {})
@@ -1458,6 +1482,7 @@ class FinanceEngine:
         self.audit("PROPOSAL_CREATED", proposal)
         return proposal
 
+    @_state_locked
     def authorize(self, proposal_id: str, approved: bool) -> dict[str, Any]:
         proposal = self.state["proposals"].get(proposal_id)
         if not proposal:
@@ -1470,6 +1495,7 @@ class FinanceEngine:
             return proposal
         return proposal
 
+    @_state_locked
     def execute(self, proposal_id: str) -> dict[str, Any]:
         proposal = self.state["proposals"].get(proposal_id)
         if not proposal:
@@ -3407,6 +3433,7 @@ class FinanceEngine:
     def _result(self, intent: str, answer: str, trace: list[dict[str, Any]], data: dict[str, Any] | None = None) -> dict[str, Any]:
         return {"intent": intent, "answer": answer, "trace": trace, "data": data or {}, "state": self.snapshot()}
 
+    @_state_locked
     def snapshot(self, refresh_fx: bool = False) -> dict[str, Any]:
         f = self.forecast()
         q = self.refresh_fx() if refresh_fx else self.fx_quote()

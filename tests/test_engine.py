@@ -3003,8 +3003,9 @@ def test_explicit_sgd_recipient_transfer_does_not_create_tuition_proposal():
     )
     assert r["intent"] == "transfer"
     assert r["data"].get("proposal") is None
+    assert r["data"]["blocked_reason"] == "unsupported_recipient_transfer"
+    assert "named recipients" in r["answer"].lower()
     assert e.state["proposals"] == {}
-    assert "myr" in r["answer"].lower() or "source" in r["answer"].lower()
 
 
 def test_typo_tolerant_balance_query_asks_for_the_requested_currency():

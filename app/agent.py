@@ -227,7 +227,7 @@ For complex student-finance situations, build a goal-aware plan: identify essent
 
         requested_pair = self.engine.extract_conversion_pair(user_text)
         display_match = re.search(
-            r"\\b(?:show|display|express|present|give)\\b.{0,40}\\b(?:result|amount|conversion|value)\\b.{0,20}\\b(?:in|as)\\s+([A-Z]{3})\\b",
+            r"\b(?:show|display|express|present|give)\b.{0,40}\b(?:result|amount|conversion|value)\b.{0,20}\b(?:in|as)\s+([A-Z]{3})\b",
             str(user_text or ""),
             re.I,
         )

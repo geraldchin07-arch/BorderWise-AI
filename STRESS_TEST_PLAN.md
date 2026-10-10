@@ -1,12 +1,12 @@
 # XKF5 AI Stress Test Plan
 
 Branch: `agent`  
-Verified baseline commit: `d469ddadd4323a3c7890540caab6ddd00ad5769e`  
+Verified baseline commit: `3849623f27a74fdede58bf94f694771692019f39`  
 Scope: deterministic engine, offline planner, LLM orchestration, chat API, and UI conversation context.
 
 ## Current automated baseline
 
-GitHub Actions run [38048276701](https://github.com/geraldchin07-arch/XKF5-AI/actions/runs/38048276701) passed on 2026-10-10 with **334 tests passing** after Python compilation succeeded.
+GitHub Actions run [38050312018](https://github.com/geraldchin07-arch/XKF5-AI/actions/runs/38050312018) passed on 2026-10-10 with **338 tests passing** after Python compilation succeeded.
 
 Recent regression coverage now includes:
 - The offline planner rebuilds hypothetical wallet and savings context from the supplied conversation history instead of sharing those scenarios across chat sessions.
@@ -14,6 +14,9 @@ Recent regression coverage now includes:
 - The optional LLM planner receives up to the API maximum of 50 recent user/assistant history records (25 exchanges), followed by the current message; history is explicitly treated as untrusted context and cannot grant authorization.
 - Demo reset clears hypothetical planner memory, and the UI clears the displayed chat history at the same time.
 - The API returns HTTP 429 for rate-limit violations, and the in-memory limiter’s read/check/write operation is tested under concurrent calls.
+- The conversation transcript and its bounded context survive a page refresh within the same browser tab using session storage; the explicit demo reset clears both. Messages sent back to the API are capped at 2,000 characters and history at 50 records.
+- A saved pending-proposal ID does not restore an authorization card by itself: the UI re-queries `/api/proposals` and checks the server-side status and quote expiry before showing the card.
+- The `/api/proposals` listing method is covered by an endpoint regression test, and failed reset responses no longer clear the local transcript or claim reset success.
 - If a browser request returns an ambiguous error, the UI tells the user to verify transaction/audit state before retrying rather than claiming no transaction happened.
 - The engine is tested for duplicate core method definitions after a large redundant block was removed.
 - Tuition-conversion advice remains read-only and does not create a transfer proposal.

@@ -1789,22 +1789,20 @@ class FinanceEngine:
                 match = re.search(pattern, source)
                 if not match:
                     continue
-                # Ambiguous ISO codes that are also ordinary words (ALL, TRY,
-                # CUP, etc.) count as codes only when the user typed the code in
-                # uppercase. Do not use the typo-normalized text here: repair_user_text
-                # uppercases three-letter tokens and would turn "all" into "ALL".
-                # Some ISO codes are also ordinary English words. Only treat
-                # those tokens as currency codes when the user explicitly typed
-                # the uppercase code; normalization must not erase that signal.
-                explicit_code_amount = (
-                    rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])\\s*{amount}",
-                    rf"{amount}\\s*(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])",
-                )
-                if is_code and code in ambiguous_codes and not any(
-                    re.search(explicit_pattern, raw_text)
-                    for explicit_pattern in explicit_code_amount
-                ):
-                    continue
+                # Ambiguous ISO codes that are also common words should only
+                # match when the user explicitly typed the uppercase code. Match
+                # the currency marker and amount together against raw input so
+                # normalization cannot turn "all" into the currency code "ALL".
+                if is_code and code in ambiguous_codes:
+                    explicit_code_amount = (
+                        rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])\s*{amount}",
+                        rf"{amount}\s*(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])",
+                    )
+                    if not any(
+                        re.search(explicit_pattern, raw_text)
+                        for explicit_pattern in explicit_code_amount
+                    ):
+                        continue
                 numeric_match = re.search(amount, match.group(0))
                 if not numeric_match:
                     continue

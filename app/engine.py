@@ -1793,6 +1793,8 @@ class FinanceEngine:
                     continue
                 if is_code and code in ambiguous_codes and not re.search(
                     rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", raw_upper
+                ) and not re.search(
+                    rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", normalized
                 ):
                     continue
                 numeric_match = re.search(amount, match.group(0))

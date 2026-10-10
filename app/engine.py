@@ -1791,10 +1791,12 @@ class FinanceEngine:
                 match = re.search(pattern, source)
                 if not match:
                     continue
+                # Ambiguous ISO codes that are also ordinary words (ALL, TRY,
+                # CUP, etc.) count as codes only when the user typed the code in
+                # uppercase. Do not use the typo-normalized text here: repair_user_text
+                # uppercases three-letter tokens and would turn "all" into "ALL".
                 if is_code and code in ambiguous_codes and not re.search(
                     rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", raw_upper
-                ) and not re.search(
-                    rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", normalized
                 ):
                     continue
                 numeric_match = re.search(amount, match.group(0))

@@ -485,3 +485,33 @@ def test_redteam_local_planner_parses_uncommon_wallet_currencies():
         "KWD": planner.engine.money_value(25),
         "ZAR": planner.engine.money_value(300),
     }
+
+
+def test_redteam_explicitly_negated_money_movement_never_creates_a_proposal():
+    prompts = [
+        "Do not transfer RM5000 to SGD.",
+        "I don't want to transfer RM5000 to Singapore.",
+        "Never prepare a transfer of RM5000.",
+        "I won't convert RM5000 to SGD.",
+    ]
+    for prompt in prompts:
+        e = FinanceEngine()
+        result = e.agent(prompt)
+        assert result["data"]["blocked_reason"] == "user_explicitly_opposed_money_movement"
+        assert result["data"]["state_changed"] is False
+        assert result["data"]["proposal"] is None
+        assert e.state["proposals"] == {}
+        assert e.state["audit"] == []
+
+
+def test_redteam_llm_proposal_guard_rejects_negated_action_language():
+    planner = AgentOrchestrator(FinanceEngine())
+    assert not planner._proposal_request_is_explicit(
+        "Do not transfer RM5000 to SGD.", {"amount_myr": 5000}
+    )
+    assert not planner._proposal_request_is_explicit(
+        "I don't want to transfer RM5000 to Singapore.", {"amount_myr": 5000}
+    )
+    assert not planner._proposal_request_is_explicit(
+        "Never prepare a transfer of RM5000.", {"amount_myr": 5000}
+    )

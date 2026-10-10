@@ -4071,6 +4071,17 @@ class FinanceEngine:
                 # reference data into an unsupported estimate or default-pair answer.
                 if pair:
                     failed_base, failed_quote = pair
+                    if isinstance(exc, ValueError) and "conversion amount must be positive" in str(exc).lower():
+                        return self._result(
+                            "fx",
+                            "The conversion amount must be greater than zero. No quote, proposal, or transaction was created.",
+                            [
+                                {"step": "UNDERSTAND", "status": "completed", "detail": f"Recognized FX request {failed_base}→{failed_quote}."},
+                                {"step": "CALCULATE", "status": "blocked", "detail": "A conversion amount must be positive."},
+                                {"step": "SECURITY", "status": "completed", "detail": "Invalid input was rejected without changing financial state."},
+                            ],
+                            {"blocked_reason": "invalid_amount", "state_changed": False, "proposal": None, "conversion": None},
+                        )
                     return self._result(
                         "fx",
                         f"I recognized {failed_base} to {failed_quote}, but couldn't retrieve a reliable reference rate for that pair ({type(exc).__name__}); the rate is currently unavailable. "

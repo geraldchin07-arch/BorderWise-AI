@@ -1,12 +1,12 @@
 # XKF5 AI Stress Test Plan
 
 Branch: `agent`  
-Verified baseline commit: `3849623f27a74fdede58bf94f694771692019f39`  
+Verified baseline commit: `31727d0d7886e2b04788acccb73bb2d36551ed4a`  
 Scope: deterministic engine, offline planner, LLM orchestration, chat API, and UI conversation context.
 
 ## Current automated baseline
 
-GitHub Actions run [38050312018](https://github.com/geraldchin07-arch/XKF5-AI/actions/runs/38050312018) passed on 2026-10-10 with **338 tests passing** after Python compilation succeeded.
+GitHub Actions run [38050708932](https://github.com/geraldchin07-arch/XKF5-AI/actions/runs/38050708932) passed on 2026-10-10 with **341 tests passing** after Python compilation succeeded.
 
 Recent regression coverage now includes:
 - The offline planner rebuilds hypothetical wallet and savings context from the supplied conversation history instead of sharing those scenarios across chat sessions.
@@ -14,7 +14,9 @@ Recent regression coverage now includes:
 - The optional LLM planner receives up to the API maximum of 50 recent user/assistant history records (25 exchanges), followed by the current message; history is explicitly treated as untrusted context and cannot grant authorization.
 - Demo reset clears hypothetical planner memory, and the UI clears the displayed chat history at the same time.
 - The API returns HTTP 429 for rate-limit violations, and the in-memory limiter’s read/check/write operation is tested under concurrent calls.
-- The conversation transcript and its bounded context survive a page refresh within the same browser tab using session storage; the explicit demo reset clears both. Messages sent back to the API are capped at 2,000 characters and history at 50 records.
+- The conversation transcript and its bounded context survive a page refresh within the same browser tab using session storage; a Node-based behavior test exercises persistence, restoration, 2,000-character caps, the 50-record bound, and malformed stored JSON cleanup. The explicit demo reset clears the stored history only after the server confirms the reset.
+- The chat API rejects more than 50 history records and rejects any history item over 2,000 characters with schema validation (HTTP 422).
+- Proposal and transaction IDs use full 128-bit UUID tokens; a regression test verifies the 32-character uppercase hexadecimal token for each.
 - A saved pending-proposal ID does not restore an authorization card by itself: the UI re-queries `/api/proposals` and checks the server-side status and quote expiry before showing the card.
 - The `/api/proposals` listing method is covered by an endpoint regression test, and failed reset responses no longer clear the local transcript or claim reset success.
 - If a browser request returns an ambiguous error, the UI tells the user to verify transaction/audit state before retrying rather than claiming no transaction happened.

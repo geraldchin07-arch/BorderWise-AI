@@ -256,7 +256,7 @@ For complex student-finance situations, build a goal-aware plan: identify essent
             intent == "affordability"
             and any(term in normalized for term in (
                 "should i", "should we", "tuition coming up", "tuition due",
-                "upcoming tuition", "can i afford", "afford tuition",
+                "upcoming tuition",
             ))
         )
         hypothetical_income = (

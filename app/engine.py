@@ -2315,6 +2315,33 @@ class FinanceEngine:
         )
         previous_user_lower = self.repair_user_text(previous_user).lower()
 
+        # If the user says the previous financial answer missed the question,
+        # rerun the last read-only financial query through the deterministic engine
+        # instead of replying with generic capability/help text. Never replay an
+        # action request from chat history.
+        direct_answer_correction = bool(re.search(
+            r"\b(?:can\s+(?:you|u)|could\s+(?:you|u))\s+(?:please\s+)?directly\s+answer\b"
+            r"|\b(?:please\s+)?answer\s+(?:my|the)\s+question\s+directly\b"
+            r"|\b(?:you\s+)?(?:didn't|did\s+not)\s+answer\s+(?:my|the)\s+question\b"
+            r"|\bthat\s+(?:doesn't|does\s+not|didn't|did\s+not)\s+answer\s+(?:my|the)\s+question\b"
+            r"|\bjust\s+answer\s+(?:my|the)\s+question\b",
+            current_lower,
+            re.I,
+        ))
+        prior_financial_question = bool(previous_user_lower) and any(term in previous_user_lower for term in [
+            "tuition", "school fee", "fees", "afford", "balance", "how much do i have",
+            "exchange rate", "convert", "currency", "spending", "expenses", "cash flow",
+            "forecast", "funding gap", "financial position",
+        ])
+        prior_intent = self.detect_intent(previous_user) if previous_user else "general"
+        if (
+            direct_answer_correction
+            and last_turn.get("role") == "assistant"
+            and prior_financial_question
+            and prior_intent in {"affordability", "balance", "forecast", "spending", "transactions", "fx", "general"}
+        ):
+            return previous_user
+
         # A one-word currency answer resolves a previous source-currency question.
         source_aliases = {
             "myr": "MYR", "rm": "MYR", "ringgit": "MYR", "malaysian ringgit": "MYR",
@@ -4115,6 +4142,139 @@ class FinanceEngine:
         payment_affordability = LocalAgentPlanner(self).explicit_payment_affordability(text)
         if payment_affordability is not None:
             return payment_affordability
+
+        # A general question about the next tuition fee must receive a direct,
+        # read-only affordability decision based on the configured multi-currency
+        # profile. Do not send it through the legacy 30-day fallback, which may
+        # recommend a conversion proposal even though the user only asked a question.
+        normalized_tuition_question = self.repair_user_text(text).lower()
+        tuition_question = (
+            self.detect_intent(text) == "affordability"
+            and any(term in normalized_tuition_question for term in [
+                "tuition", "school fee", "school fees", "semester fee", "education fee",
+            ])
+            and any(term in normalized_tuition_question for term in [
+                "can i afford", "can we afford", "will i have enough", "do i have enough",
+                "can i cover", "will i be able to pay", "can i pay for", "afford my next",
+                "is my tuition affordable", "am i able to afford",
+            ])
+            and not (self.extract_generic_currency_amount(text) or self.extract_sgd_amount(text) or self.extract_myr_amount(text))
+        )
+        if tuition_question:
+            education = self.state.get("education", {})
+            tuition_net_sgd = self.money_value(max(
+                Decimal("0"),
+                self.money_value(education.get("tuition_semester_sgd", 0))
+                - self.money_value(education.get("scholarship_semester_sgd", 0))
+                - self.money_value(education.get("loan_semester_sgd", 0)),
+            ))
+            if tuition_net_sgd <= 0:
+                return self._result(
+                    "affordability",
+                    "Your configured tuition is fully covered by the recorded scholarship/loan amounts, or no tuition amount is configured. "
+                    "Please verify the tuition and funding values in your profile. I have not created a proposal or moved money.",
+                    [{"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a read-only question about the next tuition fee."},
+                     {"step": "OBSERVE", "status": "needs_input", "detail": "The configured net tuition amount is zero; the profile may need checking."},
+                     {"step": "SECURITY", "status": "completed", "detail": "No proposal or transaction was created."}],
+                    {"goal": "configured_tuition_affordability", "needs_profile_check": True,
+                     "state_changed": False, "proposal": None},
+                )
+
+            tuition_due_days = max(0, min(365, int(education.get("tuition_due_days", 30))))
+            horizon = max(30, tuition_due_days)
+            forecast = self.forecast_portfolio(horizon)
+            other_obligations_sgd = sum((
+                self.money_value(item.get("amount_sgd", 0))
+                for item in self.get_obligations()
+                if item.get("id") != "TUITION-USER" and int(item.get("days", horizon)) <= horizon
+            ), Decimal("0"))
+            projected_before_tuition_sgd = self.money_value(
+                self.money_value(forecast.get("usable_starting_sgd", 0))
+                + self.money_value(forecast.get("expected_income_sgd", 0))
+                - self.money_value(forecast.get("spending_sgd", 0))
+                - other_obligations_sgd
+            )
+            projected_after_tuition_sgd = self.money_value(projected_before_tuition_sgd - tuition_net_sgd)
+            shortfall_sgd = self.money_value(max(Decimal("0"), -projected_after_tuition_sgd))
+            affordable = projected_after_tuition_sgd >= 0
+
+            meta = self.state.get("profile_meta", {})
+            tuition_currency = str(meta.get("tuition_currency", "SGD")).upper()
+            tuition_raw_net = self.money_value(max(
+                Decimal("0"),
+                self.money_value(meta.get("tuition_amount", tuition_net_sgd))
+                - self.money_value(meta.get("scholarship_amount", 0))
+                - self.money_value(meta.get("loan_amount", 0)),
+            ))
+            planning_currency = str(meta.get("planning_currency", "SGD")).upper()
+            planning_rate = self._profile_rate_to_sgd(planning_currency)
+            projected_before_planning = self.money_value(projected_before_tuition_sgd / planning_rate)
+            projected_after_planning = self.money_value(projected_after_tuition_sgd / planning_rate)
+            tuition_planning = self.money_value(tuition_net_sgd / planning_rate)
+            shortfall_planning = self.money_value(shortfall_sgd / planning_rate)
+            available_for_tuition_sgd = self.money_value(max(Decimal("0"), projected_before_tuition_sgd))
+            remaining_sgd = self.money_value(max(Decimal("0"), projected_after_tuition_sgd))
+            tuition_rate_text = (
+                f" (about {planning_currency} {tuition_planning:,.2f} at the configured reference rates)"
+                if tuition_currency != planning_currency else ""
+            )
+            if affordable:
+                answer = (
+                    f"Yes — based on your configured profile, your next net tuition fee is "
+                    f"{tuition_currency} {tuition_raw_net:,.2f}{tuition_rate_text}, due in about {tuition_due_days} days. "
+                    f"After protecting the configured emergency reserve and accounting for forecast income, living costs and other obligations, "
+                    f"the estimate leaves about {planning_currency} {projected_after_planning:,.2f} after tuition. "
+                )
+            else:
+                answer = (
+                    f"Not yet — based on your configured profile, your next net tuition fee is "
+                    f"{tuition_currency} {tuition_raw_net:,.2f}{tuition_rate_text}, due in about {tuition_due_days} days. "
+                    f"After protecting the configured emergency reserve and accounting for forecast income, living costs and other obligations, "
+                    f"the estimated funding gap is about {planning_currency} {shortfall_planning:,.2f}. "
+                    f"Before paying tuition, the forecast leaves about {planning_currency} {projected_before_planning:,.2f} available. "
+                )
+            answer += (
+                "This is a read-only estimate using your saved profile and indicative FX rates; fees and settlement rates can differ. "
+                "I have not recommended or prepared a conversion, created a proposal, or moved money. "
+                "Check that your tuition amount and due date are up to date in the profile."
+            )
+            return self._result(
+                "affordability",
+                answer,
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a direct, read-only question about the next tuition fee."},
+                    {"step": "OBSERVE", "status": "completed", "detail": f"Used the configured {tuition_currency} tuition amount, current multi-currency wallet, protected reserve and tuition due date."},
+                    {"step": "CALCULATE", "status": "completed", "detail": f"Projected position before tuition: {planning_currency} {projected_before_planning:,.2f}; after tuition: {planning_currency} {projected_after_planning:,.2f}."},
+                    {"step": "SECURITY", "status": "completed", "detail": "Read-only affordability estimate; no proposal or transaction was created."},
+                    {"step": "RECOMMEND", "status": "completed", "detail": "Answered whether the configured tuition appears affordable and advised checking profile accuracy."},
+                ],
+                {
+                    "goal": "configured_tuition_affordability",
+                    "configured_tuition_affordability": True,
+                    "affordable": affordable,
+                    "tuition_currency": tuition_currency,
+                    "tuition_amount": float(tuition_raw_net),
+                    "tuition_net_sgd": float(tuition_net_sgd),
+                    "tuition_due_days": tuition_due_days,
+                    "planning_currency": planning_currency,
+                    "projected_before_tuition_sgd": float(projected_before_tuition_sgd),
+                    "projected_after_tuition_sgd": float(projected_after_tuition_sgd),
+                    "shortfall_sgd": float(shortfall_sgd),
+                    "available_for_tuition_sgd": float(available_for_tuition_sgd),
+                    "remaining_sgd": float(remaining_sgd),
+                    "affordability": {
+                        "wallet_total_sgd": float(forecast.get("starting_portfolio_sgd", 0)),
+                        "reserve_sgd": float(forecast.get("protected_reserve_sgd", 0)),
+                        "usable_sgd": float(available_for_tuition_sgd),
+                        "tuition_sgd": float(tuition_net_sgd),
+                        "shortfall_sgd": float(shortfall_sgd),
+                        "remaining_sgd": float(remaining_sgd),
+                    },
+                    "forecast": forecast,
+                    "state_changed": False,
+                    "proposal": None,
+                },
+            )
 
         # v5: optional LLM tool-calling planner. The deterministic engine remains the
         # fallback and the authority for calculations, policy and execution.

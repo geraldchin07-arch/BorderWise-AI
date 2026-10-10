@@ -2013,9 +2013,10 @@ class FinanceEngine:
         # Match longer names first so "US DOLLARS" is not reduced to "DOLLARS".
         # ASCII-letter boundaries allow symbols to act as complete tokens.
         token = r"(?<![A-Z])(?:" + "|".join(re.escape(a) for a in choices) + r")(?![A-Z])"
+        optional_amount = r"(?:\s+[0-9][0-9,]*(?:\.[0-9]+)?[kKmM]?)?"
         patterns = [
-            rf"\bFROM\s+(?P<base>{token})\s+TO\s+(?P<quote>{token})",
-            rf"(?P<base>{token})\s*(?:TO|→|->|INTO|IN)\s*(?P<quote>{token})",
+            rf"\bFROM\s+(?P<base>{token}){optional_amount}\s+TO\s+(?P<quote>{token})",
+            rf"(?P<base>{token}){optional_amount}\s*(?:TO|→|->|INTO|IN)\s*(?P<quote>{token})",
         ]
         for pattern in patterns:
             # Prefer the original input so ambiguous code casing remains meaningful.
@@ -3108,36 +3109,48 @@ class FinanceEngine:
             # silently answering only the first pair. Keep this before the
             # single-conversion parser so each amount/pair is calculated independently.
             if any(word in multi_fx_text for word in ["convert", "conversion", "convertions", "exchange"]):
-                currency_words = (
-                    r"singapore\s+dollars?|sgd|s\$|malaysian\s+ringgit|ringgit|myr|rm|"
-                    r"us\s+dollars?|usd|us\$|dollars?|dollar|cny|rmb|renminbi|yuan|"
-                    r"eur|euros?|gbp|pounds?|jpy|yen|krw|won|thb|baht|aud|cad|hkd|twd|inr|"
-                    r"idr|php|vnd|nzd|chf|sek|nok|dkk|sar|aed|qar|bnd"
-                )
-                aliases_to_code = {
-                    "singapore dollar": "SGD", "singapore dollars": "SGD", "sgd": "SGD", "s$": "SGD",
-                    "malaysian ringgit": "MYR", "ringgit": "MYR", "myr": "MYR", "rm": "MYR",
-                    "us dollar": "USD", "us dollars": "USD", "usd": "USD", "us$": "USD",
-                    "dollar": "USD", "dollars": "USD", "cny": "CNY", "rmb": "CNY",
-                    "renminbi": "CNY", "yuan": "CNY", "eur": "EUR", "euro": "EUR", "euros": "EUR",
-                    "gbp": "GBP", "pound": "GBP", "pounds": "GBP", "jpy": "JPY", "yen": "JPY",
-                    "krw": "KRW", "won": "KRW", "thb": "THB", "baht": "THB", "aud": "AUD",
-                    "cad": "CAD", "hkd": "HKD", "twd": "TWD", "inr": "INR", "idr": "IDR",
-                    "php": "PHP", "vnd": "VND", "nzd": "NZD", "chf": "CHF", "sek": "SEK",
-                    "nok": "NOK", "dkk": "DKK", "sar": "SAR", "aed": "AED", "qar": "QAR", "bnd": "BND",
-                }
-                multi_pattern = re.compile(
-                    rf"(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?)\s*"
-                    rf"(?P<base>{currency_words})\s+(?:to|into|in)\s+"
-                    rf"(?P<quote>{currency_words})",
-                    re.I,
+                # Reuse the canonical currency and amount parsers for every
+                # conversion clause rather than maintaining a smaller, drifting allowlist.
+                conversion_segments = re.split(
+                    r";|\n|\b(?:and then|and|then|also)\b",
+                    str(text or ""),
+                    flags=re.I,
                 )
                 requests = []
-                for match in multi_pattern.finditer(multi_fx_text):
-                    base = aliases_to_code.get(match.group("base").lower())
-                    quote = aliases_to_code.get(match.group("quote").lower())
-                    if base and quote and base != quote:
-                        requests.append((money(match.group("amount").replace(",", "")), base, quote))
+                candidate_segments = []
+                for segment in conversion_segments:
+                    has_amount = bool(re.search(
+                        r"(?<![\d,.])[0-9][0-9,]*(?:\.[0-9]+)?[kKmM]?(?![A-Za-z0-9])",
+                        segment,
+                    ))
+                    has_direction = bool(re.search(r"\b(?:to|into|in)\b", segment, re.I))
+                    if has_amount and has_direction:
+                        candidate_segments.append(segment)
+
+                    pair = self.extract_conversion_pair(segment)
+                    amount_pair = self.extract_generic_currency_amount(segment)
+                    if not pair or not amount_pair:
+                        continue
+                    amount, amount_currency = amount_pair
+                    base, quote = pair
+                    # Do not treat an amount denominated in the quote currency as
+                    # the source amount for this conversion.
+                    if amount_currency != base:
+                        continue
+                    requests.append((money(amount), base, quote))
+
+                if len(candidate_segments) >= 2 and len(requests) < len(candidate_segments):
+                    return self._result(
+                        "fx",
+                        "I found multiple conversion amounts but couldn't confidently identify every source/target pair. "
+                        "Please state each amount with its source and target currency. I won't return a partial or guessed result.",
+                        [
+                            {"step": "UNDERSTAND", "status": "completed", "detail": "Detected multiple conversion clauses."},
+                            {"step": "OBSERVE", "status": "needs_input", "detail": "At least one amount/pair could not be resolved unambiguously."},
+                            {"step": "SECURITY", "status": "completed", "detail": "No conversion result, proposal, or transaction was created."},
+                        ],
+                        {"needs_clarification": True, "state_changed": False, "proposal": None},
+                    )
                 if len(requests) >= 2:
                     results = []
                     lines = []
@@ -3167,6 +3180,29 @@ class FinanceEngine:
                         {"conversions": results, "state_changed": False, "proposal": None},
                     )
             requested_pair = self.extract_conversion_pair(text)
+            if not requested_pair:
+                # Do not default a source-less amount such as "convert 250 to SGD"
+                # to the application's MYR/SGD demo quote.
+                destination_only = re.search(
+                    r"\b(?:to|into)\s+(?P<target>singapore\s+dollars?|malaysian\s+ringgit|ringgit|us\s+dollars?|australian\s+dollars?|canadian\s+dollars?|euros?|euro|pounds?|pound|yuan|rmb|renminbi|yen|kuwaiti\s+dinar|south\s+african\s+rand|[A-Za-z]{3})\b",
+                    str(text or ""),
+                    re.IGNORECASE,
+                )
+                if destination_only:
+                    target_pair = self.extract_conversion_pair(f"MYR to {destination_only.group('target')}")
+                    if target_pair:
+                        target = target_pair[1]
+                        return self._result(
+                            "fx",
+                            f"I can calculate a conversion into {target}, but I couldn't identify the source currency. "
+                            "Which currency is the amount in? I haven't calculated a rate or changed account state.",
+                            [
+                                {"step": "UNDERSTAND", "status": "completed", "detail": f"Recognized {target} as the requested destination currency."},
+                                {"step": "OBSERVE", "status": "needs_input", "detail": "Source currency is missing; asked instead of assuming a default."},
+                                {"step": "SECURITY", "status": "completed", "detail": "No conversion, proposal, or transaction was created."},
+                            ],
+                            {"target_currency": target, "needs_clarification": True, "state_changed": False, "proposal": None},
+                        )
         if self.detect_intent(text) == "fx" and not (fx_action_request or fx_all_funds_request or family_future_income):
             try:
                 repaired = self.repair_user_text(text)

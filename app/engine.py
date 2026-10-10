@@ -2421,6 +2421,13 @@ class FinanceEngine:
             current_lower,
         ))
         if authorization_phrase:
+            # Preserve the established exact-amount authorization route for messages
+            # that explicitly identify RM/MYR. This maintains the existing safety
+            # checks for amount matching, conflicting edits, and security overrides.
+            # Only amount-less pronouns such as "I authorised it" use conversation
+            # context, and those require the immediately displayed, verified proposal.
+            if self.extract_myr_amount(text) is not None:
+                return None
             if not contextual_proposal or not contextual_proposal_id:
                 # Do not let a short approval authorize whichever proposal happens
                 # to be pending globally; the user must identify a specific proposal.

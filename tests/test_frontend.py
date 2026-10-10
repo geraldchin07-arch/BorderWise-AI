@@ -41,7 +41,7 @@ def test_proposal_card_discloses_risk_status_and_escaped_reasons():
     assert "risk.reasons" in proposal_ui
     assert "escapeFXHtml(reason)" in proposal_ui
     assert "Review required:" in proposal_ui
-    assert "const canAuthorize=riskStatus==='LOW'||riskStatus==='REVIEW'" in proposal_ui
+    assert "const canAuthorize=(riskStatus==='LOW'||riskStatus==='REVIEW')&&Number.isFinite(rate)" in proposal_ui
     assert "disabled title=" in proposal_ui
 
 

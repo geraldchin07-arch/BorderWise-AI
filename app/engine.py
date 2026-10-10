@@ -1611,14 +1611,15 @@ class FinanceEngine:
         proposal = self.state["proposals"].get(proposal_id)
         if not proposal:
             raise ValueError("Proposal not found.")
-        if self._expire_if_needed(proposal):
-            raise ValueError("Proposal has expired; please prepare and review a fresh proposal.")
         if proposal["status"] != "AUTHORIZED":
             raise ValueError("Execution requires explicit Level 2 authorization.")
 
         balances = self.state.get("balances", {})
         if "MYR" not in balances or "SGD" not in balances:
             raise ValueError("Execution requires both MYR and SGD wallet balances; no funds were changed.")
+
+        if self._expire_if_needed(proposal):
+            raise ValueError("Proposal has expired; please prepare and review a fresh proposal.")
 
         # Quote expiry is checked again at execution in case it expires after authorization.
         if self._expire_proposal_if_needed(proposal_id, proposal):

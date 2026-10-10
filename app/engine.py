@@ -1915,15 +1915,6 @@ class FinanceEngine:
         # Ambiguous English words/names that overlap ISO codes are treated as
         # currency codes only when the user typed the uppercase code explicitly.
         ambiguous_codes = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
-        choices = sorted(
-            [
-                alias for alias in aliases
-                if alias not in ambiguous_codes
-                or re.search(rf"(?<![A-Za-z]){re.escape(alias)}(?![A-Za-z])", raw_text)
-            ],
-            key=len,
-            reverse=True,
-        )
         # Unique symbols can identify a currency in a pair even without an amount.
         # Shared "$" and "¥" symbols deliberately remain unsupported/ambiguous.
         symbol_aliases = {

@@ -1773,15 +1773,14 @@ class FinanceEngine:
         candidates: list[tuple[int, int, str, Decimal]] = []
         source = normalized.upper()
         # Match longer currency names before shorter overlapping names.
-        patterns: list[tuple[str, str]] = [
-            (alias, code) for alias, code in aliases.items()
+        # Named aliases are distinct from bare ISO-like words: explicit names such
+        # as "Cuban peso" are valid even when CUP is also an English word.
+        patterns: list[tuple[str, str, bool]] = [
+            (alias, code, False) for alias, code in aliases.items()
         ]
-        patterns.extend((code, code) for code in supported_codes)
-        for alias, code in sorted(patterns, key=lambda item: len(item[0]), reverse=True):
-            if re.fullmatch(r"[A-Z]{3}", alias):
-                token = rf"(?<![A-Z]){re.escape(alias)}(?![A-Z])"
-            else:
-                token = rf"(?<![A-Z]){re.escape(alias)}(?![A-Z])"
+        patterns.extend((code, code, True) for code in supported_codes)
+        for alias, code, is_code in sorted(patterns, key=lambda item: len(item[0]), reverse=True):
+            token = rf"(?<![A-Z]){re.escape(alias)}(?![A-Z])"
             # Require an amount adjacent to the currency marker. This prevents
             # unrelated amounts in the same sentence (e.g. dates and budgets)
             # from being attributed to a distant currency mention.
@@ -1792,12 +1791,7 @@ class FinanceEngine:
                 match = re.search(pattern, source)
                 if not match:
                     continue
-                if code in ambiguous_codes and alias not in {
-                    "CUBAN PESO", "ALBANIAN LEK", "TURKISH LIRA",
-                    "MOROCCAN DIRHAM", "PERUVIAN SOL", "TONGAN PAANGA",
-                    "GEORGIAN LARI", "COLOMBIAN PESO", "BOLIVIAN BOLIVIANO",
-                    "ROMANIAN LEU", "ROMANIAN LEI",
-                } and not re.search(
+                if is_code and code in ambiguous_codes and not re.search(
                     rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", raw_upper
                 ):
                     continue

@@ -14,6 +14,9 @@ import threading
 from functools import wraps
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+import logging
+
+logger = logging.getLogger("borderwise")
 
 
 def _state_locked(method):
@@ -91,6 +94,8 @@ class FinanceEngine:
     FX_FAILURE_COOLDOWN_SECONDS = 30  # avoid hammering a provider when offline
     FX_PAIR_TTL_SECONDS = 900
     PROPOSAL_TTL_MINUTES = 30
+    
+    
 
     def __init__(self) -> None:
         self._state_lock = threading.RLock()
@@ -195,6 +200,10 @@ class FinanceEngine:
 
     def money_value(self, value: Any) -> Decimal:
         return money(value)
+    
+    @_state_locked
+    def list_proposals(self) -> list[dict[str, Any]]:
+        return sorted(self.state["proposals"].values(), key=lambda p: p.get("created_at", ""), reverse=True)
 
 
     @_state_locked
@@ -2253,6 +2262,73 @@ class FinanceEngine:
             normalized,
             re.I,
         ))
+    def detect_restricted_request(self, text: str) -> dict[str, Any] | None:
+        """Refuse prompt-leak, secret, internal-detail, other-user and privilege-escalation
+        requests before any planner (LLM or offline) runs. Never echoes the user's text."""
+        t = re.sub(r"\s+", " ", str(text or "").lower().replace("’", "'")).strip()
+        verb = (r"(?:show|reveal|print|display|output|repeat|recite|tell|give|share|send|list|"
+                r"dump|leak|expose|read|copy|paste|what(?:'s| is| are)|whats|see)")
+        users = r"(?:users?|customers?|clients?|students?|people|members)"
+        data = r"(?:balances?|accounts?|data|transactions?|information|details|records|history|savings|money)"
+        rules = [
+            ("prompt_injection", [
+                r"\bignore\s+(?:all\s+|any\s+|your\s+|the\s+|my\s+)?(?:previous|prior|above|earlier|preceding)\s+(?:instructions?|rules?|prompts?|messages?|directions?)\b",
+                r"\b(?:disregard|forget)\s+(?:all\s+|any\s+|your\s+|the\s+)?(?:previous\s+|prior\s+|above\s+)?(?:instructions?|rules?|guidelines|programming)\b",
+                r"\b(?:developer|debug|admin(?:istrator)?|god|root|jailbreak|unrestricted|maintenance)\s+mode\b",
+                r"\bjailbreak\b|\bsudo\b",
+            ]),
+            ("system_prompt_extraction", [
+                r"\b(?:system|developer|hidden|initial|original)\s+(?:prompt|message|instructions?)\b",
+                r"\b" + verb + r"\b.{0,40}\b(?:your|ur)\s+(?:instructions|prompt|programming|configuration|guidelines)\b",
+                r"\brepeat\s+(?:everything|all|the\s+(?:text|words))\s+(?:above|before)\b",
+            ]),
+            ("secret_extraction", [
+                r"\b" + verb + r"\b.{0,60}\b(?:api[\s_-]?keys?|openai[\s_-]?(?:api[\s_-]?)?keys?|secret\s+keys?|private\s+keys?|access\s+tokens?|bearer\s+tokens?|passwords?|passphrases?|credentials?|environment\s+variables?|env\s+vars?)\b",
+                r"\.env\b|\bopenai_api_key\b|\bos\.environ\b|\bgetenv\b",
+            ]),
+            ("internal_details_extraction", [
+                r"\b" + verb + r"\b.{0,40}\b(?:source\s+code|your\s+code|codebase|backend\s+code|tool\s+(?:definitions|schemas)|function\s+(?:definitions|schemas)|engine\.py|local_agent|agent\.py)\b",
+            ]),
+            ("other_users_data", [
+                r"\b(?:other|another|all|every|any)\s+" + users + r"(?:'s|s')?\b.{0,40}\b" + data + r"\b",
+                r"\b" + data + r"\s+(?:of|for|from)\s+(?:other|another|all|every|any)\s+" + users + r"\b",
+                r"\bsomeone\s+else'?s\b",
+                r"\b(?:user|customer)\s+(?:database|list|table|records)\b",
+            ]),
+            ("privilege_escalation", [
+                r"\b(?:disable|turn\s+off|switch\s+off|override|lift)\s+(?:the\s+|all\s+|any\s+|your\s+)?(?:safety|security|policy|policies|emergency\s+reserve|reserve|limits?|checks?|audit(?:\s+log)?|guardrails?)\b",
+            ]),
+        ]
+        category = next((name for name, pats in rules if any(re.search(p, t) for p in pats)), None)
+        if category is None:
+            # A claimed role only counts as an attack when paired with an escalation request.
+            authority = re.search(r"\b(?:i am|i'm|im|this is)\s+(?:the\s+|your\s+|an?\s+)?(?:admin(?:istrator)?|developer|engineer|creator|operator|superuser|security\s+(?:team|officer)|bank\s+(?:staff|manager|officer))\b", t)
+            escalation = re.search(r"\b(?:enable|activate|unlock|grant|bypass|disable|override|reveal|execute|authori[sz]e|approve|ignore|allow)\b", t)
+            if authority and escalation:
+                category = "privilege_escalation"
+        if category is None:
+            return None
+
+        offer = " I can help with your balances, tuition planning, FX rates and transfer proposals."
+        replies = {
+            "prompt_injection": "I can't ignore or change my safety rules, and I have no special modes." + offer,
+            "system_prompt_extraction": "I can't share my internal instructions or configuration." + offer,
+            "secret_extraction": "I can't access or share credentials, API keys or environment settings." + offer,
+            "internal_details_extraction": "I can't share internal code or tool definitions." + offer,
+            "other_users_data": "I can only work with your own sandbox wallet and have no access to other people's data." + offer,
+            "privilege_escalation": "I can't disable safety checks or grant elevated access. Money movement always needs an explicit proposal and Level 2 authorization." + offer,
+        }
+        self.audit("SECURITY_BLOCK", {"category": category})
+        return self._result(
+            "agentic_local",
+            replies[category] + " No account state was changed.",
+            [
+                {"step": "UNDERSTAND", "status": "completed", "detail": "Detected a request outside the permitted scope."},
+                {"step": "SECURITY", "status": "blocked", "detail": f"Refused ({category}) before any planner or model was invoked."},
+            ],
+            {"blocked_reason": category, "state_changed": False, "proposal": None,
+             "agent_mode": "deterministic_restricted_request_gate"},
+        )
 
     def _handle_conversation_followup(
         self,
@@ -2577,6 +2653,9 @@ class FinanceEngine:
                 ],
                 {"blocked_reason": "security_policy_override_attempt", "state_changed": False},
             )
+        restricted = self.detect_restricted_request(text)
+        if restricted is not None:
+            return restricted
 
         if all_funds_money_action:
             return self._result(
@@ -3850,7 +3929,8 @@ class FinanceEngine:
             if llm_result is not None:
                 return llm_result
         except Exception:
-            pass
+            logger.exception("LLM agent failed")
+            
 
         # Offline local planner: enables genuine multi-step tool selection without an external API.
         try:
@@ -3859,7 +3939,8 @@ class FinanceEngine:
             if local_result is not None:
                 return local_result
         except Exception:
-            pass
+            logger.exception("Local planner failed")
+            
 
         intent = self.detect_intent(text)
         trace = []

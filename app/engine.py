@@ -2063,9 +2063,21 @@ class FinanceEngine:
             )
         if self.has_ambiguous_dollar_reference(text):
             question = (
-                "Which dollar currency do you mean—US dollars (USD), Singapore dollars (SGD), "
+                "Which dollar currency do you mean: US dollars (USD), Singapore dollars (SGD), "
                 "Australian dollars (AUD), Canadian dollars (CAD), or another currency? "
-                "A bare '
+                "A bare dollar sign is also ambiguous. I have not created a proposal or transaction."
+            )
+            return self._result(
+                "fx",
+                question,
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an unqualified dollar reference in an FX request."},
+                    {"step": "OBSERVE", "status": "needs_input", "detail": "Asked the user to identify the dollar currency before selecting an FX pair."},
+                    {"step": "SECURITY", "status": "completed", "detail": "Clarification only; no proposal or transaction was created."},
+                ],
+                {"needs_clarification": True, "ambiguous_currency": "dollar", "state_changed": False, "proposal": None},
+            )
+        # Safety-critical all-funds gate: never reinterpret "all/everything" as
         # a harmless FX quote or allow a planner to derive an amount from the wallet.
         # State-changing money movement requires an exact amount.
         security_override = any(k in normalized for k in [

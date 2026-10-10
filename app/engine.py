@@ -2254,7 +2254,244 @@ class FinanceEngine:
             re.I,
         ))
 
-    def agent(self, text: str) -> dict[str, Any]:
+    def _handle_conversation_followup(
+        self,
+        text: str,
+        conversation_history: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any] | str | None:
+        """Resolve short follow-ups only from the immediately preceding verified exchange.
+
+        History is contextual evidence, not financial authority. Any proposal reference
+        must resolve to a real, unexpired proposal in this engine's state, and a
+        contextual approval is accepted only when the current user explicitly approves.
+        """
+        turns = [
+            item for item in (conversation_history or [])
+            if isinstance(item, dict) and item.get("role") in {"user", "assistant"}
+            and isinstance(item.get("content"), str)
+        ][-12:]
+        current = self.repair_user_text(str(text or "")).strip()
+        current_lower = current.lower().replace("’", "'")
+        current_compact = re.sub(r"[.!?]+$", "", current_lower).strip()
+        last_turn = turns[-1] if turns else {}
+        last_content = str(last_turn.get("content", "")).lower().replace("’", "'")
+        previous_user = next(
+            (str(item.get("content", "")) for item in reversed(turns[:-1]) if item.get("role") == "user"),
+            "",
+        )
+        previous_user_lower = self.repair_user_text(previous_user).lower()
+
+        # A one-word currency answer resolves a previous source-currency question.
+        source_aliases = {
+            "myr": "MYR", "rm": "MYR", "ringgit": "MYR", "malaysian ringgit": "MYR",
+            "sgd": "SGD", "s$": "SGD", "singapore dollar": "SGD", "singapore dollars": "SGD",
+            "usd": "USD", "us$": "USD", "us dollar": "USD", "us dollars": "USD",
+            "cny": "CNY", "rmb": "CNY", "yuan": "CNY", "eur": "EUR", "euro": "EUR",
+            "gbp": "GBP", "pound": "GBP", "pounds": "GBP", "aud": "AUD", "cad": "CAD",
+            "jpy": "JPY", "yen": "JPY", "hkd": "HKD", "twd": "TWD", "inr": "INR",
+            "idr": "IDR", "php": "PHP", "vnd": "VND", "nzd": "NZD", "chf": "CHF",
+            "krw": "KRW", "won": "KRW", "thb": "THB", "baht": "THB", "bnd": "BND",
+            "aed": "AED", "sar": "SAR", "qar": "QAR", "try": "TRY", "mxn": "MXN",
+            "zar": "ZAR", "brl": "BRL", "pln": "PLN", "inr": "INR", "pkr": "PKR",
+            "bdt": "BDT", "ngn": "NGN", "egp": "EGP", "ils": "ILS", "afn": "AFN",
+            "kwd": "KWD", "bhd": "BHD", "omr": "OMR", "jod": "JOD",
+        }
+        currency_reply = re.fullmatch(
+            r"(?:the source currency is\s+|the amount is in\s+|it's\s+|its\s+)?"
+            r"([a-z]{3}|s\$|us\$|rm|ringgit|malaysian ringgit|singapore dollars?|"
+            r"us dollars?|euro|euros|pound|pounds|yen|yuan|rmb|baht|won)[.!]?",
+            current_lower,
+        )
+        if (
+            currency_reply
+            and last_turn.get("role") == "assistant"
+            and any(phrase in last_content for phrase in [
+                "which currency is the amount in", "which currency is the amount",
+                "which currency are you starting from", "source currency",
+            ])
+            and re.search(r"\b(?:convert|conversion|exchange)\b", previous_user_lower)
+        ):
+            raw_currency = currency_reply.group(1).strip().lower()
+            source = source_aliases.get(raw_currency, raw_currency.upper() if re.fullmatch(r"[a-z]{3}", raw_currency) else None)
+            target_match = re.search(
+                r"\b(?:to|into)\s+(?:the\s+)?(?P<target>[a-z]{3}|s\$|us\$|"
+                r"singapore dollars?|malaysian ringgit|ringgit|us dollars?|euro|euros|"
+                r"pounds?|yen|yuan|rmb|baht|won)\b",
+                previous_user_lower,
+            )
+            amount_match = re.search(
+                r"\b(?:convert|exchange|change)\s+(?:the\s+)?"
+                r"(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?[km]?)\s+(?:to|into)\b",
+                previous_user_lower,
+            )
+            if not amount_match:
+                target_start = target_match.start() if target_match else len(previous_user_lower)
+                amount_match = re.search(
+                    r"(?<![A-Za-z0-9])(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?[km]?)(?![A-Za-z0-9])",
+                    previous_user_lower[:target_start],
+                )
+            if source and target_match and amount_match:
+                target_raw = target_match.group("target")
+                try:
+                    pair = self.extract_conversion_pair(f"{source} to {target_raw}")
+                except Exception:
+                    pair = None
+                if pair:
+                    amount = amount_match.group("amount")
+                    return (
+                        f"Convert {amount} {pair[0]} to {pair[1]} at the current reference exchange rate. "
+                        "This is a quotation only; do not create or execute a transfer."
+                    )
+
+        # Resolve "how about in USD?" as a balance follow-up only when the previous
+        # exchange was itself a balance lookup. This prevents a bare currency mention
+        # from being mistaken for an FX-rate question in unrelated contexts.
+        balance_followup = re.fullmatch(
+            r"(?:and\s+)?(?:how|what)\s+about\s+(?:my\s+)?(?:balance\s+)?(?:in\s+)?"
+            r"(?P<currency>[a-z]{3}|s\$|us\$)[.!?]?",
+            current_lower,
+        )
+        prior_was_balance = (
+            last_turn.get("role") == "assistant"
+            and any(phrase in last_content for phrase in [
+                "you currently have", "your current demo-account balances", "configured demo-account balances",
+                "i don't see a configured",
+            ])
+            and any(phrase in previous_user_lower for phrase in [
+                "how much do i have", "what is my balance", "show my balance", "current balance",
+            ])
+        )
+        if balance_followup and prior_was_balance:
+            code = source_aliases.get(balance_followup.group("currency"), balance_followup.group("currency").upper())
+            return f"How much do I have in {code}?"
+
+        # Proposal identity comes from the last assistant turn, but is trusted only
+        # after looking it up in the authoritative engine proposal store.
+        contextual_proposal = None
+        contextual_proposal_id = None
+        if last_turn.get("role") == "assistant" and last_turn.get("proposal_id"):
+            candidate_id = str(last_turn.get("proposal_id"))
+            candidate = self.state.get("proposals", {}).get(candidate_id)
+            if candidate:
+                contextual_proposal_id = candidate_id
+                contextual_proposal = candidate
+
+        repeat_proposal_request = bool(re.search(
+            r"\b(?:prepare|create|show|repeat)\b.*\b(?:exactly\s+the\s+same|same|again|repeat)\b.*"
+            r"\b(?:transfer|proposal|conversion)\b|\bprepare\s+exactly\s+the\s+same\s+"
+            r"(?:transfer\s+)?proposal\s+again\b",
+            current_lower,
+        ))
+        if repeat_proposal_request:
+            if contextual_proposal and contextual_proposal.get("status") == "PENDING_AUTHORIZATION":
+                if self._expire_if_needed(contextual_proposal) or self._expire_proposal_if_needed(
+                    contextual_proposal_id or "", contextual_proposal
+                ):
+                    return self._result(
+                        "agentic_local",
+                        "The previous proposal has expired. I did not reuse or recreate it. Please request a fresh proposal with the exact MYR amount so I can obtain a new quote.",
+                        [{"step": "UNDERSTAND", "status": "completed", "detail": "Matched the follow-up to the prior proposal."},
+                         {"step": "SECURITY", "status": "blocked", "detail": "The prior proposal expired and cannot be replayed."}],
+                        {"proposal": contextual_proposal, "blocked_reason": "proposal_expired", "state_changed": False},
+                    )
+                return self._result(
+                    "agentic_local",
+                    f"The exact same proposal already exists and is still pending: RM{float(contextual_proposal['amount_myr']):,.2f} to SGD at the quoted rate {float(contextual_proposal['rate']):.6f}. I reused proposal {contextual_proposal['id']} instead of creating a duplicate. It has not been authorized or executed.",
+                    [{"step": "UNDERSTAND", "status": "completed", "detail": "Resolved 'the same proposal' to the immediately preceding proposal."},
+                     {"step": "OBSERVE", "status": "completed", "detail": f"Verified proposal {contextual_proposal['id']} is still pending."},
+                     {"step": "SECURITY", "status": "completed", "detail": "Reused the existing proposal; no duplicate proposal or transaction was created."}],
+                    {"proposal": contextual_proposal, "proposal_reused": True, "state_changed": False},
+                )
+            return self._result(
+                "agentic_local",
+                "I couldn't safely identify an active proposal from the immediately preceding message. Please state the exact MYR amount again; I won't infer it from an older or unrelated request.",
+                [{"step": "UNDERSTAND", "status": "completed", "detail": "Detected a request to repeat a proposal without an active contextual proposal reference."},
+                 {"step": "SECURITY", "status": "blocked", "detail": "No amount was inferred and no proposal was created."}],
+                {"blocked_reason": "missing_contextual_proposal", "state_changed": False, "proposal": None},
+            )
+
+        # A short approval such as "I authorised it" is contextual consent only
+        # when the immediately preceding assistant response explicitly contained a
+        # proposal ID and that ID still identifies one pending proposal.
+        authorization_phrase = bool(re.search(
+            r"\b(?:i\s+(?:explicitly\s+)?(?:authori[sz](?:e|ed)|approv(?:e|ed)|confirm(?:ed)?|accept(?:ed)?)"
+            r"(?:\s+(?:it|this|the proposal|the transfer))?|"
+            r"(?:yes\s*,?\s*)?(?:authori[sz](?:e|ed)|approv(?:e|ed)|confirm(?:ed)?)\s+"
+            r"(?:it|this|the proposal|the transfer))\b",
+            current_lower,
+        ))
+        if authorization_phrase:
+            if not contextual_proposal or not contextual_proposal_id:
+                # Do not let a short approval authorize whichever proposal happens
+                # to be pending globally; the user must identify a specific proposal.
+                return self._result(
+                    "agentic_local",
+                    "I couldn't match that approval to a proposal shown in the immediately preceding reply. Nothing was authorized or executed. Please reopen the proposal and use its authorization control, or state the exact RM amount you intend to authorize.",
+                    [{"step": "UNDERSTAND", "status": "completed", "detail": "Detected an authorization follow-up without a verified contextual proposal reference."},
+                     {"step": "SECURITY", "status": "blocked", "detail": "No proposal was selected from global pending state alone."}],
+                    {"blocked_reason": "missing_contextual_proposal", "state_changed": False, "proposal": None},
+                )
+            if contextual_proposal.get("status") != "PENDING_AUTHORIZATION":
+                return self._result(
+                    "agentic_local",
+                    f"Proposal {contextual_proposal_id} is no longer pending authorization (status: {contextual_proposal.get('status', 'unknown')}). I did not replay it or create a new transaction.",
+                    [{"step": "UNDERSTAND", "status": "completed", "detail": "Matched the approval to the referenced proposal."},
+                     {"step": "SECURITY", "status": "blocked", "detail": "A proposal outside PENDING_AUTHORIZATION cannot be authorized again."}],
+                    {"proposal": contextual_proposal, "blocked_reason": "proposal_not_pending", "state_changed": False},
+                )
+            risk_status = str(contextual_proposal.get("risk", {}).get("status", "")).upper()
+            explicit_review_ack = "acknowledge" in current_lower and any(
+                word in current_lower for word in ["review", "high value", "high-value", "risk"]
+            )
+            if risk_status == "REVIEW" and not explicit_review_ack:
+                return self._result(
+                    "agentic_local",
+                    f"Proposal {contextual_proposal_id} for RM{float(contextual_proposal['amount_myr']):,.2f} requires high-value review. I have not authorized or executed it. Please explicitly acknowledge that you reviewed the amount, destination, quote and risk reasons, then authorize it, or use the dashboard's review confirmation.",
+                    [{"step": "UNDERSTAND", "status": "completed", "detail": "Matched the approval to a high-value proposal."},
+                     {"step": "SECURITY", "status": "blocked", "detail": "Explicit high-value review acknowledgement is still required."}],
+                    {"proposal": contextual_proposal, "blocked_reason": "review_requires_acknowledgement", "state_changed": False},
+                )
+            try:
+                authorized = self.authorize(
+                    contextual_proposal_id,
+                    True,
+                    acknowledge_review=(risk_status == "REVIEW" and explicit_review_ack),
+                )
+                executed = self.execute(contextual_proposal_id)
+            except ValueError as exc:
+                return self._result(
+                    "agentic_local",
+                    f"I couldn't complete authorization/execution of proposal {contextual_proposal_id}: {exc}. No unverified transfer will be reported as completed.",
+                    [{"step": "UNDERSTAND", "status": "completed", "detail": "Matched the approval to the referenced pending proposal."},
+                     {"step": "SECURITY", "status": "blocked", "detail": str(exc)}],
+                    {"proposal": self.state.get("proposals", {}).get(contextual_proposal_id, contextual_proposal),
+                     "blocked_reason": "authorization_or_execution_blocked", "state_changed": False},
+                )
+            tx = executed["transaction"]
+            return self._result(
+                "agentic_local",
+                f"Approval matched proposal {contextual_proposal_id} for RM{float(authorized['amount_myr']):,.2f}. The sandbox conversion to SGD completed and was verified at the proposal's locked rate of {float(authorized['rate']):.6f}. Transaction {tx['id']} was recorded in the audit trail. No real money moved.",
+                [{"step": "UNDERSTAND", "status": "completed", "detail": "Matched the explicit approval to the proposal displayed immediately before it."},
+                 {"step": "AUTHORIZE", "status": "completed", "detail": f"Recorded Level 2 authorization for {contextual_proposal_id}."},
+                 {"step": "EXECUTE", "status": "completed", "detail": f"Sandbox transaction {tx['id']} executed."},
+                 {"step": "VERIFY", "status": "completed", "detail": "Verified the account balances and completed transaction."},
+                 {"step": "AUDIT", "status": "completed", "detail": "Authorization and execution were audited."}],
+                {"proposal": executed["proposal"], "transaction": tx, "balances": executed["balances"],
+                 "state_changed": True, "contextual_authorization": True},
+            )
+
+        return None
+
+    def agent(
+        self,
+        text: str,
+        conversation_history: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        contextual = self._handle_conversation_followup(text, conversation_history)
+        if isinstance(contextual, dict):
+            return contextual
+        if isinstance(contextual, str):
+            text = contextual
         # Safety-critical deterministic gate: uncertain family support must never
         # reach an LLM planner as if it were confirmed cash. Keep this path
         # self-contained so a local-agent exception cannot silently fall through.

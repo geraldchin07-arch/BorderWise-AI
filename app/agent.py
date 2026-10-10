@@ -480,7 +480,24 @@ For complex student-finance situations, build a goal-aware plan: identify essent
                     name = call.name
                     args = json.loads(call.arguments or "{}")
                     trace.append({"step": "TOOL", "status": "completed", "detail": f"Selected {name} with arguments {args}."})
-                    if name == "create_transfer_proposal" and created_proposal is not None:
+                    if (
+                        name == "convert_currency"
+                        and not self._conversion_tool_matches_request(text, args)
+                    ):
+                        # Never treat a successful tool response as authoritative
+                        # unless its pair and amount match the user's explicit request.
+                        # Return the tool error to the model so it can correct the
+                        # arguments; the final-answer gate below independently checks
+                        # matching evidence before accepting a response.
+                        result = {
+                            "ok": False,
+                            "error": (
+                                "Conversion blocked: amount and currency direction must "
+                                "exactly match the user's request."
+                            ),
+                            "blocked_reason": "conversion_arguments_do_not_match_request",
+                        }
+                    elif name == "create_transfer_proposal" and created_proposal is not None:
                         result = {
                             "ok": False,
                             "error": "Only one transfer proposal may be created per user request. Review the existing pending proposal instead of creating a duplicate.",

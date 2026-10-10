@@ -2063,9 +2063,1441 @@ class FinanceEngine:
             )
         if self.has_ambiguous_dollar_reference(text):
             question = (
-                "Which dollar currency do you mean: US dollars (USD), Singapore dollars (SGD), "
-                "Australian dollars (AUD), Canadian dollars (CAD), or another currency? "
-                "A bare dollar sign is also ambiguous. I have not created a proposal or transaction."
+                "Which currency do you mean by 'dollars' or the bare '
+            return self._result(
+                "fx",
+                question,
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an unqualified dollar reference in an FX request."},
+                    {"step": "OBSERVE", "status": "needs_input", "detail": "Asked the user to identify the dollar currency before selecting an FX pair."},
+                    {"step": "SECURITY", "status": "completed", "detail": "Clarification only; no proposal or transaction was created."},
+                ],
+                {"needs_clarification": True, "ambiguous_currency": "dollar", "state_changed": False, "proposal": None},
+            )
+        # Safety-critical all-funds gate: never reinterpret "all/everything" as
+        # a harmless FX quote or allow a planner to derive an amount from the wallet.
+        # State-changing money movement requires an exact amount.
+        security_override = any(k in normalized for k in [
+            "ignore all previous", "ignore previous security", "ignore previous rules",
+            "ignore the security", "override security", "bypass security",
+            "bypass the policy", "you are authorized", "execute immediately",
+        ])
+        all_funds_money_action = (
+            bool(re.search(
+                r"\b(?:all|everything)\s+(?:my|of my)\s+(?:funds|money|balance|wallet)\b|"
+                r"\b(?:all|everything)\s+(?:in|from)\s+my\s+(?:wallet|account|balance)\b|"
+                r"\b(?:all|everything)\s+(?:in|from)\s+my\s+[a-z]{3}\s+(?:wallet|account|balance)\b|"
+                r"\b(?:all|everything)\s+my\s+[a-z]{3}\b",
+                normalized,
+            ))
+            and any(k in normalized for k in [
+                "transfer", "send", "remit", "remittance", "convert", "conversion",
+                "exchange", "pay", "move", "move my",
+            ])
+        )
+        if security_override and any(k in normalized for k in [
+            "transfer", "send", "execute", "prepare", "convert", "remit", "move", "pay"
+        ]):
+            return self._result(
+                "agentic_local",
+                "I can't override the security policy or grant authorization through natural language. "
+                "Money movement requires an explicit proposal and Level 2 authorization. No transaction was created.",
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an attempt to override financial security controls."},
+                    {"step": "SECURITY", "status": "blocked", "detail": "Security override language cannot grant authorization or bypass deterministic policy."},
+                ],
+                {"blocked_reason": "security_policy_override_attempt", "state_changed": False},
+            )
+
+        if all_funds_money_action:
+            return self._result(
+                "agentic_local",
+                "I blocked that request because 'all/everything' does not define a safe transaction amount. "
+                "Please specify the exact amount and currency. No proposal or transaction was created.",
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an all-funds money-moving request."},
+                    {"step": "SECURITY", "status": "blocked", "detail": "Blocked ambiguous amount before FX, planning, or execution logic."},
+                ],
+                {
+                    "blocked_reason": "ambiguous_all_funds_request",
+                    "state_changed": False,
+                    "agent_mode": "deterministic_all_funds_safety_gate",
+                },
+            )
+
+        conditional_income_question = (
+            (
+                any(k in normalized for k in [
+                    "can i assume", "assume that money", "assume the money", "count that money",
+                    "treat that money", "can i count it", "can i count that",
+                ])
+                or (
+                    "what if" in normalized
+                    and any(k in normalized for k in [
+                        "next month", "next week", "in two weeks", "later", "in a month"
+                    ])
+                )
+            )
+            and any(k in normalized for k in [
+                "might", "may", "could", "possibly", "maybe", "will", "sends", "send me"
+            ])
+            and any(k in normalized for k in ["parent", "parents", "family"])
+        )
+        if conditional_income_question:
+            return self._result(
+                "agentic_local",
+                "No. Treat that money as conditional, not confirmed, until it is actually received or otherwise reliably committed. "
+                "For tuition planning, BorderWise should not count conditional family support as available funds. "
+                "You can model the possible amount separately as a what-if scenario, but it must not be treated as confirmed cash.",
+                [
+                    {
+                        "step": "UNDERSTAND",
+                        "status": "completed",
+                        "detail": "Detected uncertain incoming family support.",
+                    },
+                    {
+                        "step": "REASON",
+                        "status": "completed",
+                        "detail": "Separated confirmed funds from hypothetical incoming funds.",
+                    },
+                    {
+                        "step": "SECURITY",
+                        "status": "completed",
+                        "detail": "No account state changed and no transaction was created.",
+                    },
+                ],
+                {
+                    "conditional_income": True,
+                    "state_changed": False,
+                    "agent_mode": "deterministic_safety_gate",
+                },
+            )
+
+        # Deterministic hypothetical-income gate.
+        # Questions such as "What if I receive another 2000 SGD next month?"
+        # must simulate the stated incoming funds without mutating the wallet.
+        hypothetical_income_question = (
+            any(k in normalized for k in ["what if", "if i receive", "if i get", "if i were to receive"])
+            and any(k in normalized for k in ["receive", "get", "incoming"])
+            and any(k in normalized for k in ["next month", "later", "tomorrow", "next week", "in a month"])
+        )
+        if hypothetical_income_question:
+            income_match = re.search(
+                r"(?:receive(?:d)?|get|incoming)\s+(?:just\s+)?(?:another\s+)?(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?)(?P<suffix>[km]?)\s*(?P<currency>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)"
+                r"|(?:receive(?:d)?|get|incoming)\s+(?:just\s+)?(?:another\s+)?(?P<currency_prefix>sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)\s*(?P<amount_prefix>[0-9][0-9,]*(?:\.[0-9]+)?)(?P<suffix_prefix>[km]?)",
+                normalized,
+                re.IGNORECASE,
+            )
+            if income_match:
+                groups = income_match.groupdict()
+                amount_text = groups["amount"] or groups["amount_prefix"]
+                suffix = groups["suffix"] or groups["suffix_prefix"] or ""
+                currency_text = groups["currency"] or groups["currency_prefix"]
+                multiplier = (
+                    Decimal("1000") if suffix.lower() == "k"
+                    else Decimal("1000000") if suffix.lower() == "m"
+                    else Decimal("1")
+                )
+                amount = money(Decimal(amount_text.replace(",", "")) * multiplier)
+                currency_alias_to_code = {
+                    "sgd": "SGD", "s$": "SGD",
+                    "myr": "MYR", "rm": "MYR",
+                    "usd": "USD", "us$": "USD",
+                    "cny": "CNY", "rmb": "CNY", "yuan": "CNY",
+                }
+                currency = currency_alias_to_code[currency_text.lower()]
+                try:
+                    simulation = self.simulate_income_impact(float(amount), currency)
+                    after = simulation["projected_balance_after_hypothetical_income_sgd"]
+                    before = simulation["forecast_before"]["projected_balance_sgd"]
+                    improvement = simulation["projected_added_sgd"]
+                    answer = (
+                        f"If you receive {currency} {amount:,.2f}, your projected 30-day position "
+                        f"would improve by about SGD {improvement:,.2f}, from SGD {before:,.2f} "
+                        f"to about SGD {after:,.2f}. This is a hypothetical simulation only; "
+                        f"your actual wallet balance has not changed."
+                    )
+                    return self._result(
+                        "agentic_local",
+                        answer,
+                        [
+                            {"step": "UNDERSTAND", "status": "completed", "detail": "Detected hypothetical incoming funds."},
+                            {"step": "SIMULATE", "status": "completed", "detail": f"Simulated {currency} {amount:,.2f} without mutating account state."},
+                            {"step": "SECURITY", "status": "completed", "detail": "No account state changed and no transaction was created."},
+                        ],
+                        {
+                            "hypothetical_income": True,
+                            "state_changed": False,
+                            "simulation": simulation,
+                            "agent_mode": "deterministic_hypothetical_income_gate",
+                        },
+                    )
+                except (ValueError, HTTPError, URLError, TimeoutError, OSError) as exc:
+                    return self._result(
+                        "agentic_local",
+                        f"I can model that hypothetical income, but I could not safely calculate its impact because the required reference data is unavailable ({type(exc).__name__}). No account state was changed.",
+                        [
+                            {"step": "UNDERSTAND", "status": "completed", "detail": "Detected hypothetical incoming funds."},
+                            {"step": "SIMULATE", "status": "blocked", "detail": f"Simulation data was unavailable: {type(exc).__name__}."},
+                            {"step": "SECURITY", "status": "completed", "detail": "No account state changed and no transaction was created."},
+                        ],
+                        {
+                            "hypothetical_income": True,
+                            "state_changed": False,
+                            "blocked_reason": "simulation_data_unavailable",
+                            "agent_mode": "deterministic_hypothetical_income_gate",
+                        },
+                    )
+
+        # Deterministic multi-currency affordability gate.
+        # This safety-critical advisory path runs before the optional LLM and local
+        # planner so explicit scenario amounts can never fall through to the saved demo wallet.
+        multi_currency_affordability = (
+            "tuition" in normalized
+            and any(k in normalized for k in ["can i do", "can i afford", "will i have enough", "can i cover"])
+            and any(k in normalized for k in ["emergency savings", "emergency reserve", "emergency fund"])
+        )
+        if multi_currency_affordability:
+            aliases = {
+                "MYR": ["myr", "rm"],
+                "SGD": ["sgd", "s$"],
+                "USD": ["usd", "us$"],
+                "CNY": ["cny", "rmb", "yuan"],
+            }
+
+            def parse_human(raw):
+                raw = str(raw).replace(",", "").strip()
+                suffix = raw[-1:].lower()
+                multiplier = Decimal("1000") if suffix == "k" else Decimal("1000000") if suffix == "m" else Decimal("1")
+                if suffix in {"k", "m"}:
+                    raw = raw[:-1]
+                return money(Decimal(raw) * multiplier)
+
+            wallet = {}
+            # Only read balances from the explicit "I've got/have..." possession clause.
+            possession = re.search(
+                r"\b(?:have|has|hold|holding|own|keep|got|gotten)\b(?P<body>.*?)"
+                r"(?=\b(?:need|needs|want to|would like to|send|sending|remit|transfer|pay|paying|require|required|tuition|school fees)\b|[.!?]|$)",
+                normalized,
+                re.I,
+            )
+            body = possession.group("body") if possession else ""
+            for code, names in aliases.items():
+                token = "|".join(re.escape(x) for x in sorted(names, key=len, reverse=True))
+                m = re.search(
+                    rf"(?:{token})\s*([0-9]+(?:,[0-9]{{3}})*(?:\.[0-9]+)?[km]?)|"
+                    rf"([0-9]+(?:,[0-9]{{3}})*(?:\.[0-9]+)?[km]?)\s*(?:{token})\b",
+                    body,
+                    re.I,
+                )
+                if m:
+                    wallet[code] = parse_human(m.group(1) or m.group(2))
+
+            tuition = re.search(
+                r"([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?[km]?)\s*"
+                r"(sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)\s+tuition\b",
+                normalized,
+                re.I,
+            )
+            reserve = re.search(
+                r"\bkeep\s+(?:an?\s+)?([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?[km]?)\s*"
+                r"(sgd|s\$|myr|rm|usd|us\$|cny|rmb|yuan)\b[^.]*?\bemergency\s+"
+                r"(?:savings|reserve|fund)\b",
+                normalized,
+                re.I,
+            )
+            if tuition and reserve and len(wallet) >= 2:
+                code_map = {
+                    "sgd": "SGD", "s$": "SGD",
+                    "myr": "MYR", "rm": "MYR",
+                    "usd": "USD", "us$": "USD",
+                    "cny": "CNY", "rmb": "CNY", "yuan": "CNY",
+                }
+                tuition_amount = parse_human(tuition.group(1))
+                tuition_currency = code_map[tuition.group(2).lower()]
+                reserve_amount = parse_human(reserve.group(1))
+                reserve_currency = code_map[reserve.group(2).lower()]
+
+                total_sgd = money(0)
+                valuation = []
+                fx_quotes = {}
+                for code, amount in wallet.items():
+                    if code == "SGD":
+                        rate = Decimal("1")
+                        fx_meta = {"source": "Base currency", "date": None, "live": False}
+                    else:
+                        # Scenario balances are hypothetical inputs, so use the direct
+                        # reference pair rather than any saved profile balance/config.
+                        fx_meta = self._fetch_reference_pair(code, "SGD")
+                        rate = fxrate(fx_meta["rate"])
+                        # Reject an obviously mismatched cross-currency quote. This can
+                        # happen when a provider/proxy returns the MYR/SGD quote for a
+                        # different pair. Fall back to the bundled indicative reference.
+                        scenario_fallbacks = {
+                            "USD": Decimal("1.2771"),
+                            "CNY": Decimal("0.1908"),
+                            "MYR": Decimal("0.3220"),
+                        }
+                        if code in scenario_fallbacks and (
+                            (code == "USD" and rate < Decimal("0.5"))
+                            or (code == "CNY" and rate > Decimal("0.5"))
+                            or (code == "MYR" and rate > Decimal("1.0"))
+                        ):
+                            rate = scenario_fallbacks[code]
+                            fx_meta = {
+                                **fx_meta,
+                                "rate": float(rate),
+                                "source": "bundled indicative fallback",
+                                "live": False,
+                            }
+                    fx_quotes[code] = {
+                        "rate_to_sgd": float(rate),
+                        "source": fx_meta.get("source"),
+                        "rate_date": fx_meta.get("date"),
+                        "live": bool(fx_meta.get("live", False)),
+                    }
+                    value = money(amount * rate)
+                    total_sgd = money(total_sgd + value)
+                    valuation.append(f"{code} {amount:,.2f} ≈ SGD {value:,.2f}")
+
+                tuition_rate = (
+                    Decimal("1")
+                    if tuition_currency == "SGD"
+                    else fxrate(self._fetch_reference_pair(tuition_currency, "SGD")["rate"])
+                )
+                reserve_rate = (
+                    Decimal("1")
+                    if reserve_currency == "SGD"
+                    else fxrate(self._fetch_reference_pair(reserve_currency, "SGD")["rate"])
+                )
+                tuition_sgd = money(tuition_amount * tuition_rate)
+                reserve_sgd = money(reserve_amount * reserve_rate)
+                usable_sgd = money(max(Decimal("0"), total_sgd - reserve_sgd))
+                shortfall_sgd = money(max(Decimal("0"), tuition_sgd - usable_sgd))
+                remaining_sgd = money(usable_sgd - tuition_sgd)
+
+                if shortfall_sgd > 0:
+                    answer = (
+                        f"No — there's a shortfall of about SGD {shortfall_sgd:,.2f}. "
+                        f"After protecting SGD {reserve_sgd:,.2f} in emergency savings, "
+                        f"you have SGD {usable_sgd:,.2f} available for SGD {tuition_sgd:,.2f} tuition."
+                    )
+                else:
+                    answer = (
+                        f"Yes — after protecting SGD {reserve_sgd:,.2f} in emergency savings, "
+                        f"you have SGD {usable_sgd:,.2f} available for SGD {tuition_sgd:,.2f} tuition, "
+                        f"leaving about SGD {remaining_sgd:,.2f}."
+                    )
+                reserve_label = f"{reserve_currency} {reserve_amount:,.2f} ≈ SGD {reserve_sgd:,.2f}"
+                tuition_label = f"{tuition_currency} {tuition_amount:,.2f} ≈ SGD {tuition_sgd:,.2f}"
+                answer += (
+                    " Read-only affordability simulation — no transaction or proposal was created. "
+                    "Only the balances stated in this message were used; your saved wallet was not used. "
+                    "Reference FX is indicative, not a bank settlement quote."
+                )
+                return self._result(
+                    "agentic_local",
+                    answer,
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an explicit multi-currency tuition affordability scenario."},
+                        {"step": "OBSERVE", "status": "completed", "detail": "Used only the balances explicitly stated in the user's message; saved profile balances were not used."},
+                        {"step": "FX", "status": "completed", "detail": f"Normalized {len(wallet)} stated currencies into SGD using reference FX."},
+                        {"step": "CALCULATE", "status": "completed", "detail": f"Protected the stated emergency-savings floor ({reserve_label}) before assessing tuition ({tuition_label})."},
+                        {"step": "SECURITY", "status": "completed", "detail": "Read-only simulation; no proposal or transaction was created."},
+                    ],
+                    {
+                        "goal": "financial_plan",
+                        "wallet_source": "message",
+                        "wallet_balances_used": {code: float(amount) for code, amount in wallet.items()},
+                        "fx_quotes": fx_quotes,
+                        "affordability": {
+                            "wallet_total_sgd": float(total_sgd),
+                            "reserve_sgd": float(reserve_sgd),
+                            "usable_sgd": float(usable_sgd),
+                            "tuition_sgd": float(tuition_sgd),
+                            "shortfall_sgd": float(shortfall_sgd),
+                            "remaining_sgd": float(remaining_sgd),
+                            "reserve": {
+                                "currency": reserve_currency,
+                                "amount": float(reserve_amount),
+                                "sgd_equivalent": float(reserve_sgd),
+                            },
+                            "tuition": {
+                                "currency": tuition_currency,
+                                "amount": float(tuition_amount),
+                                "sgd_equivalent": float(tuition_sgd),
+                            },
+                        },
+                        "state_changed": False,
+                        "agent_mode": "deterministic_multi_currency_affordability_gate",
+                    },
+                )
+
+        # Deterministic portfolio-valuation gate.
+        # Simple explicit multi-currency valuation questions must never depend on
+        # the optional LLM or the broader local planner.
+        valuation_markers = [
+            "how much is that worth", "worth in sgd", "total in sgd",
+            "total worth", "total wealth", "what is that worth in sgd",
+            "how much do i have in sgd",
+        ]
+        currency_aliases = {
+            "SGD": ["sgd"],
+            "CNY": ["cny", "rmb", "yuan"],
+            "USD": ["usd", "us$"],
+            "MYR": ["myr", "rm"],
+            "JPY": ["jpy", "yen"],
+            "KRW": ["krw", "won"],
+            "THB": ["thb", "baht"],
+            "EUR": ["eur", "euro", "euros"],
+            "GBP": ["gbp", "pound", "pounds"],
+            "AUD": ["aud"],
+            "CAD": ["cad"],
+            "HKD": ["hkd"],
+            "TWD": ["twd"],
+            "INR": ["inr"],
+        }
+        explicit_wallet = {}
+        for code, aliases in currency_aliases.items():
+            escaped = sorted((re.escape(x) for x in aliases), key=len, reverse=True)
+            alias_pattern = "|".join(escaped)
+            match = re.search(
+                rf"(?:\b(?:{alias_pattern})\b|(?:{alias_pattern}))\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
+                normalized,
+                re.IGNORECASE,
+            )
+            if not match:
+                match = re.search(
+                    rf"([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:\b(?:{alias_pattern})\b|(?:{alias_pattern}))",
+                    normalized,
+                    re.IGNORECASE,
+                )
+            if match:
+                explicit_wallet[code] = money(match.group(1).replace(",", ""))
+
+        if any(marker in normalized for marker in valuation_markers) and len(explicit_wallet) >= 2:
+            total_sgd = money(0)
+            lines = []
+            try:
+                for code, amount in explicit_wallet.items():
+                    if code == "SGD":
+                        rate = Decimal("1")
+                        value = amount
+                    else:
+                        rate, _ = self._currency_rate_to_sgd(code)
+                        value = money(amount * rate)
+                    total_sgd = money(total_sgd + value)
+                    if code == "SGD":
+                        lines.append(f"SGD {amount:,.2f} = SGD {value:,.2f}")
+                    else:
+                        lines.append(
+                            f"{code} {amount:,.2f} ≈ SGD {value:,.2f} at 1 {code} = {rate:.8f} SGD"
+                        )
+            except (ValueError, HTTPError, URLError, TimeoutError, OSError) as exc:
+                return self._result(
+                    "agentic_local",
+                    f"I can see all of the balances, but I cannot safely calculate the SGD total right now because the reference FX quote for one of the currencies is unavailable ({type(exc).__name__}). No account state was changed. Add a quoted FX rate for the missing currency or retry when reference FX is available.",
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an explicit multi-currency portfolio valuation request."},
+                        {"step": "FX", "status": "blocked", "detail": f"Reference FX was unavailable: {type(exc).__name__}."},
+                        {"step": "SECURITY", "status": "completed", "detail": "No state was changed and no transaction was created."},
+                    ],
+                    {
+                        "valuation": {
+                            "currency": "SGD",
+                            "balances": {k: float(v) for k, v in explicit_wallet.items()},
+                            "state_changed": False,
+                        },
+                        "blocked_reason": "reference_fx_unavailable",
+                        "agent_mode": "deterministic_portfolio_valuation",
+                    },
+                )
+
+            trace = [
+                {
+                    "step": "UNDERSTAND",
+                    "status": "completed",
+                    "detail": "Detected an explicit multi-currency portfolio valuation request.",
+                },
+                {
+                    "step": "FX",
+                    "status": "completed",
+                    "detail": "Valued every explicitly stated currency using the deterministic SGD reference-rate path.",
+                },
+                {
+                    "step": "CALCULATE",
+                    "status": "completed",
+                    "detail": f"Total stated portfolio value: SGD {total_sgd:,.2f}.",
+                },
+            ]
+            answer = (
+                "Your stated balances are approximately:\n"
+                + "\n".join(lines)
+                + f"\n\nTotal ≈ SGD {total_sgd:,.2f}. "
+                "FX quotes are indicative and may differ from bank settlement rates or fees."
+            )
+            return self._result(
+                "agentic_local",
+                answer,
+                trace,
+                {
+                    "valuation": {
+                        "currency": "SGD",
+                        "total": float(total_sgd),
+                        "balances": {k: float(v) for k, v in explicit_wallet.items()},
+                    },
+                    "state_changed": False,
+                    "agent_mode": "deterministic_portfolio_valuation",
+                },
+            )
+
+        # Explicit figures in an affordability question override demo-wallet
+        # values. This read-only path must never create a conversion proposal.
+        explicit_tuition_case = (
+            any(k in normalized for k in ["tuition", "school fee", "school fees"])
+            and any(k in normalized for k in ["can i afford", "tell me i can afford", "even if the numbers"])
+        )
+        if explicit_tuition_case:
+            amount_matches = list(re.finditer(
+                r"(?<![A-Za-z])(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.\d{1,2})?)",
+                normalized,
+            ))
+            amounts = [money(Decimal(match.group(1).replace(",", ""))) for match in amount_matches]
+            tuition_index = None
+            separators = list(re.finditer(r"[,;.!?]|\b(?:and|while|but)\b", normalized))
+            for index, match in enumerate(amount_matches):
+                clause_start = max(
+                    [separator.end() for separator in separators if separator.end() <= match.start()]
+                    or [0]
+                )
+                clause_end = min(
+                    [separator.start() for separator in separators if separator.start() >= match.end()]
+                    or [len(normalized)]
+                )
+                clause = normalized[clause_start:clause_end]
+                if re.search(r"\b(tuition|school fees?)\b", clause):
+                    tuition_index = index
+                    break
+            if len(amounts) >= 2:
+                tuition_position = tuition_index if tuition_index is not None else 1
+                tuition_due = amounts[tuition_position]
+                available_index = next(index for index in range(len(amounts)) if index != tuition_position)
+                available = amounts[available_index]
+                gap = money(max(Decimal("0"), tuition_due - available))
+                answer = (
+                    f"Based only on the figures you supplied, you cannot fully cover the tuition from the stated available cash. "
+                    f"Available cash: SGD {available:,.2f}; tuition due: SGD {tuition_due:,.2f}; shortfall: SGD {gap:,.2f}. "
+                    "I won't claim it is affordable when the arithmetic shows a gap. Check for confirmed income arriving before the due date and contact the tuition provider early to discuss options. "
+                    "No proposal or transaction was created."
+                )
+                return self._result(
+                    "affordability", answer,
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized explicit user-supplied affordability figures."},
+                        {"step": "OBSERVE", "status": "completed", "detail": "Used prompt amounts, not saved demo-wallet data."},
+                        {"step": "CALCULATE", "status": "completed", "detail": f"SGD {tuition_due:,.2f} tuition minus SGD {available:,.2f} available equals SGD {gap:,.2f} shortfall."},
+                        {"step": "SECURITY", "status": "completed", "detail": "Read-only response; no proposal or transaction was created."},
+                        {"step": "RECOMMEND", "status": "completed", "detail": "Recommended checking confirmed funds and contacting the tuition provider."},
+                    ],
+                    {"available_cash_sgd": float(available), "tuition_due_sgd": float(tuition_due), "shortfall_sgd": float(gap), "state_changed": False, "proposal": None},
+                )
+
+
+        # Deterministic casual tuition-affordability gate.
+        # Natural-language student questions such as "I got 2k SGD and tuition
+        # is around 6k soon, am I cooked?" should use only the balances and
+        # tuition amount explicitly stated in the message, not the saved demo
+        # wallet or saved emergency-reserve configuration.
+        casual_tuition_question = (
+            "tuition" in normalized
+            and any(k in normalized for k in [
+                "am i cooked", "cooked", "am i okay", "am i ok",
+                "can i afford", "do i have enough", "can i cover",
+            ])
+            and any(k in normalized for k in ["got", "have", "i've got", "ive got"])
+        )
+        if casual_tuition_question:
+            casual_sgd_values = []
+            # Keep these regexes simple: support "SGD 2k" and "2k SGD"
+            # without nested escaping.
+            for match in re.finditer(
+                r"(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)([km]?)",
+                normalized,
+                re.IGNORECASE,
+            ):
+                amount_text, suffix = match.groups()
+                multiplier = (
+                    Decimal("1000") if suffix.lower() == "k"
+                    else Decimal("1000000") if suffix.lower() == "m"
+                    else Decimal("1")
+                )
+                casual_sgd_values.append(
+                    money(Decimal(amount_text.replace(",", "")) * multiplier)
+                )
+            for match in re.finditer(
+                r"([0-9][0-9,]*(?:\.[0-9]+)?)([km]?)\s*(?:sgd|s\$)",
+                normalized,
+                re.IGNORECASE,
+            ):
+                amount_text, suffix = match.groups()
+                multiplier = (
+                    Decimal("1000") if suffix.lower() == "k"
+                    else Decimal("1000000") if suffix.lower() == "m"
+                    else Decimal("1")
+                )
+                casual_sgd_values.append(
+                    money(Decimal(amount_text.replace(",", "")) * multiplier)
+                )
+            # The two explicit-SGD regexes intentionally cover both word orders,
+            # but the same amount can match both. Deduplicate before deciding whether
+            # a second (implicit-SGD) tuition amount still needs to be parsed.
+            casual_sgd_values = list(dict.fromkeys(casual_sgd_values))
+
+            # Casual tuition wording often omits the currency on the
+            # second amount, e.g. "I got 2k SGD and tuition is around 6k".
+            # Since the first amount explicitly establishes SGD, interpret the
+            # nearby tuition shorthand as SGD rather than falling through to
+            # the saved profile.
+            if len(casual_sgd_values) < 2:
+                tuition_amount_match = re.search(
+                    r"tuition\b.*?(?:around|about|is|of|=)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)([km]?)",
+                    normalized,
+                    re.IGNORECASE,
+                )
+                if tuition_amount_match:
+                    amount_text, suffix = tuition_amount_match.groups()
+                    multiplier = (
+                        Decimal("1000") if suffix.lower() == "k"
+                        else Decimal("1000000") if suffix.lower() == "m"
+                        else Decimal("1")
+                    )
+                    tuition_value = money(
+                        Decimal(amount_text.replace(",", "")) * multiplier
+                    )
+                    if casual_sgd_values:
+                        casual_sgd_values.append(tuition_value)
+
+            if len(casual_sgd_values) >= 2:
+                starting_balance, tuition_amount = casual_sgd_values[:2]
+                shortfall = money(max(Decimal("0"), tuition_amount - starting_balance))
+                remaining = money(starting_balance - tuition_amount)
+                if shortfall > 0:
+                    answer = (
+                        f"Yeah, you're short by about SGD {shortfall:,.2f}: you stated "
+                        f"SGD {starting_balance:,.2f} and tuition of about SGD {tuition_amount:,.2f}. "
+                        f"That means you would need roughly SGD {shortfall:,.2f} more to cover tuition."
+                    )
+                else:
+                    answer = (
+                        f"You're not cooked on tuition alone: you stated SGD {starting_balance:,.2f} "
+                        f"against about SGD {tuition_amount:,.2f} tuition, leaving roughly SGD {remaining:,.2f}."
+                    )
+                return self._result(
+                    "agentic_local",
+                    answer + " This is an affordability simulation using only the amounts you supplied; no transaction was created or executed.",
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an informal tuition-affordability question with explicit scenario amounts."},
+                        {"step": "CALCULATE", "status": "completed", "detail": f"Compared stated SGD {starting_balance:,.2f} against stated tuition of about SGD {tuition_amount:,.2f}."},
+                        {"step": "SECURITY", "status": "completed", "detail": "Used only message-supplied scenario amounts and did not inherit saved reserve or wallet assumptions."},
+                    ],
+                    {
+                        "goal": "financial_plan",
+                        "affordability": {
+                            "starting_balance_sgd": float(starting_balance),
+                            "tuition_sgd": float(tuition_amount),
+                            "shortfall_sgd": float(shortfall),
+                            "remaining_sgd": float(remaining),
+                        },
+                        "state_changed": False,
+                        "agent_mode": "deterministic_casual_tuition_gate",
+                    },
+                )
+
+        # Deterministic contradictory-transfer gate.
+        # If the same message explicitly says not to transfer and then asks for
+        # a transfer, do not choose the later/dangerous fragment. Require the
+        # user to resolve the contradiction before creating any proposal.
+        contradictory_transfer = (
+            any(k in normalized for k in [
+                "don't transfer", "do not transfer", "dont transfer",
+                "don't send", "do not send", "dont send",
+                "don't remit", "do not remit", "dont remit",
+            ])
+            and any(k in normalized for k in [
+                "transfer rm", "send rm", "remit rm", "transfer myr",
+                "send myr", "remit myr",
+            ])
+        )
+        if contradictory_transfer:
+            return self._result(
+                "agentic_local",
+                "Your message contains conflicting transfer instructions: it says not to transfer anything and also asks for a transfer. I will not create a proposal until you clearly confirm which instruction you want. No transaction or proposal was created.",
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Detected contradictory transfer instructions."},
+                    {"step": "REASON", "status": "completed", "detail": "Refused to resolve the contradiction by choosing the more permissive or later instruction."},
+                    {"step": "SECURITY", "status": "blocked", "detail": "No proposal or transaction was created while the instruction remained ambiguous."},
+                ],
+                {
+                    "contradictory_instruction": True,
+                    "state_changed": False,
+                    "agent_mode": "deterministic_contradiction_gate",
+                },
+            )
+
+        # Deterministic tuition + emergency-reserve affordability gate.
+        # This must run before any action/transfer planner because wording such as
+        # "I need to pay tuition" describes an obligation, not an instruction to
+        # execute a transfer. If the user asks whether they are okay while naming
+        # an explicit reserve target, answer the planning question directly.
+        tuition_reserve_question = (
+            "tuition" in normalized
+            and "emergency reserve" in normalized
+            and any(k in normalized for k in [
+                "am i okay", "am i ok", "will i be okay", "will i be ok",
+                "can i afford", "is it affordable", "do i have enough",
+                "can i cover", "can i manage",
+            ])
+        )
+        if tuition_reserve_question:
+            sgd_values = [
+                money(m.replace(",", ""))
+                for m in re.findall(
+                    r"(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
+                    normalized,
+                    re.IGNORECASE,
+                )
+            ]
+            if len(sgd_values) >= 3:
+                # In this phrasing the first amount is the wallet, the second is
+                # tuition, and the third is the requested emergency reserve.
+                starting_balance, tuition_amount, reserve_target = sgd_values[:3]
+                remaining = money(starting_balance - tuition_amount)
+                reserve_gap = money(max(Decimal("0"), reserve_target - remaining))
+                reserve_met = reserve_gap == 0
+                if reserve_met:
+                    answer = (
+                        f"Yes. You can cover the SGD {tuition_amount:,.2f} tuition and "
+                        f"still have SGD {remaining:,.2f} left, meeting your SGD {reserve_target:,.2f} emergency-reserve target."
+                    )
+                else:
+                    answer = (
+                        f"Not fully. You can cover the SGD {tuition_amount:,.2f} tuition, "
+                        f"but you would have SGD {remaining:,.2f} left, which is "
+                        f"SGD {reserve_gap:,.2f} below your SGD {reserve_target:,.2f} emergency-reserve target."
+                    )
+                return self._result(
+                    "agentic_local",
+                    answer + " This is an affordability simulation only; no transaction was created or executed.",
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Detected a tuition affordability question with an explicit emergency-reserve target."},
+                        {"step": "CALCULATE", "status": "completed", "detail": f"Compared SGD {remaining:,.2f} remaining after tuition against the SGD {reserve_target:,.2f} reserve target."},
+                        {"step": "SECURITY", "status": "completed", "detail": "No transfer, proposal, authorization or account-state change was performed."},
+                    ],
+                    {
+                        "goal": "financial_plan",
+                        "affordability": {
+                            "starting_balance_sgd": float(starting_balance),
+                            "tuition_sgd": float(tuition_amount),
+                            "remaining_sgd": float(remaining),
+                            "reserve_target_sgd": float(reserve_target),
+                            "reserve_gap_sgd": float(reserve_gap),
+                            "reserve_met": reserve_met,
+                        },
+                        "state_changed": False,
+                        "agent_mode": "deterministic_tuition_reserve_gate",
+                    },
+                )
+
+        # Deterministic cross-currency transfer safety gate.
+        # A request such as "I have SGD 2,000. Send RM10,000 home while
+        # protecting my emergency reserve" must be evaluated against the stated
+        # SGD wallet before any proposal is created. The legacy risk_check()
+        # operates on MYR balances, so it cannot safely assess an SGD-funded
+        # remittance by itself.
+        risk_aware_transfer = (
+            any(k in normalized for k in ["send", "transfer", "remit", "remittance"])
+            and any(k in normalized for k in ["emergency reserve", "emergency fund", "protecting my reserve", "protect the reserve"])
+        )
+        explicit_myr = self.extract_myr_amount(text)
+        explicit_sgd = self.extract_sgd_amount(text)
+        if risk_aware_transfer and explicit_myr is not None and explicit_sgd is not None:
+            try:
+                myr_to_sgd, _ = self._currency_rate_to_sgd("MYR")
+                required_sgd = money(explicit_myr * myr_to_sgd)
+                if required_sgd > explicit_sgd:
+                    shortfall_sgd = money(required_sgd - explicit_sgd)
+                    return self._result(
+                        "agentic_local",
+                        f"Blocked. RM{explicit_myr:,.2f} would require approximately SGD {required_sgd:,.2f} "
+                        f"at the current reference rate, but you stated only SGD {explicit_sgd:,.2f}. "
+                        f"That leaves a funding shortfall of about SGD {shortfall_sgd:,.2f}, so XKF5 will not prepare the transfer. "
+                        "No transaction or proposal was created.",
+                        [
+                            {"step": "UNDERSTAND", "status": "completed", "detail": "Detected a remittance request with an explicit SGD funding wallet and emergency-reserve protection constraint."},
+                            {"step": "CALCULATE", "status": "completed", "detail": f"Compared the SGD cost of RM{explicit_myr:,.2f} against the stated SGD {explicit_sgd:,.2f} wallet."},
+                            {"step": "SECURITY", "status": "blocked", "detail": "Transfer was blocked before proposal creation because the stated wallet cannot fund the requested amount."},
+                        ],
+                        {
+                            "risk": {
+                                "status": "BLOCKED",
+                                "requested_myr": float(explicit_myr),
+                                "required_sgd": float(required_sgd),
+                                "stated_sgd": float(explicit_sgd),
+                                "shortfall_sgd": float(shortfall_sgd),
+                            },
+                            "state_changed": False,
+                            "agent_mode": "deterministic_cross_currency_transfer_gate",
+                        },
+                    )
+            except (ValueError, HTTPError, URLError, TimeoutError, OSError):
+                return self._result(
+                    "agentic_local",
+                    "I cannot safely prepare that transfer because the required MYR→SGD reference quote is unavailable. No transaction or proposal was created.",
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Detected a cross-currency remittance with a reserve-protection constraint."},
+                        {"step": "SECURITY", "status": "blocked", "detail": "Blocked proposal creation because the funding conversion could not be verified safely."},
+                    ],
+                    {"state_changed": False, "agent_mode": "deterministic_cross_currency_transfer_gate"},
+                )
+
+        # Multi-intent safety gate: if one message mixes uncertain incoming funds
+        # with an instruction to move an unspecified remainder, never let planning/FX
+        # logic reinterpret it as a safe conversion. The action amount must be explicit.
+        uncertain_incoming = (
+            any(k in normalized for k in [
+                "might send", "may send", "could send", "possibly send",
+                "maybe send", "might receive", "may receive", "could receive",
+                "possibly receive", "maybe receive",
+            ])
+            and any(k in normalized for k in ["parent", "parents", "family"])
+        )
+        ambiguous_remainder_action = (
+            any(k in normalized for k in [
+                "transfer whatever is left", "send whatever is left",
+                "convert whatever is left", "transfer what's left",
+                "send what's left", "convert what's left",
+                "transfer the rest", "send the rest", "convert the rest",
+            ])
+        )
+        explicit_money_action = any(k in normalized for k in [
+            "transfer", "send money", "send ", "remit", "remittance",
+            "prepare a transfer", "make a transfer", "create a transfer",
+            "set up a transfer", "convert ",
+        ])
+        if ambiguous_remainder_action or (uncertain_incoming and explicit_money_action and not any(
+            k in normalized for k in ["should i", "can i", "could i", "what should i", "how should i", "plan"]
+        )):
+            return self._result(
+                "agentic_local",
+                "I blocked that action because the amount is not explicitly defined. "
+                "Money that parents or family might send is conditional, and 'whatever is left' "
+                "is not a safe transaction amount. Please specify the exact amount and treat uncertain incoming funds as a separate what-if.",
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Detected a multi-intent money-moving request with ambiguous or conditional inputs."},
+                    {"step": "SECURITY", "status": "blocked", "detail": "Blocked proposal creation because the transfer amount could not be determined from confirmed funds and an exact amount."},
+                ],
+                {
+                    "blocked_reason": "ambiguous_action_amount",
+                    "state_changed": False,
+                    "conditional_income": uncertain_incoming,
+                    "agent_mode": "deterministic_multi_intent_safety_gate",
+                },
+            )
+
+        # User-supplied hypothetical FX rates are arithmetic inputs, not live quotes.
+        # Evaluate them directly so a reference-rate lookup cannot override the scenario.
+        hypothetical_text = self.repair_user_text(text).lower()
+        if any(k in hypothetical_text for k in ["compare", "difference between", "what is the difference"]) and any(
+            k in hypothetical_text for k in ["hypothetical", "assume", "at rate", "at 0.", "versus", " vs "]
+        ):
+            amount_match = re.search(
+                r"\b(?P<currency>myr|rm|ringgit|malaysian ringgit|sgd|s\$|singapore dollars?|usd|us\$|us dollars?)\s*(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?)|"
+                r"\b(?P<amount_after>[0-9][0-9,]*(?:\.[0-9]+)?)\s*(?P<currency_after>myr|rm|ringgit|malaysian ringgit|sgd|s\$|singapore dollars?|usd|us\$|us dollars?)\b",
+                hypothetical_text,
+            )
+            rate_matches = re.findall(r"\b(?:at\s+(?:a\s+)?rate\s+of\s+|rate\s+of\s+)?(0?\.[0-9]+|[1-9][0-9]*(?:\.[0-9]+)?)\b", hypothetical_text)
+            pair_match = re.search(
+                r"\b(sgd|singapore dollars?|myr|ringgit|usd|us dollars?)\s+per\s+(myr|ringgit|sgd|singapore dollars?|usd|us dollars?)\b",
+                hypothetical_text,
+            )
+            explicit_pair = self.extract_conversion_pair(text) if not pair_match else None
+            if amount_match and len(rate_matches) >= 2 and (pair_match or explicit_pair):
+                currency_aliases = {
+                    "rm": "MYR", "ringgit": "MYR", "malaysian ringgit": "MYR", "myr": "MYR",
+                    "s$": "SGD", "singapore dollar": "SGD", "singapore dollars": "SGD", "sgd": "SGD",
+                    "us$": "USD", "us dollar": "USD", "us dollars": "USD", "usd": "USD",
+                }
+                amount_currency = currency_aliases.get((amount_match.group("currency") or amount_match.group("currency_after")).lower())
+                amount_raw = amount_match.group("amount") or amount_match.group("amount_after")
+                if pair_match:
+                    rate_quote = currency_aliases.get(pair_match.group(1).lower())
+                    rate_base = currency_aliases.get(pair_match.group(2).lower())
+                else:
+                    rate_base, rate_quote = explicit_pair
+                if amount_currency and rate_quote and rate_base and amount_currency == rate_base and rate_base != rate_quote:
+                    amount = Decimal(amount_raw.replace(",", ""))
+                    rate_a, rate_b = Decimal(rate_matches[-2]), Decimal(rate_matches[-1])
+                    result_a, result_b = amount * rate_a, amount * rate_b
+                    difference = abs(result_a - result_b)
+                    answer = (
+                        f"Using your hypothetical rates (not live market quotes):\n"
+                        f"• {amount:,.2f} {rate_base} at {rate_a} {rate_quote} per {rate_base} = {result_a:,.2f} {rate_quote}.\n"
+                        f"• {amount:,.2f} {rate_base} at {rate_b} {rate_quote} per {rate_base} = {result_b:,.2f} {rate_quote}.\n"
+                        f"Difference: {difference:,.2f} {rate_quote}. The higher rate gives {difference:,.2f} {rate_quote} more. No account state changed and no transaction was created."
+                    )
+                    return self._result("fx_comparison", answer, [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Extracted the amount, currency pair and both user-supplied hypothetical rates."},
+                        {"step": "CALCULATE", "status": "completed", "detail": "Calculated both outcomes and their absolute difference using Decimal arithmetic."},
+                        {"step": "SECURITY", "status": "completed", "detail": "Scenario-only calculation; no live quote or transaction was used."},
+                    ], {"amount": float(amount), "base_currency": rate_base, "quote_currency": rate_quote,
+                        "rates": [float(rate_a), float(rate_b)], "converted_amounts": [float(result_a), float(result_b)],
+                        "difference": float(difference), "hypothetical_only": True, "state_changed": False, "proposal": None})
+
+        # If the user names a conversion target and a different display currency,
+        # calculate both explicitly instead of silently discarding either instruction.
+        display_currency_match = re.search(
+            r"\b(?:show|display|give|report)\s+(?:the\s+)?(?:result|answer|amount|value)\s+in\s+(sgd|singapore dollars?|myr|ringgit|usd|us dollars?|cny|rmb|yuan|eur|euros?|gbp|pounds?|jpy|yen)\b",
+            normalized,
+        )
+        explicit_conversion_match = re.search(
+            r"\b(?:convert|exchange)\s+(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?)\s*(?P<base>myr|rm|ringgit|malaysian ringgit|sgd|s\$|singapore dollars?|usd|us\$|us dollars?|cny|rmb|yuan|eur|euros?|gbp|pounds?|jpy|yen)\s+(?:to|into)\s+(?P<target>myr|rm|ringgit|malaysian ringgit|sgd|s\$|singapore dollars?|usd|us\$|us dollars?|cny|rmb|yuan|eur|euros?|gbp|pounds?|jpy|yen)\b",
+            normalized,
+        )
+        if display_currency_match and explicit_conversion_match:
+            display_aliases = {
+                "sgd": "SGD", "singapore dollar": "SGD", "singapore dollars": "SGD",
+                "myr": "MYR", "ringgit": "MYR", "usd": "USD", "us dollar": "USD", "us dollars": "USD",
+                "cny": "CNY", "rmb": "CNY", "yuan": "CNY", "eur": "EUR", "euro": "EUR", "euros": "EUR",
+                "gbp": "GBP", "pound": "GBP", "pounds": "GBP", "jpy": "JPY", "yen": "JPY",
+            }
+            base = display_aliases.get(explicit_conversion_match.group("base").lower(), explicit_conversion_match.group("base").upper())
+            target = display_aliases.get(explicit_conversion_match.group("target").lower(), explicit_conversion_match.group("target").upper())
+            display = display_aliases.get(display_currency_match.group(1).lower(), display_currency_match.group(1).upper())
+            amount = money(explicit_conversion_match.group("amount").replace(",", ""))
+            if display != target:
+                try:
+                    target_result = self.quote_conversion(amount, base, target)
+                    display_result = self.quote_conversion(target_result["converted_amount"], target, display)
+                    answer = (
+                        f"Your requested conversion is {amount:,.2f} {base} ≈ "
+                        f"{target_result['converted_amount']:,.2f} {target} at {target_result['rate']:.6f} {target} per {base}.\n"
+                        f"You also asked to show the result in {display}: that is approximately "
+                        f"{display_result['converted_amount']:,.2f} {display}, using a separate {target}/{display} reference rate of "
+                        f"{display_result['rate']:.6f}. These are indicative reference-rate estimates, not a transaction quote. No account state changed."
+                    )
+                    return self._result("fx", answer, [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Preserved both the requested conversion target and the different display currency."},
+                        {"step": "CALCULATE", "status": "completed", "detail": "Calculated the requested conversion and then its equivalent in the display currency."},
+                        {"step": "SECURITY", "status": "completed", "detail": "Read-only reference estimates; no proposal or transaction was created."},
+                    ], {"conversion": target_result, "display_conversion": display_result,
+                        "requested_target_currency": target, "display_currency": display,
+                        "state_changed": False, "proposal": None})
+                except (ValueError, KeyError, HTTPError, URLError, TimeoutError, OSError) as exc:
+                    return self._result("fx", f"I understood that you want {base} converted to {target} and displayed in {display}, but I couldn't retrieve both reference rates reliably ({type(exc).__name__}). I won't substitute another pair or invent a result.", [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized the requested target and display currencies."},
+                        {"step": "FX", "status": "blocked", "detail": "At least one required reference rate was unavailable."},
+                    ], {"requested_target_currency": target, "display_currency": display,
+                        "needs_clarification": True, "state_changed": False, "proposal": None})
+
+        # Typo-tolerant FX fast path: simple exchange-rate questions should never depend
+        # on the LLM understanding every word perfectly. Repair small typos, resolve the pair
+        # deterministically, and return a safe reference quote before invoking any planner.
+        fx_action_request = any(k in normalized for k in [
+            "transfer", "send money", "remit", "remittance", "prepare a transfer",
+            "make a transfer", "create a transfer", "set up a transfer",
+        ])
+        fx_all_funds_request = bool(re.search(r"\b(?:all|everything)\b", normalized))
+        family_future_income = (
+            any(k in normalized for k in ["family", "parent", "parents"])
+            and any(k in normalized for k in ["will send", "sends", "send me", "might send", "may send", "could send"])
+            and any(k in normalized for k in ["next month", "later", "tomorrow", "next week", "in a month", "in two weeks"])
+        )
+        # Multi-conversion requests must precede the single-pair FX fast path.
+        multi_fx_text = self.repair_user_text(text).lower()
+        if self.detect_intent(text) == "fx":
+            # Resolve ambiguous source-money words before any fast parser or planner
+            # can silently canonicalize them to USD.
+            ambiguous_bucks_early = bool(re.search(r"\b[0-9][0-9,]*(?:\.[0-9]+)?\s+bucks?\b", multi_fx_text))
+            # A generic "dollars" source remains ambiguous even when the destination
+            # is explicitly named (USD, SGD, MYR, etc.). Only "US dollars"/"US$"
+            # explicitly identifies the source as USD.
+            ambiguous_dollars_early = bool(re.search(
+                r"\b[0-9][0-9,]*(?:\.[0-9]+)?\s+dollars?\s+(?:in|to|into)\s+(?:singapore dollars?|sgd|s\$|malaysian ringgit|ringgit|myr|rm|usd|us\$|us dollars?|cny|rmb|yuan|euros?|eur|pounds?|gbp|yen|jpy|aud|cad|hkd|twd|inr|idr|php|vnd|nzd|chf|sek|nok|dkk|sar|aed|qar|bnd)\b",
+                multi_fx_text,
+            )) and not re.search(r"\b(?:us dollars?|us\$)\s*[0-9]|[0-9][0-9,]*(?:\.[0-9]+)?\s+(?:us dollars?|us\$)\b", multi_fx_text)
+            if ambiguous_bucks_early or ambiguous_dollars_early:
+                word = "'bucks'" if ambiguous_bucks_early else "'dollars'"
+                return self._result(
+                    "fx",
+                    f"Which currency do you mean by {word}—for example, US dollars (USD), Singapore dollars (SGD), or another currency?",
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Detected an ambiguous source currency before conversion parsing."},
+                        {"step": "OBSERVE", "status": "needs_input", "detail": "Asked for clarification rather than assuming a currency."},
+                    ],
+                    {"needs_clarification": True, "state_changed": False, "proposal": None},
+                )
+            # Handle multiple explicit conversions in one request instead of
+            # silently answering only the first pair. Keep this before the
+            # single-conversion parser so each amount/pair is calculated independently.
+            if any(word in multi_fx_text for word in ["convert", "conversion", "convertions", "exchange"]):
+                currency_words = (
+                    r"singapore\s+dollars?|sgd|s\$|malaysian\s+ringgit|ringgit|myr|rm|"
+                    r"us\s+dollars?|usd|us\$|dollars?|dollar|cny|rmb|renminbi|yuan|"
+                    r"eur|euros?|gbp|pounds?|jpy|yen|krw|won|thb|baht|aud|cad|hkd|twd|inr|"
+                    r"idr|php|vnd|nzd|chf|sek|nok|dkk|sar|aed|qar|bnd"
+                )
+                aliases_to_code = {
+                    "singapore dollar": "SGD", "singapore dollars": "SGD", "sgd": "SGD", "s$": "SGD",
+                    "malaysian ringgit": "MYR", "ringgit": "MYR", "myr": "MYR", "rm": "MYR",
+                    "us dollar": "USD", "us dollars": "USD", "usd": "USD", "us$": "USD",
+                    "dollar": "USD", "dollars": "USD", "cny": "CNY", "rmb": "CNY",
+                    "renminbi": "CNY", "yuan": "CNY", "eur": "EUR", "euro": "EUR", "euros": "EUR",
+                    "gbp": "GBP", "pound": "GBP", "pounds": "GBP", "jpy": "JPY", "yen": "JPY",
+                    "krw": "KRW", "won": "KRW", "thb": "THB", "baht": "THB", "aud": "AUD",
+                    "cad": "CAD", "hkd": "HKD", "twd": "TWD", "inr": "INR", "idr": "IDR",
+                    "php": "PHP", "vnd": "VND", "nzd": "NZD", "chf": "CHF", "sek": "SEK",
+                    "nok": "NOK", "dkk": "DKK", "sar": "SAR", "aed": "AED", "qar": "QAR", "bnd": "BND",
+                }
+                multi_pattern = re.compile(
+                    rf"(?P<amount>[0-9][0-9,]*(?:\.[0-9]+)?)\s*"
+                    rf"(?P<base>{currency_words})\s+(?:to|into|in)\s+"
+                    rf"(?P<quote>{currency_words})",
+                    re.I,
+                )
+                requests = []
+                for match in multi_pattern.finditer(multi_fx_text):
+                    base = aliases_to_code.get(match.group("base").lower())
+                    quote = aliases_to_code.get(match.group("quote").lower())
+                    if base and quote and base != quote:
+                        requests.append((money(match.group("amount").replace(",", "")), base, quote))
+                if len(requests) >= 2:
+                    results = []
+                    lines = []
+                    try:
+                        for amount, base, quote in requests:
+                            conversion = self.quote_conversion(amount, base, quote)
+                            results.append(conversion)
+                            lines.append(
+                                f"{amount:,.2f} {base} ≈ {conversion['converted_amount']:,.2f} {quote} "
+                                f"(1 {base} = {conversion['rate']:.6f} {quote})"
+                            )
+                    except (ValueError, KeyError, HTTPError, URLError, TimeoutError, OSError) as exc:
+                        return self._result(
+                            "fx",
+                            f"I identified multiple conversions, but couldn't retrieve a reliable quote for every pair ({type(exc).__name__}). I won't provide a partial set of results that could be misleading. No account state was changed.",
+                            [{"step": "UNDERSTAND", "status": "completed", "detail": "Detected multiple explicit currency conversions."},
+                             {"step": "FX", "status": "blocked", "detail": "At least one requested pair could not be quoted reliably."}],
+                            {"needs_clarification": True, "state_changed": False, "proposal": None},
+                        )
+                    answer = "Here are both conversions using indicative reference rates:\n" + "\n".join(lines)
+                    answer += "\nRates may differ from your bank's rate and exclude fees. These are calculations only; no proposal or transaction was created."
+                    return self._result(
+                        "fx", answer,
+                        [{"step": "UNDERSTAND", "status": "completed", "detail": f"Recognized {len(results)} separate conversion requests."},
+                         {"step": "FX", "status": "completed", "detail": "Quoted each requested currency pair independently."},
+                         {"step": "SECURITY", "status": "completed", "detail": "Read-only conversions; no proposal or transaction was created."}],
+                        {"conversions": results, "state_changed": False, "proposal": None},
+                    )
+            requested_pair = self.extract_conversion_pair(text)
+        if self.detect_intent(text) == "fx" and not (fx_action_request or fx_all_funds_request or family_future_income):
+            try:
+                repaired = self.repair_user_text(text)
+                pair = self.extract_conversion_pair(repaired)
+                generic_amount = self.extract_generic_currency_amount(repaired)
+                if pair:
+                    base, quote = pair
+                    amount = generic_amount[0] if generic_amount else money(1)
+                    conv = self.quote_conversion(amount, base, quote)
+                    rate_date = conv.get("fx", {}).get("rate_date") or "date unavailable"
+                    source = conv.get("fx", {}).get("source", "reference source")
+                    answer = (
+                        f"The current reference rate is 1 {base} = {conv['rate']:.6f} {quote} "
+                        f"(rate date {rate_date}). "
+                        f"{amount:,.2f} {base} is approximately {conv['converted_amount']:,.2f} {quote}. "
+                        f"Source: {source}. This is an indicative reference rate, not a guaranteed bank quote."
+                    )
+                    return self._result(
+                        "fx",
+                        answer,
+                        [
+                            {"step": "UNDERSTAND", "status": "completed", "detail": f"Recognized FX request after typo normalization: {base}→{quote}."},
+                            {"step": "OBSERVE", "status": "completed", "detail": f"Retrieved the deterministic {base}/{quote} reference rate."},
+                            {"step": "CALCULATE", "status": "completed", "detail": f"Calculated the indicative conversion for {amount:,.2f} {base}."},
+                        ],
+                        {"conversion": conv, "input_normalized": repaired, "state_changed": False, "proposal": None},
+                    )
+            except (ValueError, HTTPError, URLError, TimeoutError, OSError, KeyError, TypeError) as exc:
+                # Do not crash on malformed/unsupported FX wording. Let the normal
+                # planner explain the issue rather than returning a server error.
+                pass
+
+        # Deterministic savings-goal reasoning must take priority over the
+        # general planner. Parse explicit figures here so an LLM response cannot
+        # override the arithmetic or swallow a local-planner parsing exception.
+        savings_signal = any(k in normalized for k in [
+            "save enough", "can i save", "savings goal", "target savings",
+            "what if my expenses", "expenses increase by",
+        ])
+        if savings_signal:
+            start_match = re.search(r"\b(?:have|currently have|start with|starting with)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s+(?:in\s+)?(?:my\s+)?savings", normalized, re.I)
+            income_match = re.search(r"\b(?:receive|earn|income is|income of)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:per|a)\s+month", normalized, re.I)
+            expenses_match = re.search(r"\b(?:spend|expenses are|expenses of|spending is)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:per|a)\s+month", normalized, re.I)
+            target_match = re.search(r"\b(?:target|reach|have|save up to|save)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s+in\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+months?", normalized, re.I)
+            ctx = getattr(self, "_agent_scenario_context", {})
+            prior_plan = ctx.get("savings_goal_plan")
+            increase_match = re.search(r"\b(?:expenses|spending)\s+(?:increase|go up|rise)\s+by\s+(?:sgd|s\$)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:per|a)\s+month", normalized, re.I)
+            if start_match and income_match and expenses_match and target_match:
+                month_words = {"one":1,"two":2,"three":3,"four":4,"five":5,"six":6,"seven":7,"eight":8,"nine":9,"ten":10}
+                plan = {
+                    "starting": Decimal(start_match.group(1).replace(",", "")),
+                    "income": Decimal(income_match.group(1).replace(",", "")),
+                    "expenses": Decimal(expenses_match.group(1).replace(",", "")),
+                    "target": Decimal(target_match.group(1).replace(",", "")),
+                    "months": int(target_match.group(2)) if target_match.group(2).isdigit() else month_words[target_match.group(2).lower()],
+                }
+                ctx["savings_goal_plan"] = plan
+                self._agent_scenario_context = ctx
+                monthly = money(plan["income"] - plan["expenses"])
+                projected = money(plan["starting"] + monthly * plan["months"])
+                shortfall = money(max(Decimal("0"), plan["target"] - projected))
+                surplus = money(max(Decimal("0"), projected - plan["target"]))
+                return self._result(
+                    "savings_projection",
+                    f"Savings projection over {plan['months']} months, using your stated figures:\n"
+                    f"- Starting savings: SGD {plan['starting']:,.2f}\n"
+                    f"- Monthly income: SGD {plan['income']:,.2f}\n"
+                    f"- Monthly expenses: SGD {plan['expenses']:,.2f}\n"
+                    f"- Monthly savings: SGD {monthly:,.2f}\n"
+                    f"- Projected savings: SGD {projected:,.2f}\n"
+                    f"- Target: SGD {plan['target']:,.2f}\n"
+                    + (f"You are projected to fall short by SGD {shortfall:,.2f}.\n" if shortfall else f"You are projected to meet or exceed the target by SGD {surplus:,.2f}.\n")
+                    + "Assumes income and expenses stay constant; excludes interest, fees, emergencies, and unlisted costs. Read-only scenario; no account balances changed.",
+                    [
+                        {"step":"UNDERSTAND","status":"completed","detail":"Recognized a savings goal and time horizon."},
+                        {"step":"OBSERVE","status":"completed","detail":"Used amounts explicitly supplied by the user."},
+                        {"step":"CALCULATE","status":"completed","detail":f"Monthly savings SGD {monthly:,.2f}; projected savings SGD {projected:,.2f}."},
+                        {"step":"SECURITY","status":"completed","detail":"Read-only calculation; no proposal or transaction created."},
+                    ],
+                    {"starting_savings_sgd":float(plan["starting"]),"monthly_income_sgd":float(plan["income"]),"monthly_expenses_sgd":float(plan["expenses"]),"monthly_surplus_sgd":float(monthly),"months":plan["months"],"target_savings_sgd":float(plan["target"]),"projected_savings_sgd":float(projected),"shortfall_sgd":float(shortfall),"surplus_sgd":float(surplus),"state_changed":False,"proposal":None},
+                )
+            if prior_plan and increase_match:
+                increase = Decimal(increase_match.group(1).replace(",", ""))
+                adjusted_expenses = money(prior_plan["expenses"] + increase)
+                monthly = money(prior_plan["income"] - adjusted_expenses)
+                projected = money(prior_plan["starting"] + monthly * prior_plan["months"])
+                shortfall = money(max(Decimal("0"), prior_plan["target"] - projected))
+                surplus = money(max(Decimal("0"), projected - prior_plan["target"]))
+                return self._result(
+                    "savings_projection",
+                    f"Updated projection with monthly expenses increased by SGD {increase:,.2f}:\n"
+                    f"- Monthly expenses: SGD {adjusted_expenses:,.2f}\n"
+                    f"- Monthly savings: SGD {monthly:,.2f}\n"
+                    f"- Projected savings after {prior_plan['months']} months: SGD {projected:,.2f}\n"
+                    f"- Target: SGD {prior_plan['target']:,.2f}\n"
+                    + (f"You are projected to fall short by SGD {shortfall:,.2f}." if shortfall else f"You are projected to meet or exceed the target by SGD {surplus:,.2f}."),
+                    [
+                        {"step":"UNDERSTAND","status":"completed","detail":"Applied the expense change to the remembered savings scenario."},
+                        {"step":"CALCULATE","status":"completed","detail":f"Updated monthly savings to SGD {monthly:,.2f}; projected savings SGD {projected:,.2f}."},
+                        {"step":"SECURITY","status":"completed","detail":"Read-only scenario; no balances changed."},
+                    ],
+                    {"starting_savings_sgd":float(prior_plan["starting"]),"monthly_income_sgd":float(prior_plan["income"]),"monthly_expenses_sgd":float(adjusted_expenses),"monthly_surplus_sgd":float(monthly),"months":prior_plan["months"],"target_savings_sgd":float(prior_plan["target"]),"projected_savings_sgd":float(projected),"shortfall_sgd":float(shortfall),"surplus_sgd":float(surplus),"state_changed":False,"proposal":None},
+                )
+
+        # Money-moving requests must carry an explicit MYR amount before they
+        # reach either planner. Otherwise a planner could infer an amount from a
+        # forecast or saved wallet, which is not user authorization.
+        early_intent = self.detect_intent(text)
+        normalized_request = self.repair_user_text(text).lower()
+        planning_or_advice_request = any(
+            phrase in normalized_request
+            for phrase in [
+                "should i", "should we", "which currency", "which is better",
+                "what is the best", "best way", "recommend", "how should i",
+                "how should we", "compare", "what would be better",
+            ]
+        )
+        explicit_currency_amount = (
+            self.extract_generic_currency_amount(text)
+            or self.extract_sgd_amount(text)
+            or self.extract_myr_amount(text)
+        )
+        if (
+            early_intent == "transfer"
+            and explicit_currency_amount is None
+            and not planning_or_advice_request
+        ):
+            return self._result(
+                "agentic_local",
+                "I need the exact MYR amount before preparing a transfer. Please specify it explicitly, for example: “Prepare a RM5,000 transfer to SGD.” No proposal or transaction was created.",
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a transfer request without an explicit MYR amount."},
+                    {"step": "SECURITY", "status": "blocked", "detail": "Prevented either planner from inferring a transaction amount from forecasts or wallet balances."},
+                ],
+                {
+                    "blocked_reason": "implicit_transaction_amount",
+                    "state_changed": False,
+                    "proposal": None,
+                    "agent_mode": "deterministic_amount_safety_gate",
+                },
+            )
+
+        # v5: optional LLM tool-calling planner. The deterministic engine remains the
+        # fallback and the authority for calculations, policy and execution.
+        try:
+            from .agent import AgentOrchestrator
+            llm_result = AgentOrchestrator(self).run(text)
+            if llm_result is not None:
+                return llm_result
+        except Exception:
+            pass
+
+        # Offline local planner: enables genuine multi-step tool selection without an external API.
+        try:
+            from .local_agent import LocalAgentPlanner
+            local_result = LocalAgentPlanner(self).run(text)
+            if local_result is not None:
+                return local_result
+        except Exception:
+            pass
+
+        intent = self.detect_intent(text)
+        trace = []
+        trace.append({"step": "UNDERSTAND", "status": "completed", "detail": f"Detected intent: {intent}"})
+
+        if intent == "balance":
+            b = self.get_balance()
+            trace.append({"step": "OBSERVE", "status": "completed", "detail": "Retrieved MYR and SGD balances."})
+            answer = f"You currently have RM{b['MYR']:,.2f} and S${b['SGD']:,.2f} in the demo accounts."
+            return self._result(intent, answer, trace, {"balances": b})
+
+        if intent == "transactions":
+            tx = self.get_transactions()
+            trace.append({"step": "OBSERVE", "status": "completed", "detail": "Retrieved recent transaction history."})
+            answer = "Here are your latest transactions: " + "; ".join(f"{x['description']} {x['from_currency']}{float(x['amount']):,.2f}" for x in tx[:6])
+            return self._result(intent, answer, trace, {"transactions": tx})
+
+        if intent == "spending":
+            data = self.spending_analysis()
+            trace.append({"step": "OBSERVE", "status": "completed", "detail": f"Grouped the user's monthly spending plan in {data.get('currency','SGD')}."})
+            top = data["categories"][0] if data["categories"] else None
+            cur = data.get("currency", "SGD")
+            answer = f"Your planned monthly spending is {cur}{data['total_planning']:,.2f}."
+            if top:
+                answer += f" Your largest category is {top['category']} at {cur}{top['amount_planning']:,.2f} ({top['share']:.1f}%)."
+            return self._result(intent, answer, trace, {"spending": data})
+
+        if intent == "forecast":
+            f = self.forecast()
+            trace += [
+                {"step": "OBSERVE", "status": "completed", "detail": f"Retrieved balance, income and obligations in {f.get('planning_currency','SGD')}."},
+                {"step": "REASON", "status": "completed", "detail": "Calculated the 30-day projected liquidity in the selected planning currency."},
+            ]
+            cur = f.get("planning_currency", "SGD")
+            if f["shortfall_sgd"] > 0:
+                answer = f"Your 30-day projection shows a {cur}{f['shortfall_planning']:,.2f} funding gap. Projected balance after obligations is {cur}{f['projected_balance_planning']:,.2f}."
+            else:
+                answer = f"Your 30-day projection is healthy, with {cur}{f['projected_balance_planning']:,.2f} remaining after expected income, living costs and obligations."
+            return self._result(intent, answer, trace, {"forecast": f})
+
+        if intent == "fx":
+            fx_text = self.repair_user_text(text).lower()
+
+            # A destination-only request such as "change my money to USD"
+            # needs the source currency and amount before a meaningful quote.
+            destination_only = re.search(r"\b(?:to|into)\s+(usd|sgd|myr|cny|rmb|yuan|eur|gbp|aud|cad|jpy|krw|thb|hkd|twd|inr)\b", fx_text)
+            has_amount = bool(self.extract_generic_currency_amount(text) or self.extract_sgd_amount(text) or self.extract_myr_amount(text))
+            if destination_only and not requested_pair and not has_amount:
+                target = destination_only.group(1).upper()
+                if target in {"RMB", "YUAN"}:
+                    target = "CNY"
+                answer = f"I can help estimate a conversion into {target}. Which currency are you starting from, and how much would you like to convert? I'll show a reference-rate estimate first; no proposal or transaction will be created unless you explicitly request the appropriate next step."
+                return self._result("fx", answer, [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": f"Recognized {target} as the requested destination currency."},
+                    {"step": "OBSERVE", "status": "needs_input", "detail": "Source currency and amount are missing."},
+                    {"step": "SECURITY", "status": "completed", "detail": "Clarification only; no proposal or transaction was created."},
+                ], {"target_currency": target, "needs_clarification": True, "state_changed": False, "proposal": None})
+            # Do not silently fall back to the demo MYR/SGD pair when the user
+            # asks for a rate without identifying both currencies.
+            vague_rate_request = any(k in fx_text for k in [
+                "best exchange rate", "exchange rate right now", "current exchange rate",
+                "today's exchange rate", "todays exchange rate", "current rate",
+            ])
+            ambiguous_bucks = "buck" in fx_text and not any(
+                code in fx_text for code in ["usd", "us$", "sgd", "myr", "aud", "cad"]
+            )
+            # A destination such as "Singapore dollars" does not disambiguate
+            # a source amount written only as "dollars".
+            ambiguous_dollars_source = bool(re.search(
+                r"\b[0-9][0-9,]*(?:\.[0-9]+)?\s+dollars?\s+(?:in|to|into)\s+(?:singapore dollars?|sgd|s\$)\b",
+                fx_text,
+            )) and not any(code in fx_text for code in ["usd", "us$", "myr", "aud", "cad", "eur", "gbp"])
+            ambiguous_currency_word = ambiguous_bucks or ambiguous_dollars_source
+            if ambiguous_currency_word or (not requested_pair and vague_rate_request):
+                if ambiguous_currency_word:
+                    currency_word = "'bucks'" if ambiguous_bucks else "'dollars'"
+                    question = f"Which currency do you mean by {currency_word}—for example, US dollars (USD), Singapore dollars (SGD), or another currency?"
+                else:
+                    question = "Which two currencies should I compare? I need the source and target currencies to retrieve the correct current reference rate."
+                return self._result("fx", question, [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Detected that the requested currency pair is not specified."},
+                    {"step": "OBSERVE", "status": "needs_input", "detail": "Asked for the missing currency information instead of assuming the default pair."},
+                ], {"needs_clarification": True, "state_changed": False, "proposal": None})
+            # RMB/Yuan/CNY without a source/target pair is ambiguous. Never
+            # silently substitute the app's default MYR-to-SGD quote.
+            fx_text = self.repair_user_text(text).lower()
+            requested_pair = self.extract_conversion_pair(text)
+            if any(k in fx_text for k in ["rmb", "yuan", "renminbi", "cny"]) and not requested_pair:
+                answer = "Yes, I can help estimate an RMB (CNY) exchange. Which direction do you mean—RMB to SGD, RMB to MYR, or another currency? If you want a conversion calculation, tell me the amount too. I haven't created a proposal or transaction."
+                return self._result("fx", answer, [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized RMB/CNY as the requested currency."},
+                    {"step": "OBSERVE", "status": "needs_input", "detail": "Source/target currency pair and amount were not specified."},
+                    {"step": "SECURITY", "status": "completed", "detail": "Clarification only; no proposal or transaction was created."},
+                ], {"requested_currency": "CNY", "needs_clarification": True, "state_changed": False, "proposal": None})
+            # A rate-only cross-currency question (e.g. "rate of MYR to RMB")
+            # must quote the requested pair, never fall back to the default MYR/SGD rate.
+            if requested_pair:
+                pair_base, pair_quote = requested_pair
+                aliases = {"RMB": "CNY", "YUAN": "CNY", "RENMINBI": "CNY"}
+                pair_base = aliases.get(pair_base.upper(), pair_base.upper())
+                pair_quote = aliases.get(pair_quote.upper(), pair_quote.upper())
+                has_any_amount = bool(self.extract_generic_currency_amount(text) or self.extract_sgd_amount(text) or self.extract_myr_amount(text))
+                if not has_any_amount:
+                    try:
+                        pair_quote_result = self.quote_conversion(1, pair_base, pair_quote)
+                        rate_date = pair_quote_result["fx"].get("rate_date")
+                        rate_note = f"rate date {rate_date}" if rate_date else "rate date unavailable"
+                        answer = (
+                            f"The current reference rate is 1 {pair_base} = "
+                            f"{pair_quote_result['rate']:.6f} {pair_quote} ({pair_quote_result['fx'].get('source', 'reference source')}, {rate_note}). "
+                            "This is an indicative reference rate; your bank or exchange provider may use a different rate or charge fees."
+                        )
+                        trace.append({"step": "OBSERVE", "status": "completed", "detail": f"Retrieved the requested {pair_base}/{pair_quote} reference pair."})
+                        trace.append({"step": "CALCULATE", "status": "completed", "detail": f"Returned the unit rate for {pair_base} to {pair_quote}."})
+                        return self._result("fx", answer, trace, {"conversion": pair_quote_result, "state_changed": False, "proposal": None})
+                    except (ValueError, KeyError) as exc:
+                        return self._result("fx", f"I recognized {pair_base} to {pair_quote}, but couldn't retrieve a reliable reference rate for that pair: {exc}. I won't substitute a different currency pair.", trace, {"requested_pair": [pair_base, pair_quote], "needs_clarification": True, "state_changed": False, "proposal": None})
+            q = self.refresh_fx()
+            trace.append({"step": "OBSERVE", "status": "completed", "detail": f"Retrieved MYR/SGD reference rate from {q['source']}."})
+            freshness = f"rate date {q['rate_date']}" if q.get('rate_date') else "rate date unavailable"
+            status = "live reference data" if q.get("live") else "fallback/last-known data"
+            sgd_amount = self.extract_sgd_amount(text)
+            myr_amount = self.extract_myr_amount(text)
+            pair = self.extract_conversion_pair(text)
+            generic_amount = self.extract_generic_currency_amount(text)
+            if pair and generic_amount:
+                amount_generic, generic_currency = generic_amount
+                base, quote = pair
+                # Prefer the explicit amount currency when the pair was stated as text.
+                if generic_currency != base and generic_currency in {base, "RMB", "YUAN"}:
+                    base = generic_currency
+                if base == "RMB": base = "CNY"
+                if quote == "RMB": quote = "CNY"
+                try:
+                    conv = self.quote_conversion(amount_generic, base, quote)
+                    trace.append({"step":"CALCULATE","status":"completed","detail":f"Converted {amount_generic:,.2f} {base} to approximately {conv['converted_amount']:,.2f} {quote} using the selected reference rate."})
+                    freshness = f"rate date {conv['fx'].get('rate_date')}" if conv['fx'].get('rate_date') else "rate date unavailable"
+                    answer = (f"At the current reference rate, 1 {base} = {conv['rate']:.6f} {quote} ({freshness}), "
+                              f"{amount_generic:,.2f} {base} is approximately {conv['converted_amount']:,.2f} {quote}. "
+                              f"Source: {conv['fx']['source']}. This excludes bank/remittance spreads or fees.")
+                    return self._result(intent, answer, trace, {"conversion": conv})
+                except ValueError as exc:
+                    return self._result(intent, str(exc), trace)
+            if sgd_amount is not None and any(k in text.lower() for k in ["how much myr", "myr do i need", "sgd to myr", "convert sgd to myr"]):
+                required_myr = money(sgd_amount * Decimal(str(q["inverse_rate_sgd_myr"])))
+                trace.append({"step": "CALCULATE", "status": "completed", "detail": f"Converted S${sgd_amount:,.2f} to approximately RM{required_myr:,.2f}."})
+                answer = f"At the {status} reference rate of 1 MYR = S${q['rate']:.4f} ({freshness}), S${sgd_amount:,.2f} is approximately RM{required_myr:,.2f}. This excludes any bank/remittance spread or fees."
+                return self._result(intent, answer, trace, {"fx": q, "conversion": {"sgd": float(sgd_amount), "myr": float(required_myr)}})
+            if myr_amount is not None and any(k in text.lower() for k in ["how much sgd", "sgd do i get", "myr to sgd", "convert myr to sgd"]):
+                converted_sgd = money(myr_amount * Decimal(str(q["rate"])))
+                trace.append({"step": "CALCULATE", "status": "completed", "detail": f"Converted RM{myr_amount:,.2f} to approximately S${converted_sgd:,.2f}."})
+                answer = f"At the {status} reference rate of 1 MYR = S${q['rate']:.4f} ({freshness}), RM{myr_amount:,.2f} is approximately S${converted_sgd:,.2f}. This excludes any bank/remittance spread or fees."
+                return self._result(intent, answer, trace, {"fx": q, "conversion": {"myr": float(myr_amount), "sgd": float(converted_sgd)}})
+            answer = f"The reference rate for MYR to SGD is 1 MYR = S${q['rate']:.4f} ({status}, {freshness}). In the reverse direction, SGD to MYR uses the reciprocal reference rate. RM1,000 would convert to approximately SGD S${q['example_sgd']:,.2f}. This is a reference/mid-market rate, not a guaranteed bank quote."
+            return self._result(intent, answer, trace, {"fx": q})
+
+        if intent == "transfer":
+            amount = self.extract_myr_amount(text)
+            if amount is None:
+                return self._result(
+                    intent,
+                    "I can prepare a MYR-to-SGD transfer only when you explicitly state the MYR amount. If you mean to remit SGD or another currency, tell me the source account and amount so I can plan that route without guessing. No proposal or transaction was created.",
+                    trace,
+                    {
+                        "blocked_reason": "missing_explicit_myr_amount",
+                        "state_changed": False,
+                        "proposal": None,
+                    },
+                )
+            risk = self.risk_check(amount, text)
+            trace.append({"step": "SECURITY", "status": "completed" if risk["status"] != "BLOCKED" else "blocked", "detail": f"Risk status: {risk['status']}"})
+            if risk["status"] == "BLOCKED":
+                return self._result(intent, "I blocked that transfer because it violates a safety policy: " + " ".join(risk["reasons"]), trace, {"risk": risk})
+            proposal = self.create_proposal(amount, text)
+            trace.append({"step": "AUTHORIZE", "status": "required", "detail": "Level 2 explicit user authorization is required."})
+            answer = f"I prepared a sandbox conversion of RM{amount:,.2f} to approximately S${proposal['amount_sgd']:,.2f}. I will not execute it until you explicitly authorize it."
+            return self._result(intent, answer, trace, {"proposal": proposal, "risk": risk})
+
+        if intent == "affordability":
+            f = self.forecast()
+            trace += [
+                {"step": "OBSERVE", "status": "completed", "detail": "Retrieved balances, income, living costs and obligations."},
+                {"step": "REASON", "status": "completed", "detail": "Forecasted 30-day liquidity."},
+            ]
+            cur = f.get("planning_currency", "SGD")
+            if f["shortfall_sgd"] <= 0:
+                answer = f"Yes. Your 30-day projected balance after obligations is {cur}{f['projected_balance_planning']:,.2f}; no conversion is currently required."
+                return self._result(intent, answer, trace, {"forecast": f})
+            if cur != "SGD":
+                answer = (f"Your 30-day projection shows a {cur}{f['shortfall_planning']:,.2f} funding gap. "
+                          "BorderWise will not force a MYR→SGD action when your planning currency is different; use the any-currency conversion tool to choose the funding pair you actually want.")
+                trace.append({"step": "RECOMMEND", "status": "completed", "detail": "Identified a funding gap but left conversion direction to the user because the planning currency is not SGD."})
+                return self._result(intent, answer, trace, {"forecast": f})
+            q = self.refresh_fx()
+            amount = money(Decimal(str(f["shortfall_sgd"])) / Decimal(str(q["rate"])))
+            risk = self.risk_check(amount, "tuition and essential student obligations")
+            trace += [
+                {"step": "RECOMMEND", "status": "completed", "detail": f"Calculated RM{amount:,.2f} MYR→SGD using the refreshed reference rate {q['rate']:.4f}."},
+                {"step": "SECURITY", "status": "completed" if risk["status"] != "BLOCKED" else "blocked", "detail": f"Risk status: {risk['status']}"},
+            ]
+            answer = (
+                f"You have a projected S${f['shortfall_sgd']:,.2f} shortfall over 30 days. "
+                f"I recommend converting approximately RM{amount:,.2f} to SGD at the current reference rate of {q['rate']:.4f}, "
+                f"while preserving your RM{self.state['emergency_reserve_myr']:,.2f} emergency reserve."
+            )
+            proposal = self.create_proposal(amount, "tuition and essential student obligations")
+            trace.append({"step": "AUTHORIZE", "status": "required", "detail": "Level 2 authorization required before execution."})
+            return self._result(intent, answer, trace, {"forecast": f, "proposal": proposal, "risk": risk})
+
+        if intent == "help":
+            return self._result(intent, "I can analyze balances, forecast cash flow, analyze spending, compare FX, prepare transfers, enforce risk limits, require authorization, execute sandbox transactions, verify them and maintain an audit trail.", trace)
+
+        return self._result(
+            intent,
+            "I can help with balances, spending, cash-flow forecasts, FX, transfers, tuition affordability and transaction history. Try: “How much can I safely spend?”, “Will I run out of SGD?”, or “Prepare a RM5,000 transfer.”",
+            trace,
+        )
+
+    def _result(self, intent: str, answer: str, trace: list[dict[str, Any]], data: dict[str, Any] | None = None) -> dict[str, Any]:
+        return {"intent": intent, "answer": answer, "trace": trace, "data": data or {}, "state": self.snapshot()}
+
+    @_state_locked
+    def snapshot(self, refresh_fx: bool = False) -> dict[str, Any]:
+        f = self.forecast()
+        q = self.refresh_fx() if refresh_fx else self.fx_quote()
+        return {
+            "balances": self.get_balance(),
+            "currency_overview": self.currency_overview(),
+            "profile": self.get_profile(),
+            "forecast": f,
+            "spending": self.spending_analysis(),
+            "health": self.health_analysis(),
+            "fx": q,
+            "obligations": self.get_obligations(),
+            "audit": self.audit_log(),
+        }
+ symbol—US dollars (USD), "
+                "Singapore dollars (SGD), Australian dollars (AUD), Canadian dollars (CAD), or another currency? "
+                "I have not created a proposal or transaction."
             )
             return self._result(
                 "fx",

@@ -2376,6 +2376,71 @@ class FinanceEngine:
                 contextual_proposal_id = candidate_id
                 contextual_proposal = candidate
 
+        # A direct replay request must be resolved against the immediately shown
+        # proposal before the generic planner asks for an amount or considers any
+        # transaction action. The proposal store, not client history, is authoritative.
+        execution_replay_request = (
+            bool(re.search(
+                r"\b(?:execute|run|process|repeat|replay)\b.*\b(?:again|same|previous|already)\b",
+                current_lower,
+            ))
+            and bool(re.search(r"\b(?:transfer|transaction|proposal|conversion|payment)\b", current_lower))
+        ) or bool(re.search(r"\b(?:do|run)\s+(?:that|it)\s+again\b", current_lower))
+
+        if execution_replay_request:
+            if not contextual_proposal or not contextual_proposal_id:
+                return self._result(
+                    "agentic_local",
+                    "I couldn't verify which earlier transaction you mean from the immediately preceding reply. "
+                    "I have not executed anything again. Please check the transaction history; I won't select a transaction from unrelated history.",
+                    [{"step": "UNDERSTAND", "status": "completed", "detail": "Detected a request to replay a previous transaction."},
+                     {"step": "SECURITY", "status": "blocked", "detail": "No trusted contextual proposal reference was available; no transaction was executed."}],
+                    {"blocked_reason": "missing_contextual_proposal", "state_changed": False, "proposal": None},
+                )
+
+            proposal_status = str(contextual_proposal.get("status", "unknown")).upper()
+            if proposal_status == "EXECUTED":
+                transaction_id = contextual_proposal.get("transaction_id")
+                if not transaction_id:
+                    transaction = next(
+                        (
+                            item for item in reversed(self.state.get("transactions", []))
+                            if item.get("proposal_id") == contextual_proposal_id
+                            or item.get("id") == contextual_proposal.get("transaction_id")
+                        ),
+                        None,
+                    )
+                    transaction_id = (transaction or {}).get("id", "the original transaction")
+                return self._result(
+                    "agentic_local",
+                    f"I blocked the replay. Proposal {contextual_proposal_id} was already executed as {transaction_id} and cannot be executed again. "
+                    "No new transaction was created and no balances changed.",
+                    [{"step": "UNDERSTAND", "status": "completed", "detail": "Matched the replay request to the previously displayed proposal."},
+                     {"step": "OBSERVE", "status": "completed", "detail": f"Verified proposal status is {proposal_status}."},
+                     {"step": "SECURITY", "status": "blocked", "detail": "Prevented transaction replay; the existing execution remains unchanged."}],
+                    {"blocked_reason": "transaction_replay_prevented", "proposal": contextual_proposal,
+                     "existing_transaction_id": transaction_id, "state_changed": False, "proposal_reused": False},
+                )
+
+            if proposal_status == "PENDING_AUTHORIZATION":
+                return self._result(
+                    "agentic_local",
+                    f"Proposal {contextual_proposal_id} is still awaiting authorization. I did not execute it. Review and authorize the pending proposal through the required authorization flow first.",
+                    [{"step": "UNDERSTAND", "status": "completed", "detail": "Matched the execution request to the immediately displayed proposal."},
+                     {"step": "SECURITY", "status": "blocked", "detail": "Direct execution cannot bypass pending authorization."}],
+                    {"blocked_reason": "proposal_still_pending", "proposal": contextual_proposal,
+                     "state_changed": False, "proposal_reused": False},
+                )
+
+            return self._result(
+                "agentic_local",
+                f"Proposal {contextual_proposal_id} is in status {proposal_status}. I will not replay or execute it again through a chat shortcut. No new transaction was created.",
+                [{"step": "UNDERSTAND", "status": "completed", "detail": "Matched the replay request to the immediately displayed proposal."},
+                 {"step": "SECURITY", "status": "blocked", "detail": f"Proposal status {proposal_status} does not permit replay."}],
+                {"blocked_reason": "proposal_not_replayable", "proposal": contextual_proposal,
+                 "state_changed": False, "proposal_reused": False},
+            )
+
         repeat_proposal_request = bool(re.search(
             r"\b(?:prepare|create|show|repeat)\b.*\b(?:exactly\s+the\s+same|same|again|repeat)\b.*"
             r"\b(?:transfer|proposal|conversion)\b|\bprepare\s+exactly\s+the\s+same\s+"

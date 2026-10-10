@@ -754,8 +754,65 @@ class LocalAgentPlanner:
             },
         )
 
-    def run(self, text: str) -> dict[str, Any] | None:
+    def _scenario_context_from_history(
+        self, conversation_history: list[dict[str, Any]] | None
+    ) -> dict[str, Any]:
+        """Rebuild hypothetical context from this conversation's user turns only.
+
+        Client-supplied history is not trusted financial state. It is used only to
+        recover explicitly stated scenario inputs; balances and policy still come
+        from the engine, and proposal authorization is validated separately.
+        """
+        context: dict[str, Any] = {}
+        for turn in (conversation_history or [])[-50:]:
+            if not isinstance(turn, dict) or turn.get("role") != "user":
+                continue
+            raw_text = turn.get("content")
+            if not isinstance(raw_text, str):
+                continue
+
+            wallet = self._extract_wallet_balances_from_text(raw_text)
+            if wallet:
+                context["wallet_balances"] = dict(wallet)
+
+            normalized = self.engine.repair_user_text(raw_text).lower().strip()
+            savings_start = re.search(
+                r'\b(?:have|currently have|start with|starting with)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s+(?:in )?(?:my )?savings',
+                normalized, re.I,
+            )
+            savings_income = re.search(
+                r'\b(?:receive|earn|income is|income of)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:per|a)\s+month',
+                normalized, re.I,
+            )
+            savings_expenses = re.search(
+                r'\b(?:spend|expenses are|expenses of|spending is)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:per|a)\s+month',
+                normalized, re.I,
+            )
+            savings_target = re.search(
+                r'\b(?:target|reach|have|save up to|save)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s+in\s+(\d+)\s+months?',
+                normalized, re.I,
+            )
+            if (
+                savings_start and savings_income and savings_expenses and savings_target
+                and any(k in normalized for k in ["save enough", "can i save", "savings goal", "target savings"])
+            ):
+                context["savings_goal_plan"] = {
+                    "starting": Decimal(savings_start.group(1).replace(",", "")),
+                    "income": Decimal(savings_income.group(1).replace(",", "")),
+                    "expenses": Decimal(savings_expenses.group(1).replace(",", "")),
+                    "target": Decimal(savings_target.group(1).replace(",", "")),
+                    "months": int(savings_target.group(2)),
+                }
+        return context
+
+    def run(self, text: str, conversation_history: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
         t = self.engine.repair_user_text(text).lower().strip()
+        history_scoped = conversation_history is not None
+        remembered_context = (
+            self._scenario_context_from_history(conversation_history)
+            if history_scoped
+            else getattr(self.engine, "_agent_scenario_context", {})
+        )
         # Basic identity questions should receive a direct conversational answer,
         # not the generic finance-capabilities fallback.
         if any(k in t for k in [
@@ -779,17 +836,18 @@ class LocalAgentPlanner:
         savings_target = re.search(r'\b(?:target|reach|have|save up to|save)\s+(?:sgd|s\$)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s+in\s+(\d+)\s+months?', t, re.I)
         if savings_start and savings_income and savings_expenses and savings_target and any(k in t for k in ['save enough', 'can i save', 'savings goal', 'target savings']):
             plan = {'starting': Decimal(savings_start.group(1).replace(',', '')), 'income': Decimal(savings_income.group(1).replace(',', '')), 'expenses': Decimal(savings_expenses.group(1).replace(',', '')), 'target': Decimal(savings_target.group(1).replace(',', '')), 'months': int(savings_target.group(2))}
-            self.engine._agent_scenario_context['savings_goal_plan'] = plan
+            if not history_scoped:
+                self.engine._agent_scenario_context['savings_goal_plan'] = plan
             return self._savings_goal_result(plan)
-        remembered_plan = getattr(self.engine, '_agent_scenario_context', {}).get('savings_goal_plan')
+        remembered_plan = remembered_context.get('savings_goal_plan')
         expense_increase = re.search(r'(?:expenses|spending)\s+(?:increase|go up|rise)\s+by\s+(?:sgd|s\$)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:per|a)\s+month', t, re.I)
         if remembered_plan and expense_increase and any(k in t for k in ['what if', 'increase', 'go up', 'rise']):
             return self._savings_goal_result(remembered_plan, Decimal(expense_increase.group(1).replace(',', '')))
-        remembered_context = getattr(self.engine, "_agent_scenario_context", {})
         current_wallet = self._extract_wallet_balances_from_text(t)
         if current_wallet:
             remembered_context["wallet_balances"] = dict(current_wallet)
-            self.engine._agent_scenario_context = remembered_context
+            if not history_scoped:
+                self.engine._agent_scenario_context = remembered_context
         myr = self._amount(t, "MYR")
         sgd = self._amount(t, "SGD")
 

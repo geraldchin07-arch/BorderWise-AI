@@ -4322,7 +4322,7 @@ class FinanceEngine:
         # Offline local planner: enables genuine multi-step tool selection without an external API.
         try:
             from .local_agent import LocalAgentPlanner
-            local_result = LocalAgentPlanner(self).run(text)
+            local_result = LocalAgentPlanner(self).run(text, conversation_history=conversation_history)
             if local_result is not None:
                 return local_result
         except Exception:

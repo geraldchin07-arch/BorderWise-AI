@@ -3545,3 +3545,27 @@ def test_reset_clears_local_agent_hypothetical_context():
     engine.reset()
 
     assert engine._agent_scenario_context == {}
+
+
+def test_api_scenario_context_is_scoped_to_supplied_conversation_history():
+    engine = FinanceEngine()
+    first = engine.agent("I have SGD 5490.", conversation_history=[])
+    assert isinstance(first, dict)
+    assert engine._agent_scenario_context == {}
+
+    history = [
+        {"role": "user", "content": "I have SGD 5490."},
+        {"role": "assistant", "content": first["answer"]},
+    ]
+    follow_up = engine.agent(
+        "My tuition is SGD 6000 due in 3 weeks. Can I afford it?",
+        conversation_history=history,
+    )
+    assert follow_up["data"]["agent_mode"] == "local_agent_planner"
+    assert "5490" in follow_up["answer"] or "5,490" in follow_up["answer"]
+    assert engine._agent_scenario_context == {}
+
+    # A separate chat with no matching history must not inherit that scenario.
+    fresh_chat = engine.agent("Can I afford tuition?", conversation_history=[])
+    assert "5,490" not in fresh_chat["answer"]
+    assert engine._agent_scenario_context == {}

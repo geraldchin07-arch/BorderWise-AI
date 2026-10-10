@@ -3231,8 +3231,24 @@ class FinanceEngine:
                         {"conversion": conv, "input_normalized": repaired, "state_changed": False, "proposal": None},
                     )
             except (ValueError, HTTPError, URLError, TimeoutError, OSError, KeyError, TypeError) as exc:
-                # Do not crash on malformed/unsupported FX wording. Let the normal
-                # planner explain the issue rather than returning a server error.
+                # Once a source/target pair is recognized, a missing quote must stop
+                # here. Passing the request to an LLM planner could turn unavailable
+                # reference data into an unsupported estimate or default-pair answer.
+                if pair:
+                    failed_base, failed_quote = pair
+                    return self._result(
+                        "fx",
+                        f"I recognized {failed_base} to {failed_quote}, but a reliable reference rate is currently unavailable ({type(exc).__name__}). "
+                        "I won't substitute a different currency pair or invent a result. Please retry later or provide a trusted quote.",
+                        [
+                            {"step": "UNDERSTAND", "status": "completed", "detail": f"Recognized the requested {failed_base}/{failed_quote} pair."},
+                            {"step": "FX", "status": "blocked", "detail": "Reference data for the requested pair could not be retrieved."},
+                            {"step": "SECURITY", "status": "completed", "detail": "No fallback pair, proposal, or transaction was used."},
+                        ],
+                        {"requested_pair": [failed_base, failed_quote], "needs_clarification": True, "state_changed": False, "proposal": None},
+                    )
+                # Malformed wording without a recognized pair may still need a
+                # clarification from the offline planner.
                 pass
 
         # Deterministic savings-goal reasoning must take priority over the

@@ -637,6 +637,123 @@ class LocalAgentPlanner:
             {'step': 'CALCULATE', 'status': 'completed', 'detail': f'Monthly surplus SGD {monthly_surplus:,.2f}; projected savings SGD {projected:,.2f}.'},
             {'step': 'SECURITY', 'status': 'completed', 'detail': 'Read-only calculation; no proposal or transaction created.'},
         ], {'starting_savings_sgd': float(starting), 'monthly_income_sgd': float(income), 'monthly_expenses_sgd': float(expenses), 'monthly_surplus_sgd': float(monthly_surplus), 'months': months, 'target_savings_sgd': float(target), 'projected_savings_sgd': float(projected), 'shortfall_sgd': float(gap), 'surplus_sgd': float(extra), 'state_changed': False, 'proposal': None})
+    def explicit_payment_affordability(self, text: str) -> dict[str, Any] | None:
+        """Compare an explicitly stated balance with an explicitly stated foreign-currency payment.
+
+        This is intentionally narrow: it does not use saved tuition, reserve, or
+        forecast values, and it never creates a transfer proposal.
+        """
+        t = self.engine.repair_user_text(str(text or "")).lower().strip()
+        asks_affordability = any(phrase in t for phrase in (
+            "can i afford", "is it affordable", "do i have enough funds",
+            "tell me whether i have enough",
+        ))
+        asks_for_quote = any(phrase in t for phrase in (
+            "exchange rate", "estimate the cost", "cost using", "applicable fees",
+            "after fees", "before fees",
+        ))
+        if not (asks_affordability and asks_for_quote):
+            return None
+
+        balance = self._extract_labeled_amount(t, [
+            "available balance", "i have", "balance",
+        ])
+        payment = self._extract_labeled_amount(t, [
+            "need to pay", "pay", "payment of", "need to cover",
+        ])
+        if not balance or not payment:
+            return self._result(
+                "affordability",
+                "I can check this, but I couldn't confidently match both the available balance and the payment amount to currencies. Please state them as, for example, 'I have SGD 900 and need to pay MYR 1,000.' No proposal or transaction was created.",
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a read-only payment-affordability question."},
+                    {"step": "OBSERVE", "status": "needs_input", "detail": "Could not reliably pair both amounts with currencies."},
+                    {"step": "SECURITY", "status": "completed", "detail": "No proposal or transaction was created."},
+                ],
+                {"needs_clarification": True, "state_changed": False, "proposal": None},
+            )
+
+        balance_amount, balance_currency = balance
+        payment_amount, payment_currency = payment
+        balance_currency = balance_currency.upper()
+        payment_currency = payment_currency.upper()
+        if balance_currency == payment_currency:
+            cost = self.engine.money_value(payment_amount)
+            quote = None
+            rate_text = f"Both amounts are already in {balance_currency}."
+            rate = None
+            quote_source = None
+            rate_date = None
+        else:
+            try:
+                quote = self.engine.quote_conversion(float(payment_amount), payment_currency, balance_currency)
+                cost = self.engine.money_value(Decimal(str(quote["converted_amount"])))
+                rate = float(quote["rate"])
+                fx = quote.get("fx", {})
+                quote_source = fx.get("source", "reference source")
+                rate_date = fx.get("rate_date")
+                date_text = f", rate date {rate_date}" if rate_date else ", rate date unavailable"
+                rate_text = f"1 {payment_currency} = {rate:.6f} {balance_currency} ({quote_source}{date_text})"
+            except (ValueError, KeyError, TypeError, HTTPError, URLError, TimeoutError, OSError) as exc:
+                return self._result(
+                    "affordability",
+                    f"I understood the payment as {payment_currency} {payment_amount:,.2f} and the available balance as {balance_currency} {balance_amount:,.2f}, but couldn't verify a reliable {payment_currency}/{balance_currency} quote ({type(exc).__name__}). I won't guess the rate or claim the payment is affordable. No proposal or transaction was created.",
+                    [
+                        {"step": "UNDERSTAND", "status": "completed", "detail": "Matched the stated balance and payment amounts."},
+                        {"step": "FX", "status": "blocked", "detail": "No reliable conversion quote was available."},
+                        {"step": "SECURITY", "status": "completed", "detail": "No proposal or transaction was created."},
+                    ],
+                    {"needs_clarification": True, "state_changed": False, "proposal": None},
+                )
+
+        balance_amount = self.engine.money_value(balance_amount)
+        shortfall = self.engine.money_value(max(Decimal("0"), cost - balance_amount))
+        remaining = self.engine.money_value(max(Decimal("0"), balance_amount - cost))
+        enough_before_fees = balance_amount >= cost
+        if enough_before_fees:
+            decision = (
+                f"Before fees, the stated {balance_currency} balance covers the estimated cost, "
+                f"with about {balance_currency} {remaining:,.2f} remaining."
+            )
+        else:
+            decision = (
+                f"No. Before fees, the estimated payment exceeds the stated balance by "
+                f"about {balance_currency} {shortfall:,.2f}."
+            )
+        answer = (
+            f"Read-only affordability check: {payment_currency} {payment_amount:,.2f} costs approximately "
+            f"{balance_currency} {cost:,.2f} at {rate_text} "
+            f"Available balance stated: {balance_currency} {balance_amount:,.2f}. {decision} "
+            "The quote does not include a verified fee amount or guaranteed settlement spread, so final affordability after fees cannot be confirmed. "
+            "No proposal, transaction, or account change was made."
+        )
+        return self._result(
+            "affordability",
+            answer,
+            [
+                {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a read-only balance-versus-payment affordability check."},
+                {"step": "OBSERVE", "status": "completed", "detail": f"Used the balance {balance_currency} {balance_amount:,.2f} and payment {payment_currency} {payment_amount:,.2f} explicitly stated in this message."},
+                {"step": "FX", "status": "completed" if quote else "not_required", "detail": f"Estimated the payment cost as {balance_currency} {cost:,.2f}; no rate was guessed."},
+                {"step": "CALCULATE", "status": "completed", "detail": f"Amount remaining before fees: {balance_currency} {remaining:,.2f}; shortfall before fees: {balance_currency} {shortfall:,.2f}."},
+                {"step": "SECURITY", "status": "completed", "detail": "Read-only scenario; no proposal or transaction was created."},
+            ],
+            {
+                "goal": "payment_affordability",
+                "balance_amount": float(balance_amount),
+                "balance_currency": balance_currency,
+                "payment_amount": float(payment_amount),
+                "payment_currency": payment_currency,
+                "estimated_cost_in_balance_currency": float(cost),
+                "remaining_before_fees": float(remaining),
+                "shortfall_before_fees": float(shortfall),
+                "enough_before_fees": enough_before_fees,
+                "fees_included": False,
+                "conversion": quote,
+                "state_changed": False,
+                "proposal": None,
+            },
+        )
+
     def run(self, text: str) -> dict[str, Any] | None:
         t = self.engine.repair_user_text(text).lower().strip()
         # Basic identity questions should receive a direct conversational answer,
@@ -740,7 +857,10 @@ class LocalAgentPlanner:
         # A short "how much do I have in SGD?" question should not trigger
         # a 30-day assessment merely because it contains "how much".
         simple_balance_request = (
-            any(k in t for k in ["how much do i have", "what is my balance", "show my balance", "current balance"])
+            (
+                any(k in t for k in ["how much do i have", "what is my balance", "show my balance", "current balance"])
+                or bool(re.search(r"\bhow\s+(?:much\s+)?do\s+i\s+have\b", t))
+            )
             and not any(k in t for k in [
                 "financial position", "cash position", "funding gap", "30 day",
                 "30-day", "forecast", "tuition", "emergency reserve", "projected",
@@ -755,6 +875,11 @@ class LocalAgentPlanner:
             )
             if requested_currency and requested_currency in balances:
                 answer = f"You currently have {requested_currency} {self.engine.money_value(balances[requested_currency]):,.2f} in the demo accounts."
+            elif requested_currency:
+                configured = ", ".join(
+                    f"{code} {self.engine.money_value(value):,.2f}" for code, value in balances.items()
+                ) or "none"
+                answer = f"I don't see a configured {requested_currency} balance in the demo wallet. The configured balances are: {configured}."
             else:
                 answer = "Your current demo-account balances are: " + ", ".join(
                     f"{code} {self.engine.money_value(value):,.2f}" for code, value in balances.items()

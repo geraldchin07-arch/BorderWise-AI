@@ -73,3 +73,16 @@ def test_proposal_card_discloses_quote_source_date_rate_and_expiry():
     assert "Date.now()<Date.parse(expiryValue)" in proposal_ui
     assert "escapeFXHtml(quoteSource)" not in proposal_ui
     assert "escapeFXHtml(quoteDate)" not in proposal_ui
+
+
+def test_chat_error_does_not_claim_transaction_state_without_confirmation():
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+    start = html.index("async function send()")
+    end = html.index("\nfunction showProposal(p)", start)
+    send_function = html[start:end]
+
+    assert "I could not confirm the result." in send_function
+    assert "Check Transactions and the audit log before retrying" in send_function
+    assert "The response was not confirmed. Check account state and audit history" in send_function
+    assert "No transaction was created. Please try again." not in send_function
+    assert "The request failed before any state-changing operation." not in send_function

@@ -375,8 +375,11 @@ async function send(){
    }
    return data;
  }catch(err){
-   addMsg('I could not complete that request. No transaction was created. Please try again.','bot');
-   document.getElementById('trace').innerHTML='<div class="trace-item"><b>SECURITY</b><span class="pill">blocked</span><div style="color:#637086">The request failed before any state-changing operation.</div></div>';
+   // A lost/invalid response does not prove whether the server completed an action.
+   // Never tell the user a transaction definitely did not happen unless the server
+   // returned a verified result; tell them to verify state before retrying.
+   addMsg('I could not confirm the result. Check Transactions and the audit log before retrying; do not repeat a money action until its status is verified.','bot');
+   document.getElementById('trace').innerHTML='<div class="trace-item"><b>STATUS UNCONFIRMED</b><span class="pill">verify first</span><div style="color:#637086">The response was not confirmed. Check account state and audit history before retrying any money action.</div></div>';
    return null;
  }
 }

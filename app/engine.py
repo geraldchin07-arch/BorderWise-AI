@@ -1816,7 +1816,10 @@ class FinanceEngine:
         # Classify financial reasoning before generic FX fallbacks. A tuition
         # funding plan remains a planning request unless a concrete quote pair
         # is the clear primary task.
-        if any(k in t for k in ["afford", "tuition", "fees", "enough money", "enough for"]):
+        if any(k in t for k in [
+            "afford", "tuition", "fees", "enough money", "enough for",
+            "should i convert", "should i exchange",
+        ]):
             return "affordability"
         if any(k in t for k in [
             "forecast", "projection", "projected", "project my", "run out",

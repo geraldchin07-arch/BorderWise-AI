@@ -911,6 +911,83 @@ class LocalAgentPlanner:
                 "proposal": None,
             })
 
+        # Generic MYR-to-SGD advice when the user states a balance but gives no
+        # specific obligation. Do not intercept incoming funds, conditional scenarios,
+        # or explicit wallet-wide funding requests handled by specialist planners.
+        should_convert_myr_without_tuition = (
+            myr is not None
+            and not received
+            and not tuition_context
+            and any(k in t for k in [
+                "convert some", "exchange some", "convert it to sgd",
+                "convert to sgd",
+            ])
+            and any(k in t for k in ["i have", "have rm", "have myr"])
+            and not any(k in t for k in [
+                "what if", "next month", "might receive", "may receive",
+                "could receive", "family sends", "parents send", "incoming",
+                "what should i convert", "which currency should i use",
+                "how much should i convert", "i need sgd",
+            ])
+        )
+        if should_convert_myr_without_tuition:
+            stated_myr = self.engine.money_value(myr)
+            quote = self.engine.convert_currency(stated_myr, "MYR", "SGD")
+            converted_sgd = self.engine.money_value(quote.get("converted_amount", 0))
+            rate = quote.get("rate")
+            balances = self.engine.get_balance()
+            scenario_balances = {
+                str(code).upper(): self.engine.money_value(value)
+                for code, value in balances.items()
+            }
+            scenario_balances["MYR"] = stated_myr
+            forecast = self.engine.forecast_portfolio(30, balances_override=scenario_balances)
+            reserve = forecast.get("emergency_reserve", {})
+            reserve_met = bool(reserve.get("met", False))
+            projected_sgd = self.engine.money_value(forecast.get("projected_balance_sgd", 0))
+            conversion_text = (
+                f"At the configured reference rate, MYR {stated_myr:,.2f} is approximately SGD {converted_sgd:,.2f}"
+                + (f" (1 MYR = SGD {float(rate):.4f})." if rate is not None else ".")
+            )
+            if not reserve_met or projected_sgd < 0:
+                recommendation = (
+                    f"The configured 30-day portfolio forecast projects SGD {projected_sgd:,.2f} after the protected reserve, expected income, spending and recorded obligations; "
+                    f"the emergency reserve is {'met' if reserve_met else 'not met or cannot be verified'}. "
+                    "Do not convert the whole MYR balance by default. Protect the reserve and prioritize confirmed essential SGD expenses."
+                )
+            else:
+                recommendation = (
+                    "The exchange rate alone is not enough to decide how much to convert. Keep your emergency reserve intact, "
+                    "compare the bank's final spread and fees, and convert only the amount needed for near-term SGD expenses. "
+                    "Without a specific expense or due date, there is no evidence-based amount to recommend; a staged conversion can reduce timing concentration but cannot guarantee a better rate."
+                )
+            answer = (
+                "**Currency conversion advice (read-only)**\\n\\n"
+                + conversion_text + "\\n\\n"
+                + f"Configured SGD cash: SGD {self.engine.money_value(balances.get('SGD', 0)):,.2f}. "
+                + f"30-day portfolio forecast after reserve and recorded cash flows: SGD {projected_sgd:,.2f}.\\n\\n"
+                + recommendation + "\\n\\n"
+                + "This scenario replaces the saved MYR balance with the amount you stated for analysis only; saved balances are not changed. FX spreads, fees and settlement timing may differ. No proposal or transaction was created."
+            )
+            trace = [
+                {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized a request for advice on converting a stated MYR balance without a specific target obligation."},
+                {"step": "FX", "status": "completed", "detail": f"Quoted MYR {stated_myr:,.2f} to SGD using the configured conversion method."},
+                {"step": "OBSERVE", "status": "completed", "detail": "Read configured SGD cash, forecasted expenses and obligations, and the emergency-reserve setting."},
+                {"step": "SIMULATE", "status": "completed", "detail": "Used the stated MYR amount as a temporary scenario balance; saved balances were not changed."},
+                {"step": "CALCULATE", "status": "completed", "detail": f"Thirty-day projected position after reserve and recorded cash flows is SGD {projected_sgd:,.2f}."},
+                {"step": "SECURITY", "status": "completed", "detail": "Read-only advice; no proposal or transaction was created."},
+                {"step": "RECOMMEND", "status": "completed", "detail": "Recommended sizing any conversion to confirmed SGD needs while preserving reserves."},
+            ]
+            return self._result("affordability", answer, trace, {
+                "goal": "affordability",
+                "scenario_inputs": {"myr_balance": float(stated_myr)},
+                "fx_conversion": quote,
+                "forecast": forecast,
+                "emergency_reserve_met": reserve_met,
+                "state_changed": False,
+                "proposal": None,
+            })
+
         # Handle explicit multi-currency tuition calculations as a read-only
         # scenario before generic intent/proposal handlers can intercept the prompt.
         explicit_tuition_scenario = (

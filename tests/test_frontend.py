@@ -108,7 +108,7 @@ def test_pending_proposal_card_is_restored_only_after_server_verification():
     html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
     assert "const PROPOSAL_STORAGE_KEY='xkf5-ai.pending-proposal-id.v1';" in html
     start = html.index("async function restorePendingProposal()")
-    end = html.index("\\nasync function send()", start)
+    end = html.index("async function send()", start)
     restore_function = html[start:end]
     assert "fetch('/api/proposals',{cache:'no-store'})" in restore_function
     assert "payload.proposals" in restore_function

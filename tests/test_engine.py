@@ -2666,23 +2666,24 @@ def test_execute_with_missing_destination_currency_fails_before_mutation():
 
 
 @pytest.mark.parametrize(
-    ("message", "expected"),
+    ("message", "expected_currency", "expected_amount"),
     [
-        ("Convert €250 to SGD", "EUR"),
-        ("I have £1,200", "GBP"),
-        ("Convert ₹500 to SGD", "INR"),
-        ("₩10000 to USD", "KRW"),
-        ("Convert R$ 250 to USD", "BRL"),
-        ("250 zł to EUR", "PLN"),
-        ("I have $500", None),  # Shared symbols must not silently pick a currency.
-        ("I have ¥500", None),  # Shared symbols must not silently pick a currency.
+        ("Convert €250 to SGD", "EUR", Decimal("250")),
+        ("I have £1,200", "GBP", Decimal("1200")),
+        ("Convert ₹500 to SGD", "INR", Decimal("500")),
+        ("₩10000 to USD", "KRW", Decimal("10000")),
+        ("Convert R$ 250 to USD", "BRL", Decimal("250")),
+        ("250 zł to EUR", "PLN", Decimal("250")),
+        ("I have $500", None, None),  # Shared symbols must not silently pick a currency.
+        ("I have ¥500", None, None),  # Shared symbols must not silently pick a currency.
     ],
 )
-def test_generic_currency_amount_symbol_recognition(message, expected):
+def test_generic_currency_amount_symbol_recognition(message, expected_currency, expected_amount):
     e = FinanceEngine()
     result = e.extract_generic_currency_amount(message)
-    if expected is None:
+    if expected_currency is None:
         assert result is None
     else:
         assert result is not None
-        assert result[1] == expected
+        assert result[1] == expected_currency
+        assert result[0] == expected_amount

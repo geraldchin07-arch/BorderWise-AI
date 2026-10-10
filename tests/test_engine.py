@@ -3224,6 +3224,59 @@ def test_contextual_authorization_still_requires_high_value_review_acknowledgeme
     assert e.state["proposals"][proposal["id"]]["status"] == "EXECUTED"
 
 
+def test_standalone_high_value_acknowledgement_is_recorded_without_execution_then_authorization_works():
+    e = FinanceEngine()
+    request_text = "transfer RM 16000 to SGD now"
+    initial = e.agent(request_text)
+    proposal = initial["data"].get("proposal")
+    assert proposal and proposal["status"] == "PENDING_AUTHORIZATION"
+    assert proposal["risk"]["status"] == "REVIEW"
+
+    history = _conversation_turns(request_text, initial)
+    before_balances = copy.deepcopy(e.get_balance())
+    before_transactions = copy.deepcopy(e.get_transactions())
+
+    ack_text = (
+        "I acknowledge the high-value review. I have reviewed the amount, destination, "
+        "quote and risk reasons."
+    )
+    ack = e.agent(ack_text, conversation_history=history)
+
+    assert "acknowledgement recorded" in ack["answer"].lower()
+    assert ack["data"]["review_acknowledged"] is True
+    assert ack["data"]["authorization_granted"] is False
+    assert ack["data"]["transaction_created"] is False
+    assert ack["data"]["proposal"]["status"] == "PENDING_AUTHORIZATION"
+    assert ack["data"]["proposal"]["review_acknowledged"] is True
+    assert e.state["proposals"][proposal["id"]]["status"] == "PENDING_AUTHORIZATION"
+    assert e.get_balance() == before_balances
+    assert e.get_transactions() == before_transactions
+
+    approved = e.agent("I authorise it.", conversation_history=_conversation_turns(ack_text, ack))
+
+    assert approved["data"]["contextual_authorization"] is True
+    assert approved["data"]["proposal"]["status"] == "EXECUTED"
+    assert approved["data"]["transaction"]["status"] == "completed"
+    assert e.state["proposals"][proposal["id"]]["status"] == "EXECUTED"
+    assert len(e.get_transactions()) == len(before_transactions) + 1
+
+
+def test_standalone_high_value_acknowledgement_without_context_cannot_mark_a_proposal():
+    e = FinanceEngine()
+    proposal = e.create_proposal(Decimal("16000"), "test proposal")
+    before = copy.deepcopy(e.get_balance())
+
+    result = e.agent(
+        "I acknowledge the high-value review. I reviewed the amount, destination, quote and risk reasons."
+    )
+
+    assert result["data"]["blocked_reason"] == "missing_contextual_proposal"
+    assert e.state["proposals"][proposal["id"]]["status"] == "PENDING_AUTHORIZATION"
+    assert e.state["proposals"][proposal["id"]].get("review_acknowledged") is not True
+    assert e.get_balance() == before
+    assert e.get_transactions() == []
+
+
 def test_authorization_followup_without_context_is_never_silently_accepted():
     e = FinanceEngine()
     before = copy.deepcopy(e.get_balance())

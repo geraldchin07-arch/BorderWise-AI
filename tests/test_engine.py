@@ -3261,6 +3261,29 @@ def test_standalone_high_value_acknowledgement_is_recorded_without_execution_the
     assert len(e.get_transactions()) == len(before_transactions) + 1
 
 
+def test_short_just_authorise_followup_after_high_value_acknowledgement_executes_contextual_proposal():
+    e = FinanceEngine()
+    request_text = "Prepare a transfer of RM 16,000 to SGD now."
+    initial = e.agent(request_text)
+    proposal = initial["data"].get("proposal")
+    assert proposal and proposal["status"] == "PENDING_AUTHORIZATION"
+    assert proposal["risk"]["status"] == "REVIEW"
+
+    ack_text = "I acknowledge the high-value review. I have reviewed the amount, destination, quote and risk reasons."
+    ack = e.agent(ack_text, conversation_history=_conversation_turns(request_text, initial))
+    assert ack["data"]["review_acknowledged"] is True
+    assert ack["data"]["proposal"]["review_acknowledged"] is True
+    assert ack["data"]["proposal"]["status"] == "PENDING_AUTHORIZATION"
+
+    transactions_before = copy.deepcopy(e.get_transactions())
+    approved = e.agent("just authorise", conversation_history=_conversation_turns(ack_text, ack))
+
+    assert approved["data"]["contextual_authorization"] is True
+    assert approved["data"]["proposal"]["status"] == "EXECUTED"
+    assert approved["data"]["transaction"]["status"] == "completed"
+    assert len(e.get_transactions()) == len(transactions_before) + 1
+
+
 def test_standalone_high_value_acknowledgement_without_context_cannot_mark_a_proposal():
     e = FinanceEngine()
     proposal = e.create_proposal(Decimal("16000"), "test proposal")

@@ -3009,7 +3009,9 @@ def test_explicit_sgd_recipient_transfer_does_not_create_tuition_proposal():
         "My available balance is SGD 100. Prepare a transfer of SGD 500 to my configured test recipient Alice. "
         "Check affordability before creating a proposal. Do not execute anything."
     )
-    assert r["intent"] == "transfer"
+    # The deterministic unsupported-recipient guard runs before the generic
+    # transfer planner, so it returns a safe local-agent refusal by design.
+    assert r["intent"] == "agentic_local"
     assert r["data"].get("proposal") is None
     assert r["data"]["blocked_reason"] == "unsupported_recipient_transfer"
     assert "named recipients" in r["answer"].lower()

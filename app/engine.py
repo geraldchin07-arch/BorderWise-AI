@@ -3661,6 +3661,14 @@ class FinanceEngine:
                 {"step": "RECOMMEND", "status": "completed", "detail": f"Calculated RM{amount:,.2f} MYR→SGD using the refreshed reference rate {q['rate']:.4f}."},
                 {"step": "SECURITY", "status": "completed" if risk["status"] != "BLOCKED" else "blocked", "detail": f"Risk status: {risk['status']}"},
             ]
+            if risk["status"] == "BLOCKED":
+                answer = (
+                    f"You have a projected S${f['shortfall_sgd']:,.2f} shortfall, but converting approximately "
+                    f"RM{amount:,.2f} would violate a safety rule: " + " ".join(risk["reasons"]) +
+                    f" The most you can convert is RM{risk['max_allowed_myr']:,.2f}. No proposal was created."
+                )
+                return self._result(intent, answer, trace, {"forecast": f, "risk": risk, "state_changed": False, "proposal": None})
+
             answer = (
                 f"You have a projected S${f['shortfall_sgd']:,.2f} shortfall over 30 days. "
                 f"I recommend converting approximately RM{amount:,.2f} to SGD at the current reference rate of {q['rate']:.4f}, "

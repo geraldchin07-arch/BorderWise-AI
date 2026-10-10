@@ -2806,3 +2806,23 @@ def test_expired_authorized_proposal_cannot_execute_or_move_money(monkeypatch):
     assert e.state["transactions"] == before_transactions
     assert proposal["status"] == "EXPIRED"
     assert any(item["event"] == "PROPOSAL_EXPIRED" for item in e.state["audit"])
+
+
+def test_expired_pending_proposal_cannot_be_authorized(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    e = FinanceEngine()
+    monkeypatch.setattr(e, "refresh_fx", lambda force=False: e.fx_quote())
+    proposal = e.create_proposal(Decimal("1000"), "tuition")
+    proposal["quote_expires_at"] = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+    proposal["fx_quote"]["expires_at"] = proposal["quote_expires_at"]
+    before_balances = copy.deepcopy(e.state["balances"])
+    before_transactions = copy.deepcopy(e.state["transactions"])
+
+    with pytest.raises(ValueError, match="expired"):
+        e.authorize(proposal["id"], True)
+
+    assert proposal["status"] == "EXPIRED"
+    assert e.state["balances"] == before_balances
+    assert e.state["transactions"] == before_transactions
+    assert any(item["event"] == "PROPOSAL_EXPIRED" for item in e.state["audit"])

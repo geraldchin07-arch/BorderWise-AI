@@ -2960,6 +2960,8 @@ def test_read_only_fx_quote_with_do_not_transfer_instruction_is_not_blocked():
     assert e.state["proposals"] == {}
     assert e.get_balance() == before
     assert "300.00 SGD" in r["answer"] or "300.00 SGD" in str(r["data"])
+    assert "fees/spread are not included" in r["answer"].lower()
+    assert "quote timestamp" in r["answer"].lower()
 
 
 def test_multi_pair_fx_with_fees_does_not_fall_into_saved_tuition_forecast():
@@ -2974,6 +2976,8 @@ def test_multi_pair_fx_with_fees_does_not_fall_into_saved_tuition_forecast():
     assert len(r["data"]["conversions"]) == 2
     assert r["data"].get("proposal") is None
     assert "USD" in r["answer"] and "MYR" in r["answer"]
+    assert "fees/spread are not included" in r["answer"].lower()
+    assert "quote timestamp" in r["answer"].lower()
     assert e.state["proposals"] == {}
     assert e.get_balance() == before
 

@@ -1291,3 +1291,24 @@ def test_redteam_tuition_should_i_convert_is_classified_as_financial_advice():
     assert result["data"]["state_changed"] is False
     assert engine.state["balances"] == balances_before
     assert engine.state["proposals"] == {}
+
+
+def test_redteam_plain_myr_conversion_question_gets_advice_not_rate_only():
+    engine = FinanceEngine()
+    prompt = "I have RM10000. Should I convert some to SGD?"
+    balances_before = dict(engine.state["balances"])
+
+    assert engine.detect_intent(prompt) == "affordability"
+    result = engine.agent(prompt)
+
+    assert result["intent"] == "affordability"
+    assert "currency conversion advice" in result["answer"].lower()
+    assert "reference rate" in result["answer"].lower()
+    assert "convert only the amount needed" in result["answer"].lower() or "do not convert the whole" in result["answer"].lower()
+    assert result["data"]["scenario_inputs"]["myr_balance"] == 10000.0
+    assert result["data"]["fx_conversion"]["from_currency"] == "MYR"
+    assert result["data"]["fx_conversion"]["to_currency"] == "SGD"
+    assert result["data"].get("proposal") is None
+    assert result["data"]["state_changed"] is False
+    assert engine.state["balances"] == balances_before
+    assert engine.state["proposals"] == {}

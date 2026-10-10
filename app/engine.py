@@ -1708,8 +1708,6 @@ class FinanceEngine:
             "LYD", "MRU", "NIO", "PGK", "SHP", "SLE", "STN", "SZL", "ZWG",
         }
         ambiguous_codes = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
-        raw_upper = raw_text
-
         # Unicode symbols are accepted only when their symbol identifies a
         # single currency. Dollar and yen signs are deliberately excluded.
         symbol_aliases = {
@@ -1798,8 +1796,13 @@ class FinanceEngine:
                 # Some ISO codes are also ordinary English words. Only treat
                 # those tokens as currency codes when the user explicitly typed
                 # the uppercase code; normalization must not erase that signal.
-                if is_code and code in ambiguous_codes and not re.search(
-                    rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", raw_upper
+                explicit_code_amount = (
+                    rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])\\s*{amount}",
+                    rf"{amount}\\s*(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])",
+                )
+                if is_code and code in ambiguous_codes and not any(
+                    re.search(explicit_pattern, raw_text)
+                    for explicit_pattern in explicit_code_amount
                 ):
                     continue
                 numeric_match = re.search(amount, match.group(0))

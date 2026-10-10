@@ -777,6 +777,8 @@ def test_redteam_multi_pair_detection_does_not_capture_single_conversion_with_di
 
 
 def test_redteam_multi_pair_conversion_split_uses_real_conjunction_boundaries():
+    import re
+
     planner = AgentOrchestrator(FinanceEngine())
     prompt = "Convert 100 MYR to SGD and 100 SGD to MYR."
     normalized = planner.engine.repair_user_text(prompt).lower()

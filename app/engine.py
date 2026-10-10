@@ -90,6 +90,7 @@ class FinanceEngine:
     FX_TTL_SECONDS = 900  # refresh at most every 15 minutes
     FX_FAILURE_COOLDOWN_SECONDS = 30  # avoid hammering a provider when offline
     FX_PAIR_TTL_SECONDS = 900
+    PROPOSAL_TTL_MINUTES = 30
 
     def __init__(self) -> None:
         self._state_lock = threading.RLock()
@@ -1462,6 +1463,7 @@ class FinanceEngine:
             "status": risk,
             "amount_myr": float(amount_myr),
             "remaining_myr": float(balance - amount_myr),
+            "max_allowed_myr": float(max(money(0), balance - reserve)),
             "reserve_myr": float(reserve),
             "reasons": reasons,
             "requires_level": 2,
@@ -1476,6 +1478,28 @@ class FinanceEngine:
         risk = self.risk_check(amount_myr, purpose)
         if risk["status"] == "BLOCKED":
             raise ValueError("; ".join(risk["reasons"]))
+
+        # Reuse a still-valid identical proposal to avoid duplicates; supersede
+        # older pending proposals when the user prepares a different amount.
+        for existing in self.state["proposals"].values():
+            if existing.get("status") != "PENDING_AUTHORIZATION":
+                continue
+            if self._expire_if_needed(existing) or self._expire_proposal_if_needed(
+                str(existing.get("id", "")), existing
+            ):
+                continue
+            try:
+                same_amount = money(existing.get("amount_myr")) == amount_myr
+            except (TypeError, ValueError, ArithmeticError):
+                same_amount = False
+            if same_amount:
+                return existing
+
+        for existing in self.state["proposals"].values():
+            if existing.get("status") == "PENDING_AUTHORIZATION":
+                existing["status"] = "SUPERSEDED"
+                self.audit("PROPOSAL_SUPERSEDED", {"proposal_id": existing.get("id")})
+
         quote = self.refresh_fx()
         rate = self.state["fx"]["MYRSGD"]
         amount_sgd = money(amount_myr * rate)
@@ -1493,6 +1517,7 @@ class FinanceEngine:
         proposal = {
             "id": pid,
             "created_at": quoted_at.isoformat(),
+            "expires_at": (quoted_at + timedelta(minutes=self.PROPOSAL_TTL_MINUTES)).isoformat(),
             "from": "MYR",
             "to": "SGD",
             "amount_myr": float(amount_myr),
@@ -1535,15 +1560,46 @@ class FinanceEngine:
             return True
         return False
 
+    def _expire_if_needed(self, proposal: dict[str, Any]) -> bool:
+        """Expire a pending/authorized proposal after its review window."""
+        if proposal.get("status") in {"PENDING_AUTHORIZATION", "AUTHORIZED"}:
+            raw_expiry = proposal.get("expires_at")
+            try:
+                if not raw_expiry:
+                    raise ValueError("Proposal is missing expiry metadata.")
+                expiry = datetime.fromisoformat(str(raw_expiry).replace("Z", "+00:00"))
+                if expiry.tzinfo is None:
+                    expiry = expiry.replace(tzinfo=timezone.utc)
+            except (TypeError, ValueError):
+                proposal["status"] = "EXPIRED"
+                self.audit("PROPOSAL_EXPIRED", {
+                    "proposal_id": proposal.get("id"),
+                    "reason": "missing_or_invalid_proposal_expiry",
+                })
+                return True
+            if datetime.now(timezone.utc) >= expiry:
+                proposal["status"] = "EXPIRED"
+                self.audit("PROPOSAL_EXPIRED", {
+                    "proposal_id": proposal.get("id"),
+                    "reason": "proposal_expired",
+                    "expires_at": str(raw_expiry),
+                })
+                return True
+        return proposal.get("status") == "EXPIRED"
+
     @_state_locked
-    def authorize(self, proposal_id: str, approved: bool) -> dict[str, Any]:
+    def authorize(self, proposal_id: str, approved: bool, acknowledge_review: bool = False) -> dict[str, Any]:
         proposal = self.state["proposals"].get(proposal_id)
         if not proposal:
             raise ValueError("Proposal not found.")
+        if self._expire_if_needed(proposal):
+            raise ValueError("Proposal has expired; please prepare and review a fresh proposal.")
         if proposal["status"] != "PENDING_AUTHORIZATION":
             raise ValueError("Proposal is no longer awaiting authorization.")
         if approved and self._expire_proposal_if_needed(proposal_id, proposal):
             raise ValueError("Proposal quote has expired or is invalid; prepare and review a fresh proposal before authorization.")
+        if approved and proposal.get("risk", {}).get("status") == "REVIEW" and not acknowledge_review:
+            raise ValueError("High-value transfer: explicit acknowledgement is required (acknowledge_review=true).")
         proposal["status"] = "AUTHORIZED" if approved else "REJECTED"
         self.audit("AUTHORIZATION", {"proposal_id": proposal_id, "approved": approved})
         if not approved:
@@ -1555,6 +1611,8 @@ class FinanceEngine:
         proposal = self.state["proposals"].get(proposal_id)
         if not proposal:
             raise ValueError("Proposal not found.")
+        if self._expire_if_needed(proposal):
+            raise ValueError("Proposal has expired; please prepare and review a fresh proposal.")
         if proposal["status"] != "AUTHORIZED":
             raise ValueError("Execution requires explicit Level 2 authorization.")
 
@@ -1574,8 +1632,10 @@ class FinanceEngine:
             self.audit("EXECUTION_BLOCKED", {"proposal_id": proposal_id, "risk": risk})
             raise ValueError("; ".join(risk["reasons"]))
 
-        self.state["balances"]["MYR"] = money(self.state["balances"]["MYR"] - amount_myr)
-        self.state["balances"]["SGD"] = money(self.state["balances"]["SGD"] + amount_sgd)
+        before_myr = money(self.state["balances"]["MYR"])
+        before_sgd = money(self.state["balances"]["SGD"])
+        self.state["balances"]["MYR"] = money(before_myr - amount_myr)
+        self.state["balances"]["SGD"] = money(before_sgd + amount_sgd)
 
         tx = Transaction(
             "TX-" + uuid.uuid4().hex[:8].upper(),
@@ -1588,10 +1648,29 @@ class FinanceEngine:
             "completed",
         )
         self.state["transactions"].append(tx)
+        after_myr = money(self.state["balances"]["MYR"])
+        after_sgd = money(self.state["balances"]["SGD"])
+        expected_myr = money(before_myr - amount_myr)
+        expected_sgd = money(before_sgd + amount_sgd)
+        if after_myr != expected_myr or after_sgd != expected_sgd:
+            self.state["balances"]["MYR"] = before_myr
+            self.state["balances"]["SGD"] = before_sgd
+            self.state["transactions"].pop()
+            proposal["status"] = "BLOCKED"
+            self.audit("VERIFICATION_FAILED", {"proposal_id": proposal_id})
+            raise ValueError("Post-execution verification failed; the transaction was rolled back.")
+
         proposal["status"] = "EXECUTED"
         proposal["transaction_id"] = tx.id
+        proposal["verified"] = True
+        self.audit("VERIFIED", {
+            "proposal_id": proposal_id,
+            "transaction_id": tx.id,
+            "myr_after": float(after_myr),
+            "sgd_after": float(after_sgd),
+        })
         self.audit("EXECUTED", {"proposal_id": proposal_id, "transaction_id": tx.id})
-        return {"proposal": proposal, "transaction": asdict(tx), "balances": self.get_balance()}
+        return {"proposal": proposal, "transaction": asdict(tx), "balances": self.get_balance(), "verified": True}
 
     @_state_locked
     def audit(self, event: str, details: dict[str, Any]) -> None:

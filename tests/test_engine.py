@@ -2106,6 +2106,8 @@ def test_generic_currency_amount_rejects_unknown_three_letter_words():
     assert e.extract_generic_currency_amount("send ABC 500") is None
     assert e.extract_generic_currency_amount("send all 500 to Singapore") is None
     assert e.extract_generic_currency_amount("send All 500 to Singapore") is None
+    # An uppercase code elsewhere in the message must not legitimize a lowercase word.
+    assert e.extract_generic_currency_amount("ALL is a valid code, but send all 500 to Singapore") is None
     assert e.extract_generic_currency_amount("send all 500 to Singapore") is None
     assert e.extract_generic_currency_amount("send cup 500 to Singapore") is None
     assert e.extract_generic_currency_amount("send try 500 to Singapore") is None

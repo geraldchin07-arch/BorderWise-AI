@@ -2113,6 +2113,8 @@ def test_generic_currency_amount_rejects_unknown_three_letter_words():
     assert e.extract_generic_currency_amount("send try 500 to Singapore") is None
     assert e.extract_generic_currency_amount("send top 500 to Singapore") is None
     assert e.extract_generic_currency_amount("send TRY 500 to Singapore") == (Decimal("500.00"), "TRY")
+    assert e.extract_generic_currency_amount("TRY 5k to Singapore") == (Decimal("5000.00"), "TRY")
+    assert e.extract_generic_currency_amount("5k TRY to Singapore") == (Decimal("5000.00"), "TRY")
     assert e.extract_generic_currency_amount("try 500 to Singapore") is None
     assert e.extract_generic_currency_amount("top 500 expenses") is None
     assert e.extract_generic_currency_amount("ALL 500 to SGD") == (Decimal("500.00"), "ALL")

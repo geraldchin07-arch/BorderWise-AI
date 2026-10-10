@@ -1797,6 +1797,22 @@ class FinanceEngine:
             "TTD": "TTD", "VUV": "VUV", "WST": "WST", "YER": "YER",
         }
         ambiguous_words = {"ALL", "TRY", "MAD", "PEN", "TOP", "GEL", "COP", "BOB", "RON", "CUP"}
+        # Currency symbols are useful natural-language input, but only map symbols
+        # that identify one currency unambiguously. In particular, "$" and "¥"
+        # are intentionally excluded because they are shared by several currencies.
+        symbol_aliases = {
+            "R$": "BRL", "zł": "PLN", "€": "EUR", "£": "GBP", "₹": "INR",
+            "₩": "KRW", "฿": "THB", "₱": "PHP", "₦": "NGN", "₺": "TRY",
+            "₪": "ILS", "₫": "VND", "₴": "UAH", "₡": "CRC", "₲": "PYG",
+            "₵": "GHS", "₸": "KZT", "₭": "LAK", "₮": "MNT", "₼": "AZN",
+        }
+        for symbol in sorted(symbol_aliases, key=len, reverse=True):
+            symbol_pattern = re.escape(symbol)
+            for pattern in (rf"(?<![A-Za-z]){symbol_pattern}\\s*{amount}",
+                            rf"{amount}\\s*{symbol_pattern}(?![A-Za-z])"):
+                match = re.search(pattern, t, re.IGNORECASE)
+                if match:
+                    return self.parse_amount_token(match.group(1)), symbol_aliases[symbol]
         for alias in sorted(aliases, key=len, reverse=True):
             if alias in ambiguous_words and not re.search(
                 rf"(?<![A-Za-z]){re.escape(alias)}(?![A-Za-z])", raw_text

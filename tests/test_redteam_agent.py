@@ -1164,6 +1164,7 @@ def test_redteam_ambiguous_source_amounts_never_create_fx_results_or_mutate_stat
 
         result = engine.agent(prompt)
 
+        assert result["data"].get("needs_clarification") is True, prompt
         assert result["data"].get("proposal") is None, prompt
         assert "conversion" not in result["data"], prompt
         assert "conversions" not in result["data"], prompt

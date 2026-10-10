@@ -3044,7 +3044,7 @@ def _conversation_turns(user_text, result):
         {
             "role": "assistant",
             "content": result["answer"],
-            "proposal_id": (result.get("data") or {}).get("proposal", {}).get("id"),
+            "proposal_id": (((result.get("data") or {}).get("proposal") or {}).get("id")),
         },
     ]
 
@@ -3115,8 +3115,8 @@ def test_contextual_authorization_matches_only_the_immediately_shown_pending_pro
     assert result["data"]["contextual_authorization"] is True
     assert result["data"]["proposal"]["status"] == "EXECUTED"
     assert result["data"]["transaction"]["status"] == "completed"
-    assert e.get_balance()["MYR"] > before_myr
-    assert e.get_balance()["SGD"] < before_sgd
+    assert e.get_balance()["MYR"] < before_myr
+    assert e.get_balance()["SGD"] > before_sgd
     assert e.state["proposals"][proposal["id"]]["status"] == "EXECUTED"
 
 

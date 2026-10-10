@@ -2767,6 +2767,14 @@ class FinanceEngine:
                 r"(?:just|please|go ahead and)\s+(?:authori[sz](?:e|ed)|approv(?:e|ed)|confirm(?:ed)?)",
                 current_lower,
             ))
+            # Natural affirmative continuations count as explicit consent only
+            # because this handler separately requires the immediately displayed,
+            # server-verified pending proposal and still enforces review gates.
+            or bool(re.fullmatch(
+                r"(?:(?:yes|yeah|yep|sure|okay|ok|alright|all right)[,\\s]+)?"
+                r"(?:go ahead|proceed|do it|go for it)(?:\\s+please)?",
+                current_compact,
+            ))
         )
         if authorization_phrase:
             # Preserve the established exact-amount authorization route for messages

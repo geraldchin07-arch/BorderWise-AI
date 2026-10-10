@@ -271,9 +271,14 @@ For complex student-finance situations, build a goal-aware plan: identify essent
         if intent == "spending":
             return {"analyze_spending"}
         if intent == "forecast":
-            return {"forecast_cashflow", "forecast_portfolio", "simulate_income_impact"}
+            # Hypothetical-income scenarios are routed through the deterministic
+            # planner before this check. A normal forecast requires a forecast tool,
+            # not merely a successful scenario-simulation call.
+            return {"forecast_cashflow", "forecast_portfolio"}
         if intent == "affordability":
-            return {"forecast_cashflow", "forecast_portfolio", "get_obligations", "recommend_funding"}
+            # Obligation lists and funding options are useful supporting evidence,
+            # but they do not establish an affordability result without a forecast.
+            return {"forecast_cashflow", "forecast_portfolio"}
         if intent == "transfer":
             normalized = self.engine.repair_user_text(user_text).lower()
             advice_or_scenario = any(term in normalized for term in (

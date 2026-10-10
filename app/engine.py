@@ -1966,11 +1966,41 @@ class FinanceEngine:
                     return base, quote
         return None
 
+    def user_negates_money_movement(self, text: str) -> bool:
+        """Detect explicit instructions against moving or preparing money.
+
+        This is a conservative, deterministic guard used before either planner.
+        It deliberately only detects clear negation near a money-moving verb;
+        ambiguous requests should be clarified rather than converted into actions.
+        """
+        normalized = self.repair_user_text(str(text or "")).lower().replace("’", "'")
+        negation = r"(?:do\s+not|don't|dont|never|should\s+not|shouldn't|shouldnt|must\s+not|mustn't|mustnt|will\s+not|won't|wont|would\s+not|wouldn't|wouldnt|refuse\s+to|not\s+willing\s+to|cancel|stop)"
+        action = r"(?:transfer|send|remit(?:tance)?|convert|exchange|move(?:\s+money)?|pay|prepare\s+(?:a\s+)?(?:transfer|proposal)|create\s+(?:a\s+)?proposal)"
+        return bool(re.search(rf"\b{negation}\b.{{0,80}}\b{action}\b", normalized, re.I))
+
     def agent(self, text: str) -> dict[str, Any]:
         # Safety-critical deterministic gate: uncertain family support must never
         # reach an LLM planner as if it were confirmed cash. Keep this path
         # self-contained so a local-agent exception cannot silently fall through.
         normalized = self.repair_user_text(text).lower()
+        # An explicit instruction not to move money must stop before either
+        # planner can interpret surrounding text as a proposal request.
+        if self.user_negates_money_movement(text):
+            return self._result(
+                "agentic_local",
+                "Understood. I will not prepare or execute a money movement from that request. "
+                "No proposal, transaction, or account change was made.",
+                [
+                    {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized an explicit instruction against money movement."},
+                    {"step": "SECURITY", "status": "blocked", "detail": "Stopped before LLM or offline planning because the user negated the action."},
+                ],
+                {
+                    "blocked_reason": "user_explicitly_opposed_money_movement",
+                    "state_changed": False,
+                    "proposal": None,
+                    "agent_mode": "deterministic_negated_action_gate",
+                },
+            )
         # Safety-critical all-funds gate: never reinterpret "all/everything" as
         # a harmless FX quote or allow a planner to derive an amount from the wallet.
         # State-changing money movement requires an exact amount.

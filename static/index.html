@@ -370,6 +370,7 @@ async function send(){
 }
 function showProposal(p){
  const risk=p.risk||{};
+ const quote=p.fx_quote||{};
  const riskStatus=String(risk.status||'UNKNOWN').toUpperCase();
  const riskClass=riskStatus.toLowerCase()==='review'?'review':riskStatus.toLowerCase()==='blocked'?'blocked':'';
  const reasons=Array.isArray(risk.reasons)?risk.reasons.filter(Boolean):[];
@@ -382,15 +383,22 @@ function showProposal(p){
      ? '<p>Verify the amount, destination, and quoted rate before authorization.</p>'
      : '<p><b>Authorization disabled:</b> the risk status is blocked or unavailable.</p>';
  const riskHtml='<div class="risk '+riskClass+'"><b>Risk assessment: '+escapeFXHtml(riskStatus)+'</b>'+riskDescription+reasonHtml+'</div>';
- const canAuthorize=riskStatus==='LOW'||riskStatus==='REVIEW';
+ const rate=Number(p.rate);
+ const quoteSource=escapeFXHtml(String(quote.source||'Unknown source'));
+ const quoteDate=escapeFXHtml(String(quote.rate_date||'unavailable'));
+ const quoteMode=quote.live===true?'Live reference':'Fallback / non-live reference';
+ const expiryValue=quote.expires_at||p.quote_expires_at;
+ const expiryTime=expiryValue&&Number.isFinite(Date.parse(expiryValue))?new Date(expiryValue).toLocaleString():'unavailable';
+ const expiryHtml='<div class="quote-terms"><b>Quote terms</b><p>Rate: 1 MYR = S$ '+(Number.isFinite(rate)?rate.toFixed(6):'unavailable')+'</p><p>Source: '+quoteSource+' ('+quoteMode+')</p><p>Rate date: '+quoteDate+'</p><p>Valid until: '+escapeFXHtml(expiryTime)+'</p><small>The quote expires; a new proposal is required after expiry.</small></div>';
+ const canAuthorize=(riskStatus==='LOW'||riskStatus==='REVIEW')&&Number.isFinite(rate)&&Boolean(expiryValue)&&Number.isFinite(Date.parse(expiryValue))&&Date.now()<Date.parse(expiryValue);
  const actionHtml=canAuthorize
    ? '<button class="btn" onclick="authorize(true)">Authorize & execute</button>'
-   : '<button class="btn" disabled title="A verified LOW or REVIEW risk status is required">Cannot authorize</button>';
+   : '<button class="btn" disabled title="Quote expired or quote/risk data unavailable">Cannot authorize</button>';
  document.getElementById('proposal').innerHTML=
    '<div class="proposal"><b>Level 2 authorization required</b>'+
    '<p>Convert <b>RM '+Number(p.amount_myr).toLocaleString(undefined,{minimumFractionDigits:2})+
    '</b> → <b>S$ '+Number(p.amount_sgd).toLocaleString(undefined,{minimumFractionDigits:2})+
-   '</b></p><p>Purpose: '+escapeFXHtml(p.purpose)+'</p>'+riskHtml+
+   '</b></p><p>Purpose: '+escapeFXHtml(p.purpose)+'</p>'+expiryHtml+riskHtml+
    '<div style="display:flex;gap:8px">'+actionHtml+
    '<button class="btn secondary" onclick="authorize(false)">Reject</button></div></div>';
 }

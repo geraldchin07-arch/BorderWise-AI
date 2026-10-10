@@ -3100,6 +3100,71 @@ def test_repeat_same_transfer_proposal_reuses_contextual_pending_proposal():
     assert e.state["proposals"][proposal["id"]]["status"] == "PENDING_AUTHORIZATION"
 
 
+def test_replaying_contextually_displayed_executed_transfer_is_blocked_without_mutation():
+    e = FinanceEngine()
+    request_text = "transfer RM 1000 to SGD now"
+    initial = e.agent(request_text)
+    proposal = initial["data"].get("proposal")
+    assert proposal and proposal["status"] == "PENDING_AUTHORIZATION"
+
+    approval_history = _conversation_turns(request_text, initial)
+    approved = e.agent("i authorised it", conversation_history=approval_history)
+    executed = approved["data"].get("proposal")
+    tx = approved["data"].get("transaction")
+    assert executed and executed["status"] == "EXECUTED"
+    assert tx and tx["status"] == "completed"
+
+    replay_history = _conversation_turns("i authorised it", approved)
+    balance_before = copy.deepcopy(e.get_balance())
+    transactions_before = copy.deepcopy(e.get_transactions())
+    proposals_before = copy.deepcopy(e.state["proposals"])
+
+    replay = e.agent("Execute that same transfer again.", conversation_history=replay_history)
+
+    assert replay["data"]["blocked_reason"] == "transaction_replay_prevented"
+    assert tx["id"] in replay["answer"]
+    assert replay["data"]["state_changed"] is False
+    assert e.get_balance() == balance_before
+    assert e.get_transactions() == transactions_before
+    assert e.state["proposals"] == proposals_before
+    assert e.state["proposals"][proposal["id"]]["status"] == "EXECUTED"
+
+
+def test_execution_replay_request_cannot_bypass_pending_authorization():
+    e = FinanceEngine()
+    request_text = "transfer RM 1000 to SGD now"
+    initial = e.agent(request_text)
+    proposal = initial["data"].get("proposal")
+    assert proposal and proposal["status"] == "PENDING_AUTHORIZATION"
+    history = _conversation_turns(request_text, initial)
+    before = copy.deepcopy(e.get_balance())
+    transactions_before = copy.deepcopy(e.get_transactions())
+
+    replay = e.agent("Execute that same transfer again.", conversation_history=history)
+
+    assert replay["data"]["blocked_reason"] == "proposal_still_pending"
+    assert replay["data"]["state_changed"] is False
+    assert e.state["proposals"][proposal["id"]]["status"] == "PENDING_AUTHORIZATION"
+    assert e.get_balance() == before
+    assert e.get_transactions() == transactions_before
+
+
+def test_execution_replay_request_without_context_does_not_guess_transaction():
+    e = FinanceEngine()
+    proposal = e.create_proposal(Decimal("1000"), "test proposal")
+    e.authorize(proposal["id"], True)
+    e.execute(proposal["id"])
+    before = copy.deepcopy(e.get_balance())
+    transactions_before = copy.deepcopy(e.get_transactions())
+
+    replay = e.agent("Execute that same transfer again.")
+
+    assert replay["data"]["blocked_reason"] == "missing_contextual_proposal"
+    assert replay["data"]["state_changed"] is False
+    assert e.get_balance() == before
+    assert e.get_transactions() == transactions_before
+
+
 def test_contextual_authorization_matches_only_the_immediately_shown_pending_proposal():
     e = FinanceEngine()
     request_text = "transfer RM 1000 to SGD now"

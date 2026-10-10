@@ -1797,16 +1797,13 @@ class FinanceEngine:
                         rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])\s*{amount}",
                         rf"{amount}\s*(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])",
                     )
-                    explicit_matches = [
+                    # The regex is case-sensitive, so the currency token must
+                    # be uppercase; don't uppercase the whole match because valid
+                    # amount shorthand such as "5k" contains lowercase letters.
+                    if not any(
                         re.search(pattern, raw_text)
                         for pattern in explicit_code_amount
-                    ]
-                    explicit_matches = [
-                        match for match in explicit_matches
-                        if match is not None
-                        and match.group(0).upper() == match.group(0)
-                    ]
-                    if not explicit_matches:
+                    ):
                         continue
                 numeric_match = re.search(amount, match.group(0))
                 if not numeric_match:

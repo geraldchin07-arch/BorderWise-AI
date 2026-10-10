@@ -802,6 +802,110 @@ class LocalAgentPlanner:
             self.engine.state.get("profile_meta", {}).get("planning_currency", "SGD")
         ).upper()
 
+        # A stated MYR balance plus an upcoming tuition decision is affordability
+        # planning, not a generic agentic request or an instruction to transact.
+        # Replace the scenario MYR balance (do not add it to the saved balance),
+        # then evaluate the configured obligations and reserve without mutating state.
+        should_convert_myr_for_tuition = (
+            myr is not None
+            and tuition_context
+            and any(k in t for k in [
+                "should i convert", "should i exchange", "convert some",
+                "exchange some", "convert it to sgd", "convert to sgd",
+            ])
+            and any(k in t for k in ["i have", "have rm", "have myr", "myr"])
+        )
+        if should_convert_myr_for_tuition:
+            stated_myr = self.engine.money_value(myr)
+            quote = self.engine.convert_currency(stated_myr, "MYR", "SGD")
+            converted_sgd = self.engine.money_value(quote.get("converted_amount", 0))
+            rate = quote.get("rate")
+            balances = self.engine.get_balance()
+            scenario_balances = {str(code).upper(): self.engine.money_value(value) for code, value in balances.items()}
+            scenario_balances["MYR"] = stated_myr
+            forecast = self.engine.forecast_portfolio(30, balances_override=scenario_balances)
+            obligations = self.engine.get_obligations()
+            tuition_obligation = next(
+                (item for item in obligations if "tuition" in str(item.get("name", "")).lower()),
+                None,
+            )
+            current_sgd_cash = self.engine.money_value(balances.get("SGD", 0))
+            tuition_amount_sgd = (
+                self.engine.money_value(tuition_obligation.get("amount_sgd", 0))
+                if tuition_obligation else None
+            )
+            tuition_gap_sgd = (
+                self.engine.money_value(max(Decimal("0"), tuition_amount_sgd - current_sgd_cash))
+                if tuition_amount_sgd is not None else None
+            )
+            reserve = forecast.get("emergency_reserve", {})
+            reserve_met = bool(reserve.get("met", False))
+            projected_sgd = self.engine.money_value(forecast.get("projected_balance_sgd", 0))
+            conversion_text = (
+                f"At the configured reference rate, MYR {stated_myr:,.2f} is approximately SGD {converted_sgd:,.2f}"
+                + (f" (1 MYR = SGD {float(rate):.4f})." if rate is not None else ".")
+            )
+            if tuition_obligation and tuition_gap_sgd is not None:
+                due_days = tuition_obligation.get("days", "?")
+                tuition_text = (
+                    f"The configured tuition obligation is about SGD {tuition_amount_sgd:,.2f}, due in {due_days} day(s); "
+                    f"configured SGD cash is SGD {current_sgd_cash:,.2f}, so the tuition-only cash gap is SGD {tuition_gap_sgd:,.2f} before fees and other near-term cash needs."
+                )
+            else:
+                tuition_text = (
+                    "I could not find a tuition obligation recorded as due within the next 30 days, "
+                    "so I cannot responsibly name a conversion amount from the tuition record."
+                )
+            if not reserve_met or projected_sgd < 0:
+                recommendation = (
+                    f"The 30-day portfolio forecast projects SGD {projected_sgd:,.2f} after the protected reserve, expected income, spending and recorded obligations, "
+                    f"and the configured emergency reserve is {'met' if reserve_met else 'not met or cannot be verified'}. "
+                    "Do not convert the entire MYR amount by default; confirm the invoice and due date, protect the reserve, and convert only a verified shortfall after essential expenses."
+                )
+            elif tuition_gap_sgd is not None and tuition_gap_sgd > 0:
+                recommendation = (
+                    f"A partial conversion may make sense for the confirmed tuition cash gap, starting from the tuition-only estimate of up to SGD {tuition_gap_sgd:,.2f}; "
+                    "recheck other bills, the emergency reserve, bank spread and fees before choosing the amount. There is no reason to convert all MYR automatically."
+                )
+            elif tuition_gap_sgd == 0:
+                recommendation = (
+                    "The configured SGD cash alone appears to cover the recorded tuition amount, so there is no tuition-only reason to convert MYR immediately. "
+                    "Keep the reserve intact and recheck other bills, the invoice deadline, and FX fees before deciding."
+                )
+            else:
+                recommendation = (
+                    "Do not choose a conversion amount from the MYR balance alone. Confirm the tuition invoice and due date, compare it with available SGD cash and other near-term bills, "
+                    "then convert only the verified shortfall while preserving the emergency reserve."
+                )
+            answer = (
+                "**Tuition and currency affordability check (read-only)**\\n\\n"
+                + conversion_text + "\\n\\n"
+                + tuition_text + "\\n\\n"
+                + f"30-day portfolio forecast after reserve and recorded cash flows: SGD {projected_sgd:,.2f}. "
+                + recommendation + "\\n\\n"
+                "This is a scenario estimate using your stated MYR amount and configured profile data. FX spreads, fees, timing and unrecorded expenses can change the result. No proposal or transaction was created."
+            )
+            trace = [
+                {"step": "UNDERSTAND", "status": "completed", "detail": "Recognized an affordability question about whether to convert stated MYR holdings for upcoming tuition."},
+                {"step": "FX", "status": "completed", "detail": f"Quoted MYR {stated_myr:,.2f} in SGD using the configured conversion method."},
+                {"step": "OBSERVE", "status": "completed", "detail": "Read configured SGD cash, recorded obligations and the emergency-reserve setting."},
+                {"step": "SIMULATE", "status": "completed", "detail": "Replaced MYR with the user-stated scenario balance for the forecast; saved balances were not changed."},
+                {"step": "CALCULATE", "status": "completed", "detail": f"Thirty-day projected position after reserve and recorded cash flows is SGD {projected_sgd:,.2f}."},
+                {"step": "SECURITY", "status": "completed", "detail": "Read-only assessment; no proposal or transaction was created."},
+                {"step": "RECOMMEND", "status": "completed", "detail": "Recommended converting only a verified tuition funding gap while preserving the emergency reserve."},
+            ]
+            return self._result("affordability", answer, trace, {
+                "goal": "affordability",
+                "scenario_inputs": {"myr_balance": float(stated_myr)},
+                "fx_conversion": quote,
+                "tuition_obligation": tuition_obligation,
+                "tuition_gap_sgd": float(tuition_gap_sgd) if tuition_gap_sgd is not None else None,
+                "forecast": forecast,
+                "emergency_reserve_met": reserve_met,
+                "state_changed": False,
+                "proposal": None,
+            })
+
         # Handle explicit multi-currency tuition calculations as a read-only
         # scenario before generic intent/proposal handlers can intercept the prompt.
         explicit_tuition_scenario = (
